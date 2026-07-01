@@ -3,7 +3,7 @@
 // shared detail controller + parts so it stays in lockstep with the slide-over. Collapse (or Escape)
 // returns to the slide-over; close returns to the board.
 import { useEffect, useState, type ReactNode } from "react";
-import { Activity, Copy, Info, Maximize2, MessageSquare, Share2, X } from "lucide-react";
+import { Activity, Bug, Copy, Info, Maximize2, MessageSquare, Share2, X } from "lucide-react";
 import { toast } from "sonner";
 import type { Status } from "@/lib/types";
 import { useApp } from "@/state/app-store";
@@ -13,7 +13,7 @@ import { PlanView } from "./PlanView";
 import { WorkSection } from "./WorkSection";
 import { InfoPanel } from "./InfoPanel";
 import { AgentLiveStatus } from "./AgentLiveStatus";
-import { DebugControl } from "./DebugControl";
+import { DebugPanelContent } from "./DebugControl";
 import { ShareDialog } from "@/components/share/ShareDialog";
 import { AgentActions, CommentThread } from "./agent-parts";
 import { ReviewActions } from "./ReviewActions";
@@ -50,7 +50,7 @@ export function DeepDivePanel({
   const task = detail?.task;
   const isStale = task && taskId !== task.id;
   // Which right-rail panel is open (null = collapsed to just the icon strip).
-  const [rightPanel, setRightPanel] = useState<"discussion" | "activity" | "info" | null>("discussion");
+  const [rightPanel, setRightPanel] = useState<"discussion" | "activity" | "info" | "debug" | null>("discussion");
   const [shareOpen, setShareOpen] = useState(false);
   const [planExpanded, setPlanExpanded] = useState(false);
 
@@ -164,7 +164,13 @@ export function DeepDivePanel({
                 <aside className="flex w-[340px] shrink-0 flex-col overflow-hidden border-l border-border/60 bg-muted/70">
                   <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
                     <h3 className="text-[12.5px] font-semibold text-foreground">
-                      {rightPanel === "discussion" ? "Discussion" : rightPanel === "activity" ? "Activity" : "Info"}
+                      {rightPanel === "discussion"
+                        ? "Discussion"
+                        : rightPanel === "activity"
+                          ? "Activity"
+                          : rightPanel === "debug"
+                            ? "Debug"
+                            : "Info"}
                     </h3>
                     {rightPanel === "discussion" &&
                       (detail.input ? (
@@ -183,6 +189,8 @@ export function DeepDivePanel({
                   {/* Discussion fills the panel as a chat (input pinned at the foot); the others scroll. */}
                   {rightPanel === "discussion" ? (
                     <CommentThread taskId={task.id} resolveActor={resolveActor} onPosted={refresh} />
+                  ) : rightPanel === "debug" ? (
+                    <DebugPanelContent taskId={task.id} />
                   ) : (
                     <div className="min-h-0 flex-1 overflow-y-auto scroll-thin px-3 py-3">
                       {rightPanel === "activity" && (
@@ -229,7 +237,13 @@ export function DeepDivePanel({
                   >
                     <Share2 className="size-[18px]" />
                   </button>
-                  <DebugControl taskId={task.id} />
+                  <RailIcon
+                    label="Debug"
+                    active={rightPanel === "debug"}
+                    onClick={() => setRightPanel((p) => (p === "debug" ? null : "debug"))}
+                  >
+                    <Bug className="size-[18px]" />
+                  </RailIcon>
                 </div>
               </nav>
             </div>
