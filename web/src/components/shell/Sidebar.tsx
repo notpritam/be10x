@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import {
   ChevronsLeft,
+  FolderGit2,
   GitPullRequestArrow,
   Inbox,
   LogOut,
@@ -41,7 +42,7 @@ export function Sidebar({
   onConnectAgent: () => void;
   onNewTask: () => void;
 }) {
-  const { user, teams, view, setView, counts, logout } = useApp();
+  const { user, teams, projects, view, setView, counts, logout } = useApp();
   const activeKey = viewKey(view);
 
   return (
@@ -156,6 +157,26 @@ export function Sidebar({
         {collapsed && (
           <NewTeamButton collapsed onCreated={(v) => setView(v)} />
         )}
+
+        <div className="mt-4">
+          <Section label="Projects" collapsed={collapsed} inline />
+        </div>
+        {projects.length === 0 && !collapsed && (
+          <p className="px-2 py-1.5 text-[12px] leading-relaxed text-muted-foreground/80">
+            No repositories linked yet.
+          </p>
+        )}
+        {projects.map((project) => (
+          <NavRow
+            key={project.id}
+            collapsed={collapsed}
+            icon={<FolderGit2 className="size-[17px]" />}
+            label={project.name}
+            count={counts.project[project.id] ?? 0}
+            active={activeKey === `project:${project.id}`}
+            onClick={() => setView({ kind: "project", projectId: project.id, name: project.name })}
+          />
+        ))}
       </nav>
 
       {/* User footer */}

@@ -18,6 +18,8 @@ function viewLabel(view: View): string {
       return "Review queue";
     case "team":
       return view.name;
+    case "project":
+      return view.name;
   }
 }
 

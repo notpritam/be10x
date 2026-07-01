@@ -13,17 +13,20 @@ import {
 import { toast } from "sonner";
 import { api, ApiError, errorMessage, type CreateTaskInput, type TaskFilter } from "@/lib/api";
 import { canTransition, STATUS_META } from "@/lib/lifecycle";
-import type { Status, Task, Team, User } from "@/lib/types";
+import type { Project, Status, Task, Team, User } from "@/lib/types";
 
 export type View =
   | { kind: "all" }
   | { kind: "personal" }
   | { kind: "needs_input" }
   | { kind: "review_queue" }
-  | { kind: "team"; teamId: string; name: string };
+  | { kind: "team"; teamId: string; name: string }
+  | { kind: "project"; projectId: string; name: string };
 
 export function viewKey(view: View): string {
-  return view.kind === "team" ? `team:${view.teamId}` : view.kind;
+  if (view.kind === "team") return `team:${view.teamId}`;
+  if (view.kind === "project") return `project:${view.projectId}`;
+  return view.kind;
 }
 
 /** A task awaiting the given user's review — mirrors GET /api/reviews/pending. */
@@ -43,6 +46,8 @@ function viewFilter(view: View, userId: string): (task: Task) => boolean {
       return (t) => awaitsReview(t, userId);
     case "team":
       return (t) => t.teamId === view.teamId;
+    case "project":
+      return (t) => t.projectId === view.projectId;
   }
 }
 
@@ -70,6 +75,11 @@ function paramToView(key: string | null, teams: Team[]): View {
     const teamId = key.slice(5);
     return { kind: "team", teamId, name: teams.find((t) => t.id === teamId)?.name ?? "Team" };
   }
+  if (key && key.startsWith("project:")) {
+    const projectId = key.slice(8);
+    // Placeholder name; the Sidebar supplies the real one on click and the [projects] effect fills it.
+    return { kind: "project", projectId, name: "Project" };
+  }
   return { kind: "all" };
 }
 
@@ -95,6 +105,7 @@ function loadTabs(): TabRef[] {
 interface AppState {
   user: User;
   teams: Team[];
+  projects: Project[];
   allTasks: Task[];
   view: View;
   visibleTasks: Task[];
@@ -104,6 +115,7 @@ interface AppState {
     needsInput: number;
     reviewQueue: number;
     team: Record<string, number>;
+    project: Record<string, number>;
   };
   tasksLoading: boolean;
   selectedTaskId: string | null;
@@ -115,6 +127,7 @@ interface AppState {
   setView: (view: View) => void;
   reloadTasks: () => Promise<void>;
   reloadTeams: () => Promise<void>;
+  reloadProjects: () => Promise<void>;
   createTask: (input: CreateTaskInput) => Promise<Task>;
   createTeam: (name: string) => Promise<Team>;
   moveTask: (taskId: string, to: Status) => Promise<boolean>;
@@ -148,6 +161,7 @@ export function AppProvider({
   children: ReactNode;
 }) {
   const [teams, setTeams] = useState<Team[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [view, setView] = useState<View>(() => paramToView(parseLocation().viewKey, []));
@@ -170,6 +184,15 @@ export function AppProvider({
     }
   }, []);
 
+  const reloadProjects = useCallback(async () => {
+    try {
+      const { projects } = await api.listProjects();
+      setProjects(projects);
+    } catch {
+      /* non-fatal — the linked-repos rail just stays empty */
+    }
+  }, []);
+
   const reloadTasks = useCallback(async () => {
     try {
       const { tasks } = await api.listTasks({} as TaskFilter);
@@ -183,8 +206,9 @@ export function AppProvider({
 
   useEffect(() => {
     void reloadTeams();
+    void reloadProjects();
     void reloadTasks();
-  }, [reloadTeams, reloadTasks]);
+  }, [reloadTeams, reloadProjects, reloadTasks]);
 
   // Board-wide live updates: poll all tasks so cards move between columns on their own as the agent
   // works — no manual refresh. (reloadTasks only clears the loading flag, so re-polling never flashes.)
@@ -218,6 +242,15 @@ export function AppProvider({
       v.kind === "team" ? { ...v, name: teams.find((t) => t.id === v.teamId)?.name ?? v.name } : v,
     );
   }, [teams]);
+
+  // Same for a project view restored from the URL before the linked repos loaded.
+  useEffect(() => {
+    setView((v) =>
+      v.kind === "project"
+        ? { ...v, name: projects.find((p) => p.id === v.projectId)?.name ?? v.name }
+        : v,
+    );
+  }, [projects]);
 
   // Persist the open tabs so a refresh restores the whole workspace, not just the active task.
   useEffect(() => {
@@ -372,19 +405,25 @@ export function AppProvider({
 
   const counts = useMemo(() => {
     const team: Record<string, number> = {};
-    for (const t of allTasks) if (t.teamId) team[t.teamId] = (team[t.teamId] ?? 0) + 1;
+    const project: Record<string, number> = {};
+    for (const t of allTasks) {
+      if (t.teamId) team[t.teamId] = (team[t.teamId] ?? 0) + 1;
+      if (t.projectId) project[t.projectId] = (project[t.projectId] ?? 0) + 1;
+    }
     return {
       all: allTasks.length,
       personal: allTasks.filter((t) => t.scope === "personal").length,
       needsInput: allTasks.filter((t) => t.status === "needs_input").length,
       reviewQueue: allTasks.filter((t) => awaitsReview(t, user.id)).length,
       team,
+      project,
     };
   }, [allTasks, user.id]);
 
   const value: AppState = {
     user,
     teams,
+    projects,
     allTasks,
     view,
     visibleTasks,
@@ -396,6 +435,7 @@ export function AppProvider({
     setView,
     reloadTasks,
     reloadTeams,
+    reloadProjects,
     createTask,
     createTeam,
     moveTask,
