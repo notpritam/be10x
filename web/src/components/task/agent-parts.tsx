@@ -1,12 +1,57 @@
 // ABOUTME: Shared agent-interaction blocks used by both the slide-over and the deep-dive: the hand-off /
 // pick-up-now action row, and the comment thread the agent reads on its next wake.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import type { Comment, Task } from "@/lib/types";
 import { api } from "@/lib/api";
-import { relativeTime } from "@/lib/utils";
+import { cn, relativeTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+
+// A discussion message collapses to a precise 160px; if it's taller, a Show more/less toggle reveals the
+// rest. Keeps long agent replies and pasted context from flooding the thread while staying one click away.
+const COMMENT_MAX_PX = 160;
+
+function CommentBody({ text }: { text: string }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el) setOverflows(el.scrollHeight > COMMENT_MAX_PX + 4);
+  }, [text]);
+
+  return (
+    <div>
+      <div className="relative">
+        <p
+          ref={ref}
+          className={cn(
+            "whitespace-pre-wrap text-[13px] leading-snug text-foreground/90",
+            !expanded && overflows && "max-h-[160px] overflow-hidden",
+          )}
+        >
+          {text}
+        </p>
+        {overflows && !expanded && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-muted/70 to-transparent" />
+        )}
+      </div>
+      {overflows && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 inline-flex items-center gap-1 text-[11.5px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none"
+        >
+          <ChevronDown className={cn("size-3.5 transition-transform", expanded && "rotate-180")} />
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      )}
+    </div>
+  );
+}
 
 // Hand a backlog task to the agent (starts planning) or ping an already-engaged task to pick up now.
 // Both just enqueue a wake the runner drains — the board is the only interface the human needs.
@@ -102,7 +147,7 @@ export function CommentThread({
       {comments.length > 0 && (
         <ul className="space-y-2.5">
           {comments.map((c) => (
-            <li key={c.id} className="rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+            <li key={c.id} className="rounded-lg border border-border/50 bg-muted/40 px-3 py-2">
               <div className="mb-1 flex items-center gap-2 text-[11px] text-muted-foreground">
                 <span className="font-medium text-foreground/80">{resolveActor(c.author)}</span>
                 {c.anchor !== "general" && (
@@ -110,7 +155,7 @@ export function CommentThread({
                 )}
                 <span className="ml-auto">{relativeTime(c.createdAt)}</span>
               </div>
-              <p className="whitespace-pre-wrap text-[13px] leading-snug text-foreground/90">{c.body}</p>
+              <CommentBody text={c.body} />
             </li>
           ))}
         </ul>
