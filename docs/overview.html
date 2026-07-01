@@ -1,0 +1,503 @@
+<!doctype html>
+<!-- ABOUTME: Plan overview for "Git for Agents" — the vision, the typed-task model, the phase map, and exactly what v1 includes. -->
+<!-- ABOUTME: Self-contained explainer (no build step). Design language inherited from the chat-v2 tracker: Space Grotesk / IBM Plex Sans / JetBrains Mono, coral=attention, iris=action, emerald=done. -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Git for Agents — Plan Overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0c0d11; --bg2:#101117; --panel:#15161d; --panel2:#191b23;
+    --line:#24262f; --line2:#2e3140;
+    --ink:#e7e8ec; --mut:#9a9ca6; --dim:#6c6e79;
+    --iris:#8b7dff; --iris-dim:#3a3560;
+    --emerald:#34d399; --emerald-dim:#12332a;
+    --coral:#fb7185; --amber:#fbbf24; --sky:#56b6ff;
+    --emd:#173a30; --crd:#3a1c24; --amd:#3a3016; --isd:#241f45;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+    --disp:'Space Grotesk',system-ui,sans-serif;
+    --body:'IBM Plex Sans',system-ui,sans-serif;
+    --r:14px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:
+      radial-gradient(1200px 600px at 12% -8%, #17143008 0, transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, #10233008 0, transparent 55%),
+      var(--bg);
+    color:var(--ink);font-family:var(--body);line-height:1.62;
+    font-size:15.5px;-webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  a{color:var(--iris);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code,.mono{font-family:var(--mono);font-size:.86em}
+  .kbd{font-family:var(--mono);font-size:.82em;background:var(--panel2);border:1px solid var(--line);
+    border-radius:6px;padding:.08em .4em;color:#cfd0d8}
+
+  /* header */
+  header{padding:64px 0 30px;border-bottom:1px solid var(--line)}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--iris);margin:0 0 16px}
+  h1{font-family:var(--disp);font-weight:700;font-size:clamp(34px,6vw,58px);line-height:1.02;margin:0 0 8px;letter-spacing:-.02em}
+  h1 .sub{display:block;font-weight:500;font-size:clamp(15px,2.4vw,20px);color:var(--mut);letter-spacing:0;margin-top:14px;max-width:62ch}
+  .thesis{margin:22px 0 0;font-size:17px;max-width:70ch;color:#cdced4}
+  .thesis b{color:#fff;font-weight:600}
+  .lede-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+  .chip{font-family:var(--mono);font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--line2);
+    background:var(--panel);color:var(--mut)}
+  .chip b{color:var(--ink);font-weight:600}
+
+  section{padding:44px 0;border-bottom:1px solid var(--line)}
+  .sec-k{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+  h2{font-family:var(--disp);font-weight:600;font-size:clamp(22px,3.4vw,30px);margin:8px 0 4px;letter-spacing:-.01em}
+  .sec-lede{color:var(--mut);max-width:74ch;margin:6px 0 24px}
+
+  /* flow strip */
+  .flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:0;margin-top:8px}
+  .step{position:relative;flex:1 1 132px;min-width:120px;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;padding:13px 13px;margin:6px;display:flex;flex-direction:column;gap:4px}
+  .step .n{font-family:var(--mono);font-size:11px;color:var(--dim)}
+  .step .t{font-family:var(--disp);font-weight:600;font-size:14.5px}
+  .step .d{font-size:12.5px;color:var(--mut);line-height:1.45}
+  .step.act{border-color:var(--iris-dim);background:linear-gradient(180deg,#1a1730,#15161d)}
+  .step.act .t{color:#cdc6ff}
+  .step.good{border-color:#1f5140}
+  .step.good .t{color:#7ee7c3}
+  .step.fork{border-color:var(--amber);border-style:dashed}
+  .step.fork .t{color:#fcd66b}
+  .arrow{align-self:center;color:var(--dim);font-family:var(--mono);font-size:15px;padding:0 2px}
+
+  /* generic grid cards */
+  .grid{display:grid;gap:16px}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:820px){.g3,.g2{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:18px}
+  .card h3{font-family:var(--disp);font-weight:600;font-size:16.5px;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+  .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:6px;border:1px solid var(--line2);color:var(--mut)}
+  .type-rows{margin-top:12px;display:flex;flex-direction:column;gap:9px}
+  .trow{display:grid;grid-template-columns:82px 1fr;gap:10px;align-items:baseline}
+  .trow .lab{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);padding-top:1px}
+  .trow .val{font-size:13.2px;color:#d3d4da;line-height:1.5}
+  .trow .val .mono{color:#b9c4e8}
+
+  /* level pills */
+  .levels{display:flex;flex-wrap:wrap;gap:12px;margin-top:6px}
+  .lvl{flex:1 1 220px;border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--panel)}
+  .lvl .h{font-family:var(--disp);font-weight:600;font-size:15px;display:flex;gap:8px;align-items:center}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .lvl p{margin:6px 0 0;font-size:13px;color:var(--mut)}
+
+  /* phases */
+  .phases{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:6px}
+  @media(max-width:920px){.phases{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.phases{grid-template-columns:1fr}}
+  .ph{border:1px solid var(--line);border-radius:12px;padding:15px;background:var(--panel);display:flex;flex-direction:column;gap:9px}
+  .ph .pk{font-family:var(--mono);font-size:12px;color:var(--dim);display:flex;justify-content:space-between;align-items:center}
+  .ph .pn{font-family:var(--disp);font-weight:600;font-size:15.5px;line-height:1.15}
+  .ph ul{margin:2px 0 0;padding-left:16px;font-size:12.7px;color:var(--mut);line-height:1.5}
+  .ph ul li{margin:2px 0}
+  .ph.now{border-color:var(--iris);background:linear-gradient(180deg,#181530,#141019);box-shadow:0 0 0 1px #2a2550, 0 18px 40px -24px #6f5bff66}
+  .ph.now .pn{color:#d7d0ff}
+  .badge{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;padding:3px 7px;border-radius:999px}
+  .badge.b-now{background:#2a2360;color:#c8bdff;border:1px solid #43397f}
+  .badge.b-later{background:#1b1d25;color:var(--dim);border:1px solid var(--line)}
+
+  /* architecture stack */
+  .arch{margin-top:8px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--bg2)}
+  .lane{padding:14px 16px;border-bottom:1px solid var(--line)}
+  .lane:last-child{border-bottom:0}
+  .lane .lk{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--dim);margin-bottom:9px}
+  .boxes{display:flex;flex-wrap:wrap;gap:10px}
+  .box{flex:1 1 200px;border:1px solid var(--line2);border-radius:10px;padding:11px 13px;background:var(--panel)}
+  .box .bt{font-family:var(--disp);font-weight:600;font-size:14px;display:flex;gap:7px;align-items:center}
+  .box .bd{font-size:12.3px;color:var(--mut);margin-top:3px;line-height:1.45}
+  .box.core{border-color:var(--iris-dim);background:linear-gradient(180deg,#181633,#15161d)}
+  .box.core .bt{color:#cdc6ff}
+  .box.store{border-color:#1f5140}
+  .box.store .bt{color:#7ee7c3}
+
+  /* scope two-col */
+  .scope{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:6px}
+  @media(max-width:820px){.scope{grid-template-columns:1fr}}
+  .slist{border:1px solid var(--line);border-radius:14px;padding:16px 18px;background:var(--panel)}
+  .slist h3{font-family:var(--disp);font-weight:600;font-size:15px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+  .slist ul{list-style:none;margin:0;padding:0}
+  .slist li{position:relative;padding:6px 0 6px 26px;font-size:13.6px;color:#d4d5db;border-top:1px dashed var(--line)}
+  .slist li:first-child{border-top:0}
+  .slist li::before{position:absolute;left:2px;top:6px;font-family:var(--mono);font-size:13px}
+  .in li::before{content:"✓";color:var(--emerald)}
+  .out li::before{content:"→";color:var(--dim)}
+  .out li{color:var(--mut)}
+  .out h3{color:var(--mut)}
+
+  .callout{border:1px solid var(--line2);border-left:3px solid var(--iris);background:var(--panel);
+    border-radius:10px;padding:14px 16px;margin-top:18px;font-size:13.8px;color:#d3d4da}
+  .callout b{color:#fff}
+  .stack-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .stk{font-family:var(--mono);font-size:12px;padding:6px 11px;border-radius:8px;background:var(--panel2);border:1px solid var(--line2)}
+  .stk b{color:#cdc6ff}
+
+  .next{display:flex;flex-direction:column;gap:10px}
+  .nline{display:flex;gap:12px;align-items:flex-start}
+  .nnum{font-family:var(--mono);font-size:12px;color:var(--iris);border:1px solid var(--iris-dim);border-radius:8px;
+    width:26px;height:26px;flex:none;display:grid;place-items:center;margin-top:1px}
+  .nbody{font-size:14px}
+  .nbody b{font-family:var(--disp)}
+  footer{padding:34px 0 60px;color:var(--dim);font-size:12.5px;font-family:var(--mono)}
+  .q{border:1px dashed var(--amber);background:#1a1710;border-radius:10px;padding:12px 15px;margin-top:10px;font-size:13.4px;color:#e9d9a6}
+  .q b{color:#ffd873}
+  /* lifecycle state rail */
+  .states{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 8px}
+  .state{font-family:var(--mono);font-size:12px;padding:7px 11px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);color:var(--ink);white-space:nowrap}
+  .state small{color:var(--dim);font-size:10px;display:block;margin-top:1px}
+  .state.s-research{border-color:#3a3560;color:#b9a8ff}
+  .state.s-review{border-color:var(--amber);color:#fcd66b}
+  .state.s-ready{border-color:#1f5140;color:#7ee7c3;background:#122a22}
+  .state.s-prog{border-color:var(--iris);color:#cdc6ff;background:#181530}
+  .state.s-verify{border-color:#2b4a6b;color:#9fd0ff}
+  .state.s-done{border-color:#1f5140;color:#7ee7c3}
+  .state.s-input{border-color:var(--amber);color:#fcd66b;background:#241f10}
+  .sarrow{color:var(--dim);font-family:var(--mono);font-size:13px}
+  .loops{display:flex;flex-direction:column;gap:7px;margin:2px 0 18px;font-size:13px;color:var(--mut)}
+  .loops b{color:#d3d4da;font-weight:600}
+  .loops .lp{border-left:2px solid var(--line2);padding-left:11px;line-height:1.5}
+  .loops .lp.amber{border-left-color:var(--amber)}
+  .loops .lp.iris{border-left-color:var(--iris)}
+  /* input-request mock */
+  .im{border:1px solid var(--amber);border-radius:14px;padding:16px 18px;background:linear-gradient(180deg,#1c1810,#15161d)}
+  .im-head{font-family:var(--disp);font-weight:600;font-size:15px;color:#fcd66b;display:flex;align-items:center;gap:9px}
+  .pausedot{width:9px;height:9px;border-radius:50%;background:var(--amber);animation:pulse 1.8s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 #fbbf2466}70%{box-shadow:0 0 0 10px #fbbf2400}100%{box-shadow:0 0 0 0 #fbbf2400}}
+  @media(prefers-reduced-motion:reduce){.pausedot{animation:none}}
+  .im-q{font-size:14px;color:#e7e3d6;margin:11px 0 13px;line-height:1.5}
+  .im-choices{display:flex;flex-wrap:wrap;gap:8px}
+  .qc{font-family:var(--body);font-size:13px;padding:7px 13px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);color:var(--ink);cursor:pointer}
+  .qc:hover{border-color:var(--amber)}
+  .qc-sel{border-color:var(--amber);background:#2a2412;color:#ffe08a}
+  .im-custom{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .im-custom input{flex:1 1 180px;font-family:var(--body);font-size:13px;padding:9px 12px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);color:var(--ink)}
+  .im-custom input::placeholder{color:var(--dim)}
+  .im-send{font-family:var(--disp);font-weight:600;font-size:13px;padding:9px 14px;border-radius:9px;border:1px solid var(--iris-dim);background:linear-gradient(180deg,#241f45,#1a1730);color:#cdc6ff;cursor:pointer;white-space:nowrap}
+  .im-send:hover{border-color:var(--iris)}
+  .im-foot{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:12px}
+  .hitl-rows{display:flex;flex-direction:column;gap:13px;justify-content:center}
+  .hrow{display:flex;gap:12px;align-items:flex-start}
+  .hrow .hi{font-size:17px;line-height:1.1;margin-top:1px}
+  .hrow .ht{font-family:var(--disp);font-weight:600;font-size:14px}
+  .hrow .hd{font-size:13px;color:var(--mut);line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Plan Overview · v1 scope</p>
+  <h1>Git for Agents
+    <span class="sub">One shared board where humans and agents plan, review, approve, and ship work — code or not. Grown from the chat‑v2 issue tracker.</span>
+  </h1>
+  <p class="thesis">
+    The seed you built (the chat‑v2 forensics board) already has the two things that matter: a
+    <b>rich card contract</b> and a <b>two‑way human↔agent loop</b>. “Git for Agents” keeps that spine and adds the
+    missing verbs: <b>typed tasks</b> (not only code), a <b>plan‑review gate</b> before work starts, <b>teams</b>,
+    an <b>MCP interface</b>, and <b>self‑rating</b>. Later phases add remote/phone access and deterministic Playwright verification.
+  </p>
+  <div class="lede-chips">
+    <span class="chip"><b>Seed:</b> chat‑v2‑issues (13 cards)</span>
+    <span class="chip"><b>Now building:</b> v1</span>
+    <span class="chip"><b>Interfaces:</b> Web board + MCP</span>
+    <span class="chip"><b>Model:</b> Node · SQLite · buildless UI</span>
+  </div>
+</header>
+
+<!-- CORE LOOP -->
+<section>
+  <p class="sec-k">The universal spine</p>
+  <h2>Propose → review → approve → work → verify</h2>
+  <p class="sec-lede">Every task, regardless of type, runs the same lifecycle. This is your “bounce an idea, someone reviews it or just approves, then the agent works the flow.” The review gate is the new, load‑bearing piece.</p>
+  <div class="flow">
+    <div class="step"><span class="n">01</span><span class="t">Capture</span><span class="d">Human or agent adds a task. Type chosen (code‑issue, research, idea…).</span></div>
+    <span class="arrow">→</span>
+    <div class="step act"><span class="n">02</span><span class="t">Plan</span><span class="d">Agent drafts the plan for that task type. Nothing is executed yet.</span></div>
+    <span class="arrow">→</span>
+    <div class="step fork"><span class="n">03</span><span class="t">Review (tag)</span><span class="d">Tag a teammate / yourself. They approve or request changes.</span></div>
+    <span class="arrow">→</span>
+    <div class="step act"><span class="n">04</span><span class="t">Work the flow</span><span class="d">On approve, agent runs the type’s steps. Live status on the card.</span></div>
+    <span class="arrow">→</span>
+    <div class="step"><span class="n">05</span><span class="t">Self‑rate</span><span class="d">Agent scores the result against the task’s definition‑of‑done.</span></div>
+    <span class="arrow">→</span>
+    <div class="step good"><span class="n">06</span><span class="t">Record</span><span class="d">What shipped/produced is written back to the card (refs, output, evidence).</span></div>
+  </div>
+  <div class="callout"><b>Replan / retry‑N</b> loop back to step 02 at any time — a rejected review, a failed self‑rating, or a human “try again” re‑opens the plan without losing history.</div>
+  <div class="callout" style="border-left-color:var(--amber)"><b>⏸ Pause for input</b> — mid‑flow the agent can stop and ask you a scoped question (quick‑choice chips + a custom‑input box) without abandoning the task; your answer resumes it. Shown below.</div>
+</section>
+
+<!-- LIFECYCLE -->
+<section>
+  <p class="sec-k">Lifecycle &amp; the worker</p>
+  <h2>The board is the state machine — a worker drives it</h2>
+  <p class="sec-lede">Tasks move through explicit states. You (or the agent) mark a task <b>ready‑to‑work</b>; a background <b>cron worker</b> notices, claims it, moves it to <b>in‑progress</b>, and runs the flow — nobody babysits a terminal.</p>
+  <div class="states">
+    <span class="state">Backlog</span><span class="sarrow">→</span>
+    <span class="state s-research">Researching</span><span class="sarrow">→</span>
+    <span class="state s-review">Plan review</span><span class="sarrow">→</span>
+    <span class="state s-ready">Ready to work</span><span class="sarrow">→</span>
+    <span class="state s-prog">In progress<small>+ changes watcher</small></span><span class="sarrow">→</span>
+    <span class="state s-verify">Verify &amp; self‑rate</span><span class="sarrow">→</span>
+    <span class="state s-done">Done</span>
+  </div>
+  <div class="loops">
+    <div class="lp amber"><b>Plan review</b> branches before it’s ready: reiterate the plan · re‑research · verify &amp; comment.</div>
+    <div class="lp iris"><b>In progress</b> can raise <span class="state s-input" style="padding:2px 7px">needs‑input</span> (pause for you) then resume — or bounce back to research/plan on failure.</div>
+  </div>
+  <div class="grid g2">
+    <div class="card">
+      <h3>⏱️ Cron worker</h3>
+      <p style="font-size:13.4px;color:var(--mut);margin:8px 0 0;line-height:1.55">A scheduled process polls the server on an interval, finds tasks flagged <span class="mono">ready‑to‑work</span>, claims them, and starts the flow. Runs locally in v1 (Claude Code scheduled‑wakeup / cron); becomes the cloud runner in v2. Pickup latency = the poll interval.</p>
+    </div>
+    <div class="card">
+      <h3>🔀 Changes watcher</h3>
+      <p style="font-size:13.4px;color:var(--mut);margin:8px 0 0;line-height:1.55">While a task is in‑progress, a background watcher tracks what changed — files touched, diffs, status — and streams it onto the card, so the board shows real progress, not just a spinner.</p>
+    </div>
+  </div>
+</section>
+
+<!-- HUMAN IN THE LOOP -->
+<section>
+  <p class="sec-k">Human‑in‑the‑loop</p>
+  <h2>When the agent needs you, it asks — on the card</h2>
+  <p class="sec-lede">Work shouldn’t silently stall. When a task hits a decision only you can make, the agent <b>pauses</b> (state → <span class="mono">needs‑input</span>) and posts a request into the detail sidebar. Answer with a <b>quick choice</b> or <b>custom input</b> and it resumes exactly where it left off.</p>
+  <div class="grid g2">
+    <div class="im">
+      <div class="im-head">⏸ Needs your input <span class="pausedot"></span></div>
+      <div class="im-q">The <span class="mono">users</span> table needs email verification. Block sign‑in until verified, or allow unverified sign‑in and just flag it?</div>
+      <div class="im-choices">
+        <button class="qc qc-sel">Block until verified</button>
+        <button class="qc">Allow + flag</button>
+        <button class="qc">Skip for v1</button>
+      </div>
+      <div class="im-custom">
+        <input placeholder="Or type a custom answer…" aria-label="Custom answer" />
+        <button class="im-send">Send &amp; continue →</button>
+      </div>
+      <div class="im-foot">agent paused on <span class="mono">GFA‑014</span> · your answer unblocks it</div>
+    </div>
+    <div class="hitl-rows">
+      <div class="hrow"><span class="hi">👁️</span><div><div class="ht">Track</div><div class="hd">A “Needs you” filter surfaces every task waiting on a human — nothing stalls unseen.</div></div></div>
+      <div class="hrow"><span class="hi">☑️</span><div><div class="ht">Choose</div><div class="hd">The agent defines quick‑choice chips — one click answers and resumes it.</div></div></div>
+      <div class="hrow"><span class="hi">⌨️</span><div><div class="ht">Custom input</div><div class="hd">When presets don’t fit, type anything — free‑form answers flow straight back.</div></div></div>
+      <div class="hrow"><span class="hi">🔌</span><div><div class="ht">Both doors</div><div class="hd">Agents raise it over MCP (<span class="mono">request_input</span>); you answer on web or MCP — same task, same row.</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- TYPED TASKS -->
+<section>
+  <p class="sec-k">The pivot — not code‑only</p>
+  <h2>Typed tasks: every type is a small plugin</h2>
+  <p class="sec-lede">A task’s <span class="mono">type</span> defines three things — its <b>content contract</b>, its <b>flow</b>, and its <b>definition‑of‑done</b>. The chat‑v2 forensics contract becomes the first type. Analysts, PMs, and researchers get their own. v1 ships two types to prove it’s generic; more are just data.</p>
+  <div class="grid g3">
+    <div class="card">
+      <h3>🐛 code‑issue <span class="tag">ported</span></h3>
+      <div class="type-rows">
+        <div class="trow"><span class="lab">Contract</span><span class="val">symptom · <span class="mono">rootCause</span> · solution · Mermaid diagram · <span class="mono">files[]</span></span></div>
+        <div class="trow"><span class="lab">Flow</span><span class="val">debug → write failing test → green → static‑analysis → commit → PR</span></div>
+        <div class="trow"><span class="lab">Done</span><span class="val">tests pass · <span class="mono">ship</span> refs recorded (commit/PR)</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>🔎 research <span class="tag">new</span></h3>
+      <div class="type-rows">
+        <div class="trow"><span class="lab">Contract</span><span class="val">question · findings · <span class="mono">sources[]</span> · confidence</span></div>
+        <div class="trow"><span class="lab">Flow</span><span class="val">gather → verify claims → synthesize → cite</span></div>
+        <div class="trow"><span class="lab">Done</span><span class="val">claims verified · sources attached · reviewer approves</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>💡 idea / task <span class="tag">new</span></h3>
+      <div class="type-rows">
+        <div class="trow"><span class="lab">Contract</span><span class="val">proposal · rationale · acceptance criteria</span></div>
+        <div class="trow"><span class="lab">Flow</span><span class="val">draft → discuss/bounce → decide</span></div>
+        <div class="trow"><span class="lab">Done</span><span class="val">approved &amp; criteria met (agent‑ or human‑executed)</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="callout"><b>Team bias</b> = team‑level conventions injected into every flow (the shared “how we work” — the team’s CLAUDE.md). It’s what makes two teams run the same task type differently.</div>
+</section>
+
+<!-- LEVELS -->
+<section>
+  <p class="sec-k">Where a task lives</p>
+  <h2>Three scopes</h2>
+  <div class="levels">
+    <div class="lvl"><div class="h"><span class="dot" style="background:var(--sky)"></span>Personal</div><p>Your private tasks. Work solo, no review needed unless you ask for one.</p></div>
+    <div class="lvl"><div class="h"><span class="dot" style="background:var(--iris)"></span>Project</div><p>A repo or a workstream. Tasks keyed by a stable project id, survive moves/reinstalls.</p></div>
+    <div class="lvl"><div class="h"><span class="dot" style="background:var(--emerald)"></span>Team</div><p>Shared board. Members join, see tasks, tag each other to review, approve, and hand off to the agent.</p></div>
+  </div>
+</section>
+
+<!-- PHASES -->
+<section>
+  <p class="sec-k">Roadmap</p>
+  <h2>Phase map — v1 is the load‑bearing base</h2>
+  <p class="sec-lede">Each phase stands on the one before it. v1 is bigger than a “core” because you pulled task‑lifecycle, MCP, and full‑auth teams forward — the deliberate trade for a production‑grade base.</p>
+  <div class="phases">
+    <div class="ph now">
+      <div class="pk">v1 <span class="badge b-now">Build now</span></div>
+      <div class="pn">Solid multi‑tenant core</div>
+      <ul>
+        <li>Typed‑task engine (2 types)</li>
+        <li>Lifecycle: add · replan · retry‑N · self‑rate</li>
+        <li>Review gate (tag → approve)</li>
+        <li>Teams + <b>full auth</b></li>
+        <li>MCP interface</li>
+        <li>Web board (buildless)</li>
+        <li>Cron worker · input requests</li>
+      </ul>
+    </div>
+    <div class="ph">
+      <div class="pk">v2 <span class="badge b-later">Later</span></div>
+      <div class="pn">Remote &amp; hosting</div>
+      <ul>
+        <li>Responsive/phone UI</li>
+        <li>Free remote (Cloudflare Tunnel)</li>
+        <li>Host‑your‑own instance</li>
+        <li>Shared public URLs</li>
+      </ul>
+    </div>
+    <div class="ph">
+      <div class="pk">v3 <span class="badge b-later">Later</span></div>
+      <div class="pn">Deterministic verify</div>
+      <ul>
+        <li>Playwright / Chromium</li>
+        <li>Persistent Chrome profiles</li>
+        <li>Verification recipes per type</li>
+        <li>Evidence → self‑rating</li>
+      </ul>
+    </div>
+    <div class="ph">
+      <div class="pk">v4 <span class="badge b-later">Later</span></div>
+      <div class="pn">Ecosystem</div>
+      <ul>
+        <li>More task types</li>
+        <li>Type marketplace / sharing</li>
+        <li>External sync (do‑it etc.)</li>
+      </ul>
+    </div>
+    <div class="ph">
+      <div class="pk">v5 <span class="badge b-later">Later</span></div>
+      <div class="pn">Scale &amp; insight</div>
+      <ul>
+        <li>Cross‑team analytics</li>
+        <li>Agent fleet orchestration</li>
+        <li>SLAs / throughput views</li>
+      </ul>
+    </div>
+  </div>
+  <div class="q">⚖️ <b>Flag:</b> full auth in v1 means a real backend + user database from day one — the heaviest single piece, and a jump from the flat‑JSON seed. It’s your call (confirmed); this overview reflects it. Public <i>hosting</i> is still v2 — v1 auth can run locally.</div>
+</section>
+
+<!-- ARCHITECTURE -->
+<section>
+  <p class="sec-k">v1 architecture</p>
+  <h2>Two front doors, one core, one store</h2>
+  <p class="sec-lede">Humans drive the web board; agents drive MCP. Both hit the same core and the same datastore, so a task an agent creates and a task you drag are the same row.</p>
+  <div class="arch">
+    <div class="lane">
+      <div class="lk">Front doors</div>
+      <div class="boxes">
+        <div class="box"><div class="bt">🖥️ Web board</div><div class="bd">Buildless HTML/JS. Kanban + detail panel + review UI. Session‑cookie login.</div></div>
+        <div class="box"><div class="bt">🔌 MCP server</div><div class="bd"><span class="mono">create · research · plan · request_input · submit_for_review · mark_ready · claim · update · rate</span>. Auth via personal access token.</div></div>
+      </div>
+    </div>
+    <div class="lane">
+      <div class="lk">Core (shared)</div>
+      <div class="boxes">
+        <div class="box core"><div class="bt">⚙️ Task engine</div><div class="bd">Typed‑task model, lifecycle state machine, review gate, input requests, self‑rating.</div></div>
+        <div class="box core"><div class="bt">🔐 Auth &amp; teams</div><div class="bd">Accounts, sessions, tokens, roles, per‑team authorization.</div></div>
+        <div class="box core"><div class="bt">🤖 Agent loop</div><div class="bd">Cron‑polls ready‑to‑work tasks, runs the type’s flow, watches changes, posts live status.</div></div>
+      </div>
+    </div>
+    <div class="lane">
+      <div class="lk">Store</div>
+      <div class="boxes">
+        <div class="box store"><div class="bt">🗄️ SQLite</div><div class="bd">users · teams · memberships · tasks · reviews · events. Single file, local‑first, hostable, back‑up‑able. Postgres later if hosted at scale.</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="stack-row">
+    <span class="stk"><b>Runtime:</b> Node</span>
+    <span class="stk"><b>DB:</b> SQLite</span>
+    <span class="stk"><b>Server:</b> Fastify/Hono</span>
+    <span class="stk"><b>Auth:</b> cookie sessions + PATs</span>
+    <span class="stk"><b>UI:</b> buildless HTML/JS</span>
+    <span class="stk"><b>Agents:</b> MCP</span>
+  </div>
+</section>
+
+<!-- SCOPE -->
+<section>
+  <p class="sec-k">What v1 includes — “what to include initially”</p>
+  <h2>In v1 vs. deferred</h2>
+  <div class="scope">
+    <div class="slist in">
+      <h3>✓ In v1</h3>
+      <ul>
+        <li>Generic typed‑task engine + <b>2 types</b> (code‑issue, idea/research)</li>
+        <li>Task lifecycle: add your own · replan · retry‑N · agent self‑rating</li>
+        <li>Plan‑<b>review gate</b>: tag a reviewer → approve / request changes → agent works</li>
+        <li>Personal / project / team scopes</li>
+        <li>Explicit lifecycle: research → plan‑review (reiterate / re‑research / verify) → ready‑to‑work → in‑progress → done</li>
+        <li><b>Cron worker</b>: background poller claims ready‑to‑work tasks + a changes watcher</li>
+        <li><b>Human‑in‑the‑loop input requests</b>: agent pauses → quick‑choice chips + custom input → resumes</li>
+        <li><b>Full auth</b>: accounts, login, sessions, hashed passwords</li>
+        <li>Teams: create, join, roles, per‑team task visibility</li>
+        <li><b>MCP interface</b> for agents (token‑authed)</li>
+        <li>Buildless web board: Kanban + detail panel + live agent status</li>
+        <li>Global, project‑keyed storage (survives repo moves/reinstalls)</li>
+        <li>Ported card contract: root‑cause / solution / diagram callouts</li>
+      </ul>
+    </div>
+    <div class="slist out">
+      <h3>→ Deferred (v2+)</h3>
+      <ul>
+        <li>Public managed hosting &amp; multi‑instance ops</li>
+        <li>Phone‑optimized responsive UI + Cloudflare Tunnel remote</li>
+        <li>Playwright / Chromium deterministic verification</li>
+        <li>Persistent Chrome‑profile test runs</li>
+        <li>External task‑tracker sync (do‑it, Jira, …)</li>
+        <li>Task‑type marketplace / sharing</li>
+        <li>Cross‑team analytics &amp; fleet orchestration</li>
+        <li>Postgres migration (only if hosted at scale)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- NEXT -->
+<section style="border-bottom:0">
+  <p class="sec-k">Next steps</p>
+  <h2>How we get from here to code</h2>
+  <div class="next">
+    <div class="nline"><div class="nnum">1</div><div class="nbody"><b>You review this overview</b> — confirm the shape, or redirect anything (stack, scope, phase order, the auth flag).</div></div>
+    <div class="nline"><div class="nnum">2</div><div class="nbody"><b>I write the formal spec</b> — the design doc at <span class="mono">docs/superpowers/specs/2026‑07‑01‑git‑for‑agents‑v1‑design.md</span>, then self‑review it.</div></div>
+    <div class="nline"><div class="nnum">3</div><div class="nbody"><b>You review the spec</b> — final gate before any implementation code.</div></div>
+    <div class="nline"><div class="nnum">4</div><div class="nbody"><b>We turn it into an implementation plan</b> (writing‑plans skill) and start building v1 in <span class="mono">/skills/git‑for‑agents/</span>.</div></div>
+  </div>
+  <div class="callout" style="border-left-color:var(--emerald)">
+    Because v1 is large (full auth + teams + MCP + typed core), the spec will likely <b>decompose v1 into 3–4 buildable slices</b> — e.g. (1) auth &amp; teams &amp; store, (2) typed‑task engine &amp; lifecycle, (3) review gate &amp; agent loop, (4) MCP + web board — each its own plan → build cycle.
+  </div>
+</section>
+
+<footer>
+  git‑for‑agents · plan overview · 2026‑07‑01 · design language inherited from chat‑v2‑issues (Space Grotesk / IBM Plex Sans / JetBrains Mono)
+</footer>
+
+</div>
+</body>
+</html>
