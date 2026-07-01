@@ -157,3 +157,18 @@ CREATE TABLE IF NOT EXISTS wake_queue (
   claimed_at   INTEGER,
   claimed_by   TEXT
 );
+
+-- A shareable, permissioned link to a task's plan + discussion. The owner mints one; anyone holding the
+-- token is the credential (unguessable random hex), so the link itself grants access — no session needed.
+-- permission gates what the bearer can do: comment/review only, or also run the agent. revoked_at (once
+-- stamped) makes the token read as gone, so a leaked-then-revoked link stops working. created_by is the
+-- minting user (nullable, standalone — the reviewer they hand it to may be anonymous).
+CREATE TABLE IF NOT EXISTS share_links (
+  id         TEXT PRIMARY KEY,
+  task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  token      TEXT NOT NULL UNIQUE,
+  permission TEXT NOT NULL DEFAULT 'comment_only' CHECK (permission IN ('comment_only','run_agent')),
+  created_by TEXT,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER
+);

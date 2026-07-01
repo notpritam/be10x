@@ -14,7 +14,7 @@ import { createTeam, deleteTeam } from '../teams/teams.js';
 import { listMembers, addMember } from '../teams/memberships.js';
 import { assertCan } from '../authz/authz.js';
 import { createTask, getTask, listTasks, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
-import { listEvents } from '../tasks/events.js';
+import { listEvents, appendEvent } from '../tasks/events.js';
 import { requestReview, submitReview } from '../reviews/reviews.js';
 import { requestInput, answerInput, getOpenInputRequest } from '../tasks/input_requests.js';
 import { addComment, listComments } from '../tasks/comments.js';
@@ -22,6 +22,7 @@ import { enqueueWake } from '../executor/wake.js';
 import { listRunsForTask } from '../executor/runs.js';
 import { taskDebug } from '../tasks/debug.js';
 import { listProjects, registerProject, detectProjectKey } from '../projects/projects.js';
+import { createShareLink, listShareLinksForTask, revokeShareLink, getActiveShareLinkByToken, shareView } from '../share/share.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(here, '..', '..', 'public');
@@ -267,6 +268,49 @@ const ROUTES = [
     answerInput(db, params.reqId, body.answer, user.id);
     if (row) enqueueWake(db, row.taskId, 'input_answer', { answer: body.answer }); // resume the paused agent
     send(res, 200, { ok: true });
+  }],
+
+  // --- Shareable, permissioned plan-review links --------------------------------------------------
+  // Owner-only (authRequired): mint / list / revoke a task's share links.
+  ['POST', '/api/tasks/:id/share', true, async ({ db, res, params, body, user }) => {
+    if (!getTask(db, params.id)) throw new Error('NO_TASK');
+    const share = createShareLink(db, { taskId: params.id, permission: body.permission, createdBy: user.id });
+    send(res, 200, { share });
+  }],
+  ['GET', '/api/tasks/:id/shares', true, async ({ db, res, params }) => send(res, 200, { shares: listShareLinksForTask(db, params.id) })],
+  ['DELETE', '/api/share/:token', true, async ({ db, res, params }) => {
+    if (!revokeShareLink(db, params.token)) return send(res, 404, { error: 'NO_SUCH_SHARE' });
+    send(res, 200, { ok: true });
+  }],
+  // Public (no session): the bearer of the token is the credential. View is always allowed; comment and
+  // review need only a live token; run-agent additionally needs the 'run_agent' permission.
+  ['GET', '/api/share/:token', false, async ({ db, res, params }) => {
+    const view = shareView(db, params.token);
+    if (!view) return send(res, 404, { error: 'NO_SUCH_SHARE' });
+    send(res, 200, view);
+  }],
+  ['POST', '/api/share/:token/comment', false, async ({ db, res, params, body }) => {
+    const link = getActiveShareLinkByToken(db, params.token);
+    if (!link) return send(res, 404, { error: 'NO_SUCH_SHARE' });
+    const comment = addComment(db, link.task_id, { author: body.author || 'guest', body: body.body });
+    send(res, 200, { comment });
+  }],
+  ['POST', '/api/share/:token/review', false, async ({ db, res, params, body }) => {
+    const link = getActiveShareLinkByToken(db, params.token);
+    if (!link) return send(res, 404, { error: 'NO_SUCH_SHARE' });
+    const author = body.author || 'guest';
+    appendEvent(db, link.task_id, author, 'review', { verdict: body.verdict, by: author, comment: body.comment, via: 'share' });
+    if (body.comment) addComment(db, link.task_id, { author, body: body.comment });
+    send(res, 200, { ok: true });
+  }],
+  ['POST', '/api/share/:token/run-agent', false, async ({ db, res, params, body }) => {
+    const link = getActiveShareLinkByToken(db, params.token);
+    if (!link) return send(res, 404, { error: 'NO_SUCH_SHARE' });
+    if (link.permission !== 'run_agent') return send(res, 403, { error: 'FORBIDDEN' });
+    const author = body.author || 'guest';
+    if (body.message) addComment(db, link.task_id, { author, body: body.message });
+    const wake = enqueueWake(db, link.task_id, 'pick_up_now', { via: 'share', author });
+    send(res, 200, { ok: true, wake });
   }],
   ['POST', '/api/tokens', true, async ({ db, res, body, user }) => send(res, 200, { token: createToken(db, user.id, body.name || 'agent') })],
   ['GET', '/api/tokens', true, async ({ db, res, user }) => send(res, 200, { tokens: listTokens(db, user.id) })],
