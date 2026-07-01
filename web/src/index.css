@@ -282,6 +282,14 @@
   .soft-fade {
     animation: none;
   }
+  /* Gate the radix overlay/panel enter+exit (dialog, sheet, deep-dive) too. */
+  [data-slot="dialog-content"],
+  [data-slot="dialog-overlay"],
+  [data-slot="sheet-content"],
+  [data-slot="sheet-overlay"] {
+    animation: none !important;
+    transition: none !important;
+  }
   * {
     scroll-behavior: auto !important;
   }

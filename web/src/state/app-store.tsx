@@ -47,6 +47,8 @@ interface AppState {
   counts: { all: number; personal: number; needsInput: number; team: Record<string, number> };
   tasksLoading: boolean;
   selectedTaskId: string | null;
+  /** Whether the selected task is shown in the full-screen deep-dive (vs. the slide-over). */
+  expanded: boolean;
 
   setView: (view: View) => void;
   reloadTasks: () => Promise<void>;
@@ -56,6 +58,10 @@ interface AppState {
   moveTask: (taskId: string, to: Status) => Promise<boolean>;
   applyTask: (task: Task) => void;
   selectTask: (id: string | null) => void;
+  /** Promote the open task from the slide-over to the full-screen deep-dive. */
+  expandTask: () => void;
+  /** Collapse the deep-dive back to the slide-over (keeps the task open). */
+  collapseTask: () => void;
   logout: () => Promise<void>;
   resolveActor: (actorId: string) => string;
 }
@@ -82,6 +88,7 @@ export function AppProvider({
   const [tasksLoading, setTasksLoading] = useState(true);
   const [view, setView] = useState<View>({ kind: "all" });
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const tasksRef = useRef<Task[]>([]);
   tasksRef.current = allTasks;
 
@@ -183,6 +190,15 @@ export function AppProvider({
     onSignedOut();
   }, [onSignedOut]);
 
+  const selectTask = useCallback((id: string | null) => {
+    setSelectedTaskId(id);
+    // Deselecting always drops back out of the full-screen view.
+    if (id === null) setExpanded(false);
+  }, []);
+
+  const expandTask = useCallback(() => setExpanded(true), []);
+  const collapseTask = useCallback(() => setExpanded(false), []);
+
   const resolveActor = useCallback(
     (actorId: string): string => {
       if (actorId === user.id) return user.displayName || "You";
@@ -215,6 +231,7 @@ export function AppProvider({
     counts,
     tasksLoading,
     selectedTaskId,
+    expanded,
     setView,
     reloadTasks,
     reloadTeams,
@@ -222,7 +239,9 @@ export function AppProvider({
     createTeam,
     moveTask,
     applyTask,
-    selectTask: setSelectedTaskId,
+    selectTask,
+    expandTask,
+    collapseTask,
     logout,
     resolveActor,
   };
