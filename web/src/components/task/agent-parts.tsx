@@ -153,8 +153,9 @@ export function CommentThread({
   return (
     <div className="space-y-3">
       {comments.length > 0 && (
-        <ul className="space-y-2.5">
-          {comments.map((c) => (
+        <div className="max-h-[44vh] overflow-y-auto scroll-thin pr-0.5">
+          <ul className="space-y-2">
+            {comments.map((c) => (
             <li key={c.id} className="group rounded-lg border border-border/60 bg-card px-3 py-1.5 shadow-card">
               <div className="mb-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
                 <span className="font-medium text-foreground/80">{resolveActor(c.author)}</span>
@@ -175,7 +176,8 @@ export function CommentThread({
               <CommentBody text={c.body} />
             </li>
           ))}
-        </ul>
+          </ul>
+        </div>
       )}
       <div className="space-y-2">
         <Textarea

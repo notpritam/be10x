@@ -2,11 +2,12 @@
 // full-viewport panel with a roomy two-column layout (main column + activity/comments rail). Reuses the
 // shared detail controller + parts so it stays in lockstep with the slide-over. Collapse (or Escape)
 // returns to the slide-over; close returns to the board.
-import { useEffect } from "react";
-import { Minimize2, Share2, X } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ChevronDown, Minimize2, Share2, X } from "lucide-react";
 import { toast } from "sonner";
 import type { Status } from "@/lib/types";
 import { useApp } from "@/state/app-store";
+import { cn } from "@/lib/utils";
 import { PriorityPill, TypeTag } from "@/components/common/bits";
 import { LifecycleStrip } from "./LifecycleStrip";
 import { PlanView } from "./PlanView";
@@ -48,6 +49,8 @@ export function DeepDivePanel({
   const { detail, loading, refresh, onMove } = ctrl;
   const task = detail?.task;
   const isStale = task && taskId !== task.id;
+  const [discussionOpen, setDiscussionOpen] = useState(true);
+  const [activityOpen, setActivityOpen] = useState(true);
 
   function move(to: Status) {
     void onMove(to);
@@ -155,25 +158,79 @@ export function DeepDivePanel({
                 </Section>
               </div>
 
-              {/* Discussion + activity rail */}
-              <aside className="flex min-h-0 flex-col gap-6 overflow-y-auto scroll-thin border-t border-border/60 bg-muted/30 px-6 py-7 lg:border-t-0">
-                <div>
-                  <h3 className="mb-3 text-[12.5px] font-semibold text-foreground">Discussion</h3>
+              {/* Discussion + activity rail — each section collapses to free space and the discussion
+                  scrolls internally, so the column never runs away with height. */}
+              <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto scroll-thin border-t border-border/60 bg-muted/30 px-4 py-4 lg:border-t-0">
+                <RailSection
+                  title="Discussion"
+                  open={discussionOpen}
+                  onToggle={() => setDiscussionOpen((v) => !v)}
+                  badge={
+                    detail.input ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-600">
+                        <span className="size-1.5 rounded-full bg-amber-500" /> Waiting for you
+                      </span>
+                    ) : (
+                      <AgentLiveStatus task={task} runs={detail.runs} compact />
+                    )
+                  }
+                >
                   <CommentThread taskId={task.id} resolveActor={resolveActor} onPosted={refresh} />
-                </div>
-                <div>
-                  <h3 className="mb-4 flex items-center gap-2 text-[12.5px] font-semibold text-foreground">
-                    Activity
-                    <span className="rounded-full bg-card px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
-                      {detail.events.length}
-                    </span>
-                  </h3>
+                </RailSection>
+
+                <RailSection
+                  title="Activity"
+                  count={detail.events.length}
+                  open={activityOpen}
+                  onToggle={() => setActivityOpen((v) => !v)}
+                >
                   <ActivityFeed events={detail.events} resolveActor={resolveActor} />
-                </div>
+                </RailSection>
               </aside>
             </div>
           </div>
         )}
     </div>
+  );
+}
+
+// A collapsible rail section (Discussion / Activity). The header stays put; the body toggles so the
+// user can fold either away to free vertical space. `badge` carries a live status chip (agent running,
+// waiting for input) on the right.
+function RailSection({
+  title,
+  count,
+  badge,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  count?: number;
+  badge?: ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/50">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none"
+      >
+        <ChevronDown
+          className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !open && "-rotate-90")}
+        />
+        <h3 className="text-[12.5px] font-semibold text-foreground">{title}</h3>
+        {count != null && (
+          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+            {count}
+          </span>
+        )}
+        {badge && <span className="ml-auto min-w-0 truncate">{badge}</span>}
+      </button>
+      {open && <div className="border-t border-border/50 px-3 py-3">{children}</div>}
+    </section>
   );
 }
