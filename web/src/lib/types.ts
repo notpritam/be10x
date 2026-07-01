@@ -41,6 +41,19 @@ export interface Project {
 /** Per-task isolation: a fresh worktree (default) or work in the repo root directly. */
 export type Isolation = "worktree" | "branch";
 
+/** A directory on the server, for the "add a repo" folder picker. */
+export interface FsEntry {
+  name: string;
+  path: string;
+  isRepo: boolean;
+}
+export interface FsListing {
+  path: string;
+  parent: string | null;
+  isRepo: boolean;
+  entries: FsEntry[];
+}
+
 export type TeamRole = "owner" | "admin" | "member" | "viewer";
 
 export interface Member {

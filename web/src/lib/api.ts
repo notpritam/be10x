@@ -3,6 +3,7 @@
 import type {
   AgentConfig,
   Comment,
+  FsListing,
   InputRequest,
   Isolation,
   Member,
@@ -131,6 +132,9 @@ export const api = {
   listProjects: () => request<{ projects: Project[] }>("/api/projects"),
   /** Register a git repo on the server by absolute path (writes its .be10x/mcp.json). */
   addProject: (path: string) => post<{ project: Project }>("/api/projects", { path }),
+  /** Browse the server's directories for the folder picker (defaults to the server user's home). */
+  browseDirs: (path?: string) =>
+    request<FsListing>(`/api/fs/dirs${path ? `?path=${encodeURIComponent(path)}` : ""}`),
 
   // Tasks
   listTasks: (filter?: TaskFilter) =>

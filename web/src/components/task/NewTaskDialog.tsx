@@ -1,12 +1,13 @@
 // ABOUTME: Create a task — type, scope (derived from the current view), title, and the summary/symptom
 // that satisfies the type's required content field. New tasks land in backlog (backend rule).
 import { useEffect, useState, type ReactNode } from "react";
-import { Check, Code2, GitBranch, Lightbulb, Loader2, TreePine } from "lucide-react";
+import { Check, Code2, FolderPlus, GitBranch, Lightbulb, Loader2, TreePine } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "@/state/app-store";
 import { api, errorMessage } from "@/lib/api";
 import type { Isolation, Project, Severity, TaskType } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { DirectoryPicker } from "./DirectoryPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,27 +45,14 @@ export function NewTaskDialog({
   const [severity, setSeverity] = useState<Severity>("medium");
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<string>("");
-  const [repoPath, setRepoPath] = useState("");
-  const [addingRepo, setAddingRepo] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [isolation, setIsolation] = useState<Isolation>("worktree");
   const [startNow, setStartNow] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  async function addRepo() {
-    const path = repoPath.trim();
-    if (!path || addingRepo) return;
-    setAddingRepo(true);
-    try {
-      const { project } = await api.addProject(path);
-      setProjects((prev) => [...prev.filter((p) => p.id !== project.id), project]);
-      setProjectId(project.id);
-      setRepoPath("");
-      toast.success(`Added ${project.name}.`);
-    } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setAddingRepo(false);
-    }
+  function onRepoAdded(project: Project) {
+    setProjects((prev) => [...prev.filter((p) => p.id !== project.id), project]);
+    setProjectId(project.id);
   }
 
   const scope =
@@ -123,6 +111,7 @@ export function NewTaskDialog({
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
@@ -228,31 +217,13 @@ export function NewTaskDialog({
                 ))}
               </SelectContent>
             </Select>
-            <div className="flex items-center gap-2">
-              <Input
-                value={repoPath}
-                onChange={(e) => setRepoPath(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void addRepo();
-                  }
-                }}
-                placeholder="/path/to/a/git/repo — add any repo"
-                className="h-9 bg-background font-mono text-[12px]"
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={addingRepo || !repoPath.trim()}
-                onClick={() => void addRepo()}
-              >
-                {addingRepo ? "Adding…" : "Add"}
+            <div>
+              <Button type="button" size="sm" variant="outline" onClick={() => setPickerOpen(true)}>
+                <FolderPlus className="size-3.5" /> Add a repository…
               </Button>
             </div>
             <p className="text-[11.5px] text-muted-foreground">
-              Point at any git repo on the server to add it — no terminal needed. The agent works this task there.
+              Browse to any git repo on your machine — no terminal, no path typing. The agent works this task there.
             </p>
           </div>
 
@@ -313,6 +284,8 @@ export function NewTaskDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <DirectoryPicker open={pickerOpen} onOpenChange={setPickerOpen} onAdded={onRepoAdded} />
+    </>
   );
 }
 

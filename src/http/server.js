@@ -1,7 +1,7 @@
 // ABOUTME: Zero-dependency HTTP front door — REST over the core + serves the buildless web board.
 // ABOUTME: Session-cookie auth for humans. createApp(db) returns an http.Server; startServer runs it.
 import http from 'node:http';
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { dirname, join, normalize, resolve, basename } from 'node:path';
@@ -142,6 +142,25 @@ const ROUTES = [
     send(res, 200, { tasks: listTasks(db, { scope: q.get('scope') || undefined, teamId: q.get('teamId') || undefined, status: q.get('status') || undefined }) });
   }],
   ['GET', '/api/projects', true, async ({ db, res }) => send(res, 200, { projects: listProjects(db) })],
+  // Server-side directory browser for the "add a repo" folder picker (the board runs on the user's
+  // machine, so browsing the server FS = browsing their folders). Lists subdirectories only, flags git repos.
+  ['GET', '/api/fs/dirs', true, async ({ req, res }) => {
+    const q = new URL(req.url, 'http://x').searchParams;
+    let p = q.get('path') || homedir();
+    if (p.startsWith('~')) p = homedir() + p.slice(1);
+    p = resolve(p);
+    let entries;
+    try {
+      entries = readdirSync(p, { withFileTypes: true })
+        .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
+        .map((d) => ({ name: d.name, path: join(p, d.name), isRepo: existsSync(join(p, d.name, '.git')) }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      throw new Error('NO_SUCH_PATH');
+    }
+    const parent = dirname(p);
+    send(res, 200, { path: p, parent: parent !== p ? parent : null, isRepo: existsSync(join(p, '.git')), entries });
+  }],
   ['POST', '/api/projects', true, async ({ db, res, body, user }) => {
     // Register a git repo on this machine from the dashboard (the board's answer to `be10x link`):
     // validate the path, register it, and write its .be10x/mcp.json so the spawned agent gets gfa_* tools.
