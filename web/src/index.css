@@ -56,7 +56,7 @@
   --radius: 0.5rem;
 
   /* Cool, near-neutral grays. Panels are white cards floating on a light-gray canvas. */
-  --background: oklch(0.919 0.003 264); /* the canvas everything floats on */
+  --background: oklch(0.941 0.003 264); /* content canvas — light; cards (white) float on it */
   --foreground: oklch(0.242 0.006 264); /* near-black, faintly cool */
   --card: oklch(0.998 0 0); /* white surfaces */
   --card-foreground: oklch(0.242 0.006 264);
@@ -81,12 +81,12 @@
   --input: oklch(0.9 0.005 264);
   --ring: oklch(0.30 0.008 264);
 
-  /* Sidebar rail — a light-gray panel between the canvas and the white cards */
-  --sidebar: oklch(0.955 0.003 264);
+  /* Sidebar rail — distinctly DARKER than the content canvas so the two surfaces read apart */
+  --sidebar: oklch(0.906 0.004 264);
   --sidebar-foreground: oklch(0.242 0.006 264);
   --sidebar-primary: oklch(0.30 0.008 264);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.934 0.004 264);
+  --sidebar-accent: oklch(0.866 0.006 264);
   --sidebar-accent-foreground: oklch(0.28 0.007 264);
   --sidebar-border: oklch(0.91 0.004 264);
   --sidebar-ring: oklch(0.30 0.008 264);

@@ -97,12 +97,13 @@ export function AgentLiveStatus({
         <span className={cn("relative inline-flex size-2 rounded-full", DOT[tone])} />
       </span>
       {label}
-      {run?.model && (
+      {/* Compact (panel header) shows just the dot + label — the model + time would eat the width. */}
+      {!compact && run?.model && (
         <span className="rounded bg-background/60 px-1.5 py-px font-mono text-[10px] font-medium opacity-80">
           {run.model}
         </span>
       )}
-      {updatedAt && <span className="font-normal opacity-70">· {ago(staleMs)}</span>}
+      {!compact && updatedAt && <span className="font-normal opacity-70">· {ago(staleMs)}</span>}
     </span>
   );
 

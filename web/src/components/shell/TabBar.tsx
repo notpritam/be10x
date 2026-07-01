@@ -1,10 +1,12 @@
 // ABOUTME: Workspace tab bar atop the main content. A leading "context" button = the current view
 // (Personal / a team / …) that returns to the board and reads as selected when no task is open, then
 // the open task tabs (title + a status dot, closable). Browser-style; the active tab is a raised card.
-import { X } from "lucide-react";
+import { LayoutGrid, Plus, Rows3, X, type LucideIcon } from "lucide-react";
 import { useApp, type View } from "@/state/app-store";
 import { STATUS_META } from "@/lib/lifecycle";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { type BoardTab } from "./Topbar";
 
 function viewLabel(view: View): string {
   switch (view.kind) {
@@ -23,7 +25,17 @@ function viewLabel(view: View): string {
   }
 }
 
-export function TabBar({ onNavigate }: { onNavigate?: () => void }) {
+export function TabBar({
+  onNavigate,
+  tab,
+  onTab,
+  onNewTask,
+}: {
+  onNavigate?: () => void;
+  tab: BoardTab;
+  onTab: (tab: BoardTab) => void;
+  onNewTask: () => void;
+}) {
   const { view, openTabs, selectedTaskId, selectTask, closeTab, allTasks } = useApp();
   const onBoard = selectedTaskId === null;
 
@@ -89,6 +101,45 @@ export function TabBar({ onNavigate }: { onNavigate?: () => void }) {
           );
         })}
       </div>
+
+      {/* Board controls live on the tab line (no separate header). Only on the board. */}
+      {onBoard && (
+        <div className="flex shrink-0 items-center gap-2 pl-2">
+          <div className="inline-flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+            <SegBtn active={tab === "board"} onClick={() => onTab("board")} icon={LayoutGrid} label="Board" />
+            <SegBtn active={tab === "list"} onClick={() => onTab("list")} icon={Rows3} label="List" />
+          </div>
+          <Button size="sm" onClick={onNewTask} className="h-8 gap-1.5">
+            <Plus className="size-4" /> New task
+          </Button>
+        </div>
+      )}
     </div>
+  );
+}
+
+function SegBtn({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: LucideIcon;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
+        active ? "bg-card text-foreground shadow-card" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Icon className="size-4" /> {label}
+    </button>
   );
 }
