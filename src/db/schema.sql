@@ -39,3 +39,35 @@ CREATE TABLE IF NOT EXISTS memberships (
   created_at INTEGER NOT NULL,
   UNIQUE (team_id, user_id)
 );
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id            TEXT PRIMARY KEY,
+  human_id      TEXT NOT NULL UNIQUE,
+  type          TEXT NOT NULL,
+  scope         TEXT NOT NULL CHECK (scope IN ('personal','project','team')),
+  team_id       TEXT REFERENCES teams(id) ON DELETE CASCADE,
+  project_id    TEXT,
+  owner_id      TEXT NOT NULL REFERENCES users(id),
+  assignee_id   TEXT REFERENCES users(id),
+  reviewer_id   TEXT REFERENCES users(id),
+  title         TEXT NOT NULL,
+  status        TEXT NOT NULL,
+  severity      TEXT NOT NULL DEFAULT 'medium',
+  content_json  TEXT NOT NULL DEFAULT '{}',
+  plan_json     TEXT,
+  research_json TEXT,
+  rating_json   TEXT,
+  refs_json     TEXT,
+  retry_count   INTEGER NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS task_events (
+  id           TEXT PRIMARY KEY,
+  task_id      TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  actor        TEXT NOT NULL,
+  kind         TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at   INTEGER NOT NULL
+);
