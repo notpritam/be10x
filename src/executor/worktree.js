@@ -145,3 +145,28 @@ export function removeWorktree(repoRoot, wtPath) {
   tryGit(repoRoot, ['worktree', 'remove', '--force', wtPath]);
   tryGit(repoRoot, ['worktree', 'prune']);
 }
+
+// What the agent actually changed in `repoDir` on top of `baseRef`: the commits it made and a diff
+// shortstat. Tolerant — returns null if there's nothing (plan-only runs) or git can't answer.
+export function collectGitMeta(repoDir, baseRef) {
+  try {
+    const base = baseRef || 'HEAD';
+    const log = runGit(repoDir, ['log', '--format=%h\t%s', `${base}..HEAD`]);
+    const commits = log
+      ? log.split('\n').map((line) => {
+          const tab = line.indexOf('\t');
+          return tab === -1 ? { sha: line, subject: '' } : { sha: line.slice(0, tab), subject: line.slice(tab + 1) };
+        })
+      : [];
+    let stat = '';
+    try {
+      stat = runGit(repoDir, ['diff', '--shortstat', base]);
+    } catch {
+      stat = '';
+    }
+    if (!commits.length && !stat) return null;
+    return { commits, stat };
+  } catch {
+    return null;
+  }
+}

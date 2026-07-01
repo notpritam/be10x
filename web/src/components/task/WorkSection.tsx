@@ -2,8 +2,13 @@
 // worktree, and the agent's submitted output refs (PR, commit, links). Makes the board self-sufficient
 // so you never open a terminal to see what happened.
 import type { ReactNode } from "react";
-import { Bot, GitBranch, Package } from "lucide-react";
+import { Bot, GitBranch, GitCommitHorizontal, Package } from "lucide-react";
 import type { Run, Task } from "@/lib/types";
+
+interface GitMeta {
+  commits?: { sha: string; subject: string }[];
+  stat?: string;
+}
 
 function isUrl(v: unknown): v is string {
   return typeof v === "string" && /^https?:\/\//.test(v);
@@ -38,6 +43,8 @@ export function WorkSection({ task, runs }: { task: Task; runs: Run[] }) {
 
   const tookS =
     run?.startedAt && run?.endedAt ? Math.max(1, Math.round((run.endedAt - run.startedAt) / 1000)) : null;
+  const git: GitMeta | null =
+    run?.result && typeof run.result === "object" ? ((run.result as { git?: GitMeta }).git ?? null) : null;
 
   return (
     <div className="space-y-3.5">
@@ -80,6 +87,25 @@ export function WorkSection({ task, runs }: { task: Task; runs: Run[] }) {
             </Row>
           )}
         </dl>
+      )}
+
+      {git && ((git.commits && git.commits.length > 0) || git.stat) && (
+        <div className="border-t border-border/50 pt-3">
+          <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
+            <GitCommitHorizontal className="size-3.5" /> Changes
+          </p>
+          {git.stat && <p className="mb-1.5 text-[12px] text-muted-foreground">{git.stat}</p>}
+          {git.commits && git.commits.length > 0 && (
+            <ul className="space-y-1">
+              {git.commits.map((c) => (
+                <li key={c.sha} className="flex gap-2 text-[12px]">
+                  <code className="shrink-0 font-mono text-[11px] text-primary">{c.sha}</code>
+                  <span className="min-w-0 truncate text-foreground/90">{c.subject}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {refs && Object.keys(refs).length > 0 && (

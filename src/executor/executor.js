@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { buildClaudeCommand, BE10X_SYSTEM_PROMPT, StreamAccumulator } from './claude-adapter.js';
-import { ensureWorktree as realEnsureWorktree, worktreeBranch } from './worktree.js';
+import { ensureWorktree as realEnsureWorktree, worktreeBranch, collectGitMeta } from './worktree.js';
 import { createRun, setRunSession, setRunModel, setRunPid, markRunning, finishRun, getLatestRunForTask } from './runs.js';
 import { recordProgress } from '../worker/worker.js';
 
@@ -230,6 +230,8 @@ export function makeClaudeExecutor(db, project, opts = {}) {
         if (settled) return;
         settled = true;
         cleanup(systemPromptPath);
+        // What the agent changed on its branch (commits + diff shortstat) — null on plan-only runs.
+        const git = collectGitMeta(wt.path, wt.baseRef);
         const summary = {
           runId: run.id,
           sessionId: acc.sessionId,
@@ -237,6 +239,7 @@ export function makeClaudeExecutor(db, project, opts = {}) {
           branch,
           mode,
           done: acc.done,
+          ...(git ? { git } : {}),
           ...extra,
         };
         if (ok && acc.done) {
