@@ -46,6 +46,19 @@ function viewFilter(view: View, userId: string): (task: Task) => boolean {
   }
 }
 
+// --- URL state -------------------------------------------------------------
+// The selected task + full-view flag live in the URL (/t/<id> and /t/<id>/full), so a refresh restores
+// the exact view and links are shareable. The server serves index.html for these paths (SPA fallback).
+function parseLocation(): { id: string | null; expanded: boolean } {
+  if (typeof window === "undefined") return { id: null, expanded: false };
+  const m = /^\/t\/([^/]+)(\/full)?\/?$/.exec(window.location.pathname);
+  return m ? { id: decodeURIComponent(m[1]), expanded: Boolean(m[2]) } : { id: null, expanded: false };
+}
+function urlForSelection(id: string | null, expanded: boolean): string {
+  if (!id) return "/";
+  return `/t/${encodeURIComponent(id)}${expanded ? "/full" : ""}`;
+}
+
 interface AppState {
   user: User;
   teams: Team[];
@@ -101,8 +114,8 @@ export function AppProvider({
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [view, setView] = useState<View>({ kind: "all" });
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() => parseLocation().id);
+  const [expanded, setExpanded] = useState<boolean>(() => parseLocation().expanded);
   const tasksRef = useRef<Task[]>([]);
   tasksRef.current = allTasks;
 
@@ -137,6 +150,23 @@ export function AppProvider({
     const t = setInterval(() => void reloadTasks(), 4000);
     return () => clearInterval(t);
   }, [reloadTasks]);
+
+  // Reflect the selected task + full-view flag in the URL (deep-linkable, refresh-safe, shareable), and
+  // respond to browser back/forward so navigation feels native.
+  useEffect(() => {
+    const url = urlForSelection(selectedTaskId, expanded);
+    if (window.location.pathname !== url) window.history.pushState(null, "", url);
+  }, [selectedTaskId, expanded]);
+
+  useEffect(() => {
+    const onPop = () => {
+      const loc = parseLocation();
+      setSelectedTaskId(loc.id);
+      setExpanded(loc.expanded);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   const applyTask = useCallback((task: Task) => {
     setAllTasks((prev) => {
@@ -223,7 +253,7 @@ export function AppProvider({
   const resolveActor = useCallback(
     (actorId: string): string => {
       if (actorId === user.id) return user.displayName || "You";
-      if (actorId === "agent" || actorId === "worker") return "Agent";
+      if (actorId === "agent" || actorId === "worker" || actorId === "runner") return "Agent";
       if (actorId === "system") return "System";
       return "Teammate";
     },

@@ -86,8 +86,14 @@ function teamsForUser(db, userId) {
 function serveStatic(req, res) {
   let rel = new URL(req.url, 'http://x').pathname;
   if (rel === '/') rel = '/index.html';
-  const fp = normalize(join(PUBLIC, rel));
-  if (!fp.startsWith(PUBLIC) || !existsSync(fp)) { res.writeHead(404); return res.end('not found'); }
+  let fp = normalize(join(PUBLIC, rel));
+  if (!fp.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
+  if (!existsSync(fp)) {
+    // SPA fallback: client-side routes (no file extension, e.g. /t/<id>) get index.html so deep links and
+    // refreshes work; a missing path that has an extension is a real 404.
+    if (rel.includes('.')) { res.writeHead(404); return res.end('not found'); }
+    fp = join(PUBLIC, 'index.html');
+  }
   const ext = fp.slice(fp.lastIndexOf('.'));
   res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': 'no-store' });
   res.end(readFileSync(fp));
