@@ -103,6 +103,9 @@ export function DeepDivePanel({
               <div className="min-h-0 flex-1 space-y-6 overflow-y-auto scroll-thin px-8 py-7">
                 <LifecycleStrip status={task.status} />
 
+                {/* Plan review sits here, in place — not pinned to the foot. */}
+                {task.status === "plan_review" && <ReviewActions taskId={task.id} onDone={refresh} />}
+
                 <RequestReviewControl task={task} onDone={refresh} />
 
                 <AgentActions task={task} onDone={refresh} />
@@ -171,8 +174,8 @@ export function DeepDivePanel({
                 </Section>
               </div>
 
-              {/* Input / interaction needed — floats at the foot, collapsible, never covers the page. */}
-              {(detail.input || task.status === "plan_review") && (
+              {/* The agent's open question floats at the foot, collapsible — never covers the page. */}
+              {detail.input && (
                 <div className="shrink-0 border-t border-border/60 bg-card/90 backdrop-blur-sm">
                   <button
                     type="button"
@@ -181,11 +184,9 @@ export function DeepDivePanel({
                   >
                     <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11.5px] font-semibold text-amber-600">
                       <span className="size-1.5 rounded-full bg-amber-500" />
-                      {detail.input ? "Input needed" : "Plan review"}
+                      Input needed
                     </span>
-                    <span className="truncate text-[12px] text-muted-foreground">
-                      {detail.input ? "The agent asked you a question." : "Approve or request changes to continue."}
-                    </span>
+                    <span className="truncate text-[12px] text-muted-foreground">The agent asked you a question.</span>
                     <ChevronUp
                       className={cn(
                         "ml-auto size-4 shrink-0 text-muted-foreground transition-transform",
@@ -195,8 +196,7 @@ export function DeepDivePanel({
                   </button>
                   {interactionBarOpen && (
                     <div className="max-h-[45vh] space-y-4 overflow-y-auto scroll-thin px-6 pb-4">
-                      {detail.input && <InputRequestPanel request={detail.input} onAnswered={refresh} />}
-                      {task.status === "plan_review" && <ReviewActions taskId={task.id} onDone={refresh} />}
+                      <InputRequestPanel request={detail.input} onAnswered={refresh} />
                     </div>
                   )}
                 </div>
