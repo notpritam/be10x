@@ -49,14 +49,28 @@ function viewFilter(view: View, userId: string): (task: Task) => boolean {
 // --- URL state -------------------------------------------------------------
 // The selected task + full-view flag live in the URL (/t/<id> and /t/<id>/full), so a refresh restores
 // the exact view and links are shareable. The server serves index.html for these paths (SPA fallback).
-function parseLocation(): { id: string | null; expanded: boolean } {
-  if (typeof window === "undefined") return { id: null, expanded: false };
+function parseLocation(): { id: string | null; expanded: boolean; viewKey: string | null } {
+  if (typeof window === "undefined") return { id: null, expanded: false, viewKey: null };
   const m = /^\/t\/([^/]+)(\/full)?\/?$/.exec(window.location.pathname);
-  return m ? { id: decodeURIComponent(m[1]), expanded: Boolean(m[2]) } : { id: null, expanded: false };
+  const viewKey = new URLSearchParams(window.location.search).get("v");
+  return { id: m ? decodeURIComponent(m[1]) : null, expanded: m ? Boolean(m[2]) : false, viewKey };
 }
-function urlForSelection(id: string | null, expanded: boolean): string {
-  if (!id) return "/";
-  return `/t/${encodeURIComponent(id)}${expanded ? "/full" : ""}`;
+// The active board view rides in the URL as ?v=<viewKey> (omitted for the default "all"), so a refresh
+// or shared link restores the same view. The selected task still lives in the path (/t/<id>).
+function urlFor(id: string | null, expanded: boolean, view: View): string {
+  const path = id ? `/t/${encodeURIComponent(id)}${expanded ? "/full" : ""}` : "/";
+  const key = viewKey(view);
+  return key === "all" ? path : `${path}?v=${encodeURIComponent(key)}`;
+}
+function paramToView(key: string | null, teams: Team[]): View {
+  if (key === "personal") return { kind: "personal" };
+  if (key === "needs_input") return { kind: "needs_input" };
+  if (key === "review_queue") return { kind: "review_queue" };
+  if (key && key.startsWith("team:")) {
+    const teamId = key.slice(5);
+    return { kind: "team", teamId, name: teams.find((t) => t.id === teamId)?.name ?? "Team" };
+  }
+  return { kind: "all" };
 }
 
 // --- open tabs (Chrome-like workspace) -------------------------------------
@@ -136,7 +150,7 @@ export function AppProvider({
   const [teams, setTeams] = useState<Team[]>([]);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
-  const [view, setView] = useState<View>({ kind: "all" });
+  const [view, setView] = useState<View>(() => paramToView(parseLocation().viewKey, []));
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() => parseLocation().id);
   const [expanded, setExpanded] = useState<boolean>(() => parseLocation().expanded);
   const [openTabs, setOpenTabs] = useState<TabRef[]>(() => loadTabs());
@@ -144,6 +158,8 @@ export function AppProvider({
   tasksRef.current = allTasks;
   const openTabsRef = useRef<TabRef[]>([]);
   openTabsRef.current = openTabs;
+  const teamsRef = useRef<Team[]>([]);
+  teamsRef.current = teams;
 
   const reloadTeams = useCallback(async () => {
     try {
@@ -180,19 +196,28 @@ export function AppProvider({
   // Reflect the selected task + full-view flag in the URL (deep-linkable, refresh-safe, shareable), and
   // respond to browser back/forward so navigation feels native.
   useEffect(() => {
-    const url = urlForSelection(selectedTaskId, expanded);
-    if (window.location.pathname !== url) window.history.pushState(null, "", url);
-  }, [selectedTaskId, expanded]);
+    const url = urlFor(selectedTaskId, expanded, view);
+    const current = window.location.pathname + window.location.search;
+    if (current !== url) window.history.pushState(null, "", url);
+  }, [selectedTaskId, expanded, view]);
 
   useEffect(() => {
     const onPop = () => {
       const loc = parseLocation();
       setSelectedTaskId(loc.id);
       setExpanded(loc.expanded);
+      setView(paramToView(loc.viewKey, teamsRef.current));
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
+
+  // A team view restored from the URL before teams loaded shows a placeholder name — fill it once loaded.
+  useEffect(() => {
+    setView((v) =>
+      v.kind === "team" ? { ...v, name: teams.find((t) => t.id === v.teamId)?.name ?? v.name } : v,
+    );
+  }, [teams]);
 
   // Persist the open tabs so a refresh restores the whole workspace, not just the active task.
   useEffect(() => {
