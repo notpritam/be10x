@@ -11,7 +11,7 @@ export function TabBar({ onNewTask }: { onNewTask: () => void }) {
   const onBoard = selectedTaskId === null;
 
   return (
-    <div className="flex h-[52px] shrink-0 items-center gap-1.5 border-b border-border/60 bg-background px-3">
+    <div className="flex h-[56px] shrink-0 items-center gap-2 border-b border-border/60 bg-background px-3.5">
       {/* App icon → board/home */}
       <button
         type="button"

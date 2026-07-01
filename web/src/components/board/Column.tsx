@@ -39,7 +39,7 @@ function DraggableCard({
         }
       }}
       className={cn(
-        "card-rise cursor-grab rounded-[12px] outline-none transition-opacity active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "card-rise cursor-grab rounded-[13px] outline-none transition-opacity active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         isDragging && "opacity-40",
       )}
       style={{ "--stagger": Math.min(index, 12) } as CSSProperties}

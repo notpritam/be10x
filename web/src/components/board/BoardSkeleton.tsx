@@ -13,7 +13,7 @@ export function BoardSkeleton() {
           </div>
           <div className="flex flex-col gap-2.5 px-1 pt-1">
             {Array.from({ length: (ci % 3) + 1 }).map((_, i) => (
-              <div key={i} className="rounded-[12px] border border-border/60 bg-card p-3.5 shadow-card">
+              <div key={i} className="rounded-[13px] border border-border/60 bg-card p-3.5 shadow-card">
                 <div className="mb-2 flex items-center justify-between">
                   <Skeleton className="h-3 w-12" />
                   <Skeleton className="h-4 w-14 rounded-full" />
