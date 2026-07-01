@@ -11,6 +11,8 @@ import {
   updateContent,
   transition,
   retryTask,
+  rateTask,
+  setRefs,
 } from '../src/tasks/tasks.js';
 import { listEvents } from '../src/tasks/events.js';
 
@@ -94,4 +96,24 @@ test('retryTask increments the retry counter', () => {
   const t = createTask(db, { type: 'general', scope: 'personal', title: 'Idea', ownerId: uid, content: { summary: 's' } });
   assert.equal(retryTask(db, t.id, uid).retryCount, 1);
   assert.equal(retryTask(db, t.id, uid).retryCount, 2);
+});
+
+test('rateTask and setRefs attach data and log events', () => {
+  const db = openDb(':memory:');
+  const uid = owner(db);
+  const t = createTask(db, { type: 'code-issue', scope: 'personal', title: 'Bug', ownerId: uid, content: { symptom: 'x' } });
+  assert.deepEqual(rateTask(db, t.id, { score: 0.9 }, 'agent').rating, { score: 0.9 });
+  assert.deepEqual(setRefs(db, t.id, { pr: 'http://x/1' }, 'agent').refs, { pr: 'http://x/1' });
+});
+
+test('DoD: a task walks the full legal lifecycle and records every event', () => {
+  const db = openDb(':memory:');
+  const uid = owner(db);
+  const t = createTask(db, { type: 'code-issue', scope: 'personal', title: 'Bug', ownerId: uid, content: { symptom: 'x' } });
+  const steps = ['researching', 'plan_review', 'ready_to_work', 'in_progress', 'needs_input', 'in_progress', 'verifying', 'done'];
+  for (const s of steps) transition(db, t.id, s, 'agent');
+  assert.equal(getTask(db, t.id).status, 'done');
+  const statusEvents = listEvents(db, t.id).filter((e) => e.kind === 'status');
+  assert.equal(statusEvents.length, steps.length);
+  assert.equal(statusEvents.at(-1).payload.to, 'done');
 });

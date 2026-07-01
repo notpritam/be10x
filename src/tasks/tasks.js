@@ -103,3 +103,15 @@ export function retryTask(db, id, actor) {
   appendEvent(db, id, actor, 'retry', { retryCount: n });
   return getTask(db, id);
 }
+
+export function rateTask(db, id, rating, actor) {
+  db.prepare('UPDATE tasks SET rating_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(rating), Date.now(), id);
+  appendEvent(db, id, actor, 'rating', { rating });
+  return getTask(db, id);
+}
+
+export function setRefs(db, id, refs, actor) {
+  db.prepare('UPDATE tasks SET refs_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(refs), Date.now(), id);
+  appendEvent(db, id, actor, 'ship', { refs });
+  return getTask(db, id);
+}
