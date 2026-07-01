@@ -4,3 +4,8 @@ node_modules/
 *.log
 *.tmp
 .render-check*.png
+.board*.png
+reference/
+
+# TS build cache
+*.tsbuildinfo

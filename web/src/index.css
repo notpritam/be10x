@@ -1,0 +1,288 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* ------------------------------------------------------------------ *
+ * be10x design tokens
+ * Premium, light, calm. Warm-neutral greige base + ONE warm accent
+ * (orange #e8620d). Status colors are multi-hued because they are data;
+ * every interactive / brand surface uses the single orange. Shadows are
+ * warm-tinted, never pure black. Light theme is locked and intentional.
+ * ------------------------------------------------------------------ */
+
+@theme inline {
+  --font-sans: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  color-scheme: light;
+  --radius: 0.75rem;
+
+  /* Warm-neutral greige neutrals (hue ~76, very low chroma) */
+  --background: oklch(0.973 0.006 78);
+  --foreground: oklch(0.262 0.012 62);
+  --card: oklch(0.998 0.0015 80);
+  --card-foreground: oklch(0.262 0.012 62);
+  --popover: oklch(0.998 0.0015 80);
+  --popover-foreground: oklch(0.262 0.012 62);
+
+  /* Single brand accent — warm orange */
+  --primary: #e8620d;
+  --primary-foreground: oklch(0.99 0.012 82);
+
+  --secondary: oklch(0.955 0.007 76);
+  --secondary-foreground: oklch(0.32 0.012 62);
+  --muted: oklch(0.957 0.006 76);
+  --muted-foreground: oklch(0.485 0.017 62);
+  --accent: oklch(0.947 0.011 72);
+  --accent-foreground: oklch(0.30 0.013 62);
+  --destructive: oklch(0.585 0.203 26);
+  --destructive-foreground: oklch(0.99 0.012 82);
+
+  --border: oklch(0.912 0.008 74);
+  --input: oklch(0.9 0.01 74);
+  --ring: #e8620d;
+
+  /* Sidebar rail — a calm surface a hair off the canvas */
+  --sidebar: oklch(0.967 0.008 77);
+  --sidebar-foreground: oklch(0.262 0.012 62);
+  --sidebar-primary: #e8620d;
+  --sidebar-primary-foreground: oklch(0.99 0.012 82);
+  --sidebar-accent: oklch(0.936 0.013 70);
+  --sidebar-accent-foreground: oklch(0.28 0.013 62);
+  --sidebar-border: oklch(0.914 0.008 74);
+  --sidebar-ring: #e8620d;
+
+  /* Status hues — one per board column. Data, so multi-hued. */
+  --status-backlog: #9aa0a6;
+  --status-researching: #6366f1;
+  --status-plan_review: #8b5cf6;
+  --status-ready_to_work: #0ea5e9;
+  --status-in_progress: #2563eb;
+  --status-needs_input: #f59e0b;
+  --status-verifying: #14b8a6;
+  --status-done: #1fb865;
+  --status-blocked: #ef4444;
+  --status-not_a_bug: #a1a1aa;
+  --status-wont_fix: #a1a1aa;
+
+  /* Warm-tinted shadows (brown tint, never pure black) */
+  --shadow-card: 0 1px 2px rgba(72, 52, 36, 0.05), 0 2px 6px rgba(72, 52, 36, 0.045);
+  --shadow-card-hover: 0 2px 4px rgba(72, 52, 36, 0.06), 0 12px 26px rgba(72, 52, 36, 0.11);
+  --shadow-pop: 0 6px 24px rgba(72, 52, 36, 0.1), 0 1px 2px rgba(72, 52, 36, 0.05);
+  --shadow-panel: 0 12px 48px rgba(60, 42, 28, 0.16);
+  --shadow-drag: 0 18px 40px rgba(60, 42, 28, 0.22), 0 2px 6px rgba(60, 42, 28, 0.12);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv11", "ss01";
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+    letter-spacing: -0.014em;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 22%, transparent);
+  }
+  a,
+  button,
+  [role="button"],
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Utilities
+ * ------------------------------------------------------------------ */
+@layer utilities {
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+  .shadow-card-hover {
+    box-shadow: var(--shadow-card-hover);
+  }
+  .shadow-pop {
+    box-shadow: var(--shadow-pop);
+  }
+  .shadow-panel {
+    box-shadow: var(--shadow-panel);
+  }
+  .shadow-drag {
+    box-shadow: var(--shadow-drag);
+  }
+
+  /* Thin, warm, hover-revealed scrollbar */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--foreground) 16%, transparent) transparent;
+  }
+  .scroll-thin::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--foreground) 15%, transparent);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--foreground) 28%, transparent);
+    background-clip: padding-box;
+  }
+  .scroll-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Priority pills — soft, tinted, sentence-case (no shouty caps)
+ * ------------------------------------------------------------------ */
+.pill-priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 999px;
+  padding: 0.09rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0.005em;
+}
+.pill-high {
+  background: #fdeaee;
+  color: #b31e40;
+}
+.pill-medium {
+  background: #fbeedd;
+  color: #b1600f;
+}
+.pill-low {
+  background: #f0ede7;
+  color: #756c62;
+}
+
+/* Soft "needs input" badge */
+.badge-needs-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  border-radius: 999px;
+  padding: 0.08rem 0.46rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: #fdf0da;
+  color: #b16207;
+}
+
+/* ------------------------------------------------------------------ *
+ * Motion — staggered card mount, panel/feed enters.
+ * All gated on prefers-reduced-motion.
+ * ------------------------------------------------------------------ */
+@keyframes card-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.card-rise {
+  animation: card-rise 0.44s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--stagger, 0) * 42ms);
+}
+
+@keyframes feed-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.feed-in {
+  animation: feed-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--stagger, 0) * 45ms);
+}
+
+@keyframes soft-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.soft-fade {
+  animation: soft-fade 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-rise,
+  .feed-in,
+  .soft-fade {
+    animation: none;
+  }
+  * {
+    scroll-behavior: auto !important;
+  }
+}
