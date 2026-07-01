@@ -130,3 +130,12 @@ Everything needed to resume — `agent_session_id`, worktree, plan, comments, tr
 - Concurrency limits per laptop; single-repo vs multi-repo workspaces (vibe supports multi).
 - How much of vibe-kanban's full `ExecutorAction` chain to adopt vs a simpler state machine on our existing lifecycle.
 - Where the runtime lives: extend the current Node server, or a dedicated runner process the CLI manages.
+
+## 16. Future — board-native agent interaction (recorded, not scheduled)
+
+Interacting with a task's agent **from the board (the website itself)** should be richer than the free-text comment box:
+
+- **An action / command list** — a palette of structured things to tell the agent, rendered as one-click actions on the task ("re-plan", "narrow scope to X", "use approach B", "run the tests", "open a PR"). Each action enqueues a wake with a *typed* reason + context instead of the human writing prose every time.
+- **Invoke skills from the board** — surface the agent's skills / slash-commands (the Claude Code skill surface: `/security-review`, `/redesign`, project routines, …) as selectable actions on a task, so a human triggers a named workflow against the task's worktree without a terminal.
+
+Both reduce to the primitive this design already has: **a wake with a typed reason + context** (§7). The list / skills are just a richer *producer* of wakes than the comment box — the scheduler and executor need no change; only the board UI and the wake reason/context vocabulary grow. Recorded here so we don't lose it.
