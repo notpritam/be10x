@@ -33,7 +33,7 @@ export function TaskCardVisual({
   return (
     <div
       className={cn(
-        "select-none rounded-[13px] border border-border/70 bg-card p-3.5 text-left shadow-card transition-[transform,box-shadow,border-color] duration-200",
+        "select-none rounded-[12px] border border-border/70 bg-card p-3.5 text-left shadow-card transition-[transform,box-shadow,border-color] duration-200",
         dragging
           ? "rotate-[1.2deg] scale-[1.02] border-primary/30 shadow-drag"
           : "hover:-translate-y-0.5 hover:border-border hover:shadow-card-hover",

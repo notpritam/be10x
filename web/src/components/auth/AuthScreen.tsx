@@ -79,7 +79,7 @@ export function AuthScreen({ onAuthed }: { onAuthed: (user: User) => void }) {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border/70 bg-card p-6 shadow-pop">
+        <div className="rounded-xl border border-border/70 bg-card p-6 shadow-pop">
           <Tabs value={mode} onValueChange={(v) => { setMode(v as Mode); setError(null); }}>
             <TabsList className="mb-5 w-full bg-muted">
               <TabsTrigger value="signin" className="flex-1">

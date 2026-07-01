@@ -39,7 +39,7 @@ function DraggableCard({
         }
       }}
       className={cn(
-        "card-rise cursor-grab rounded-[13px] outline-none transition-opacity active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "card-rise cursor-grab rounded-[12px] outline-none transition-opacity active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         isDragging && "opacity-40",
       )}
       style={{ "--stagger": Math.min(index, 12) } as CSSProperties}
@@ -98,7 +98,7 @@ export function Column({
           {tasks.length === 0 && (
             <div
               className={cn(
-                "mt-1 rounded-[13px] border border-dashed border-border/70 py-8 text-center text-[12px] text-muted-foreground/60 transition-colors",
+                "mt-1 rounded-[12px] border border-dashed border-border/70 py-8 text-center text-[12px] text-muted-foreground/60 transition-colors",
                 isOver && "border-primary/40 text-primary/70",
               )}
             >
@@ -110,7 +110,7 @@ export function Column({
             <button
               type="button"
               onClick={onAddTask}
-              className="flex items-center gap-1.5 rounded-[13px] border border-dashed border-border/70 px-3 py-2.5 text-[12.5px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              className="flex items-center gap-1.5 rounded-[12px] border border-dashed border-border/70 px-3 py-2.5 text-[12.5px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >
               <Plus className="size-4" />
               Add task

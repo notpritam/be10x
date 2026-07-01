@@ -27,17 +27,17 @@ export function AppShell() {
   const activeTeam = view.kind === "team" ? { id: view.teamId, name: view.name } : null;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <TabBar onNewTask={() => setNewTaskOpen(true)} />
+    <div className="flex h-full overflow-hidden">
+      {/* Notion layout: full-height sidebar on the left, tab bar sitting atop the main content. */}
+      <Sidebar
+        collapsed={collapsed}
+        onToggleCollapse={() => setCollapsed((c) => !c)}
+        onConnectAgent={() => setConnectAgentOpen(true)}
+      />
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <Sidebar
-          collapsed={collapsed}
-          onToggleCollapse={() => setCollapsed((c) => !c)}
-          onConnectAgent={() => setConnectAgentOpen(true)}
-        />
-
-        <main className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <TabBar onNewTask={() => setNewTaskOpen(true)} />
+        <main className="flex min-h-0 flex-1 flex-col">
           {selectedTaskId ? (
             <DeepDivePanel
               inline

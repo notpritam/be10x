@@ -163,7 +163,7 @@ function EmptyBoard({
     return (
       <div className="grid h-full place-items-center px-6">
         <div className="w-full max-w-xl text-center soft-fade">
-          <BrandTile className="mx-auto mb-5 size-14 rounded-2xl [&_svg]:size-7" />
+          <BrandTile className="mx-auto mb-5 size-14 rounded-xl [&_svg]:size-7" />
           <h2 className="text-[23px] font-bold tracking-tight text-foreground">
             Welcome to be10x
           </h2>
@@ -209,7 +209,7 @@ function EmptyBoard({
   return (
     <div className="grid h-full place-items-center px-6">
       <div className="max-w-sm text-center soft-fade">
-        <div className="mx-auto mb-4 grid size-12 place-items-center rounded-2xl bg-accent text-muted-foreground">
+        <div className="mx-auto mb-4 grid size-12 place-items-center rounded-xl bg-accent text-muted-foreground">
           <svg width="22" height="22" viewBox="0 0 20 20" fill="none">
             <rect x="2.5" y="10.5" width="3.6" height="7" rx="1.4" fill="currentColor" />
             <rect x="8.2" y="6" width="3.6" height="11.5" rx="1.4" fill="currentColor" opacity="0.7" />
@@ -233,7 +233,7 @@ function EmptyBoard({
 
 function HintCard({ icon: Icon, title, body }: { icon: LucideIcon; title: string; body: string }) {
   return (
-    <div className="rounded-2xl border border-border/70 bg-card p-4 shadow-card">
+    <div className="rounded-xl border border-border/70 bg-card p-4 shadow-card">
       <span className="mb-2.5 grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
         <Icon className="size-4" />
       </span>
