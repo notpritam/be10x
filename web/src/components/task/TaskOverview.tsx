@@ -8,6 +8,7 @@ import type { Run, Task, TaskEvent } from "@/lib/types";
 import { STATUS_META } from "@/lib/lifecycle";
 import { cn, humanizeKey, relativeTime } from "@/lib/utils";
 import { PlanView } from "./PlanView";
+import { TaskChecklist } from "./TaskChecklist";
 import { DataValue } from "./detail-parts";
 import { describe } from "./ActivityFeed";
 
@@ -105,6 +106,9 @@ export function TaskOverview({
               <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-foreground/90">{prompt}</p>
             </section>
           )}
+
+          {/* The agent's implementation task list + status. */}
+          <TaskChecklist todos={task.agent?.todos} />
 
           {/* Plans over time */}
           <Section title={`Plans over time${versions.length ? ` · ${versions.length}` : ""}`}>

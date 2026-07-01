@@ -167,7 +167,7 @@ export const TOOLS = [
         state: { type: 'string', description: 'e.g. working | blocked | done (default working).' },
         step: { type: 'string', description: 'Short label for the current step.' },
         message: { type: 'string', description: 'Human-readable progress note.' },
-        todos: { type: 'array', items: {}, description: 'Checklist / plan items.' },
+        todos: { type: 'array', items: {}, description: 'Ordered implementation task list. Each item is { text, status } where status is "pending" | "in_progress" | "done" (plain strings also accepted). Keep it updated as steps complete so the human sees live progress.' },
         changes: { description: 'Free-form summary of files/diffs changed this step.' },
       },
       required: ['taskId'],

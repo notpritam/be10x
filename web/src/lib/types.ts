@@ -93,7 +93,8 @@ export interface AgentStatus {
   step?: string;
   /** The latest human-readable progress line — "what it's doing right now". */
   message?: string;
-  todos?: string[];
+  /** The agent's implementation task list — plain strings or { text, status } items. */
+  todos?: unknown[];
   changes?: unknown;
   /** Epoch ms of the last progress write — the "last update Xs ago" signal. */
   updatedAt?: number;

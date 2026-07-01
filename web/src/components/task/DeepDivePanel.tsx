@@ -12,6 +12,7 @@ import { LifecycleStrip } from "./LifecycleStrip";
 import { PlanView } from "./PlanView";
 import { PlanVersions } from "./PlanVersions";
 import { TaskOverview } from "./TaskOverview";
+import { TaskChecklist } from "./TaskChecklist";
 import { WorkSection } from "./WorkSection";
 import { InfoPanel } from "./InfoPanel";
 import { AgentLiveStatus } from "./AgentLiveStatus";
@@ -113,6 +114,9 @@ export function DeepDivePanel({
                 <AgentActions task={task} onDone={refresh} />
 
                 <MoveButtons status={task.status} onMove={move} />
+
+                {/* The agent's live implementation task list — what it's working on, what's done/left. */}
+                <TaskChecklist todos={task.agent?.todos} />
 
                 {/* Plan first — the artifact under review. Copy its content or expand it full-screen. */}
                 {task.plan != null && (

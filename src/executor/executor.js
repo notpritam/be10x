@@ -47,7 +47,7 @@ const MODE_DIRECTIVE = {
   input_answer:
     'CONTINUE. The human answered your question (below). Resume where you left off and keep the plan/progress current via the gfa_* tools.',
   execute:
-    'EXECUTE MODE. Your plan was approved. Implement it in this worktree, calling gfa_update_progress as you go, and commit on this branch. When done, call gfa_submit_output with any artifacts and move the task to verifying.',
+    'EXECUTE MODE. Your plan was approved. First break the work into an ordered task list and report it via gfa_update_progress with todos: [{ text, status }] (status "pending" | "in_progress" | "done"); then keep it updated as you go — mark the step you start "in_progress" and finished steps "done" — so the human sees live progress. Implement it in this worktree, committing on this branch. When done, call gfa_submit_output with any artifacts and move the task to verifying.',
   pick_up_now:
     'The human asked you to pick this up now. Read the current plan, comments, and status, and take the most useful next step using the gfa_* tools.',
   follow_up: 'Continue this task from its saved state using the gfa_* tools.',
