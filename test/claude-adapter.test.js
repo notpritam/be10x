@@ -26,7 +26,7 @@ function hasContiguous(arr, sub) {
 }
 
 test('CLAUDE_VERSION is the pinned version string', () => {
-  assert.equal(CLAUDE_VERSION, '2.1.119');
+  assert.equal(CLAUDE_VERSION, '2.1.197');
 });
 
 test('BE10X_SYSTEM_PROMPT encodes the be10x flow', () => {
@@ -49,6 +49,13 @@ test('buildClaudeCommand: always includes -p and --output-format stream-json', (
   const { args } = buildClaudeCommand({});
   assert.ok(args.includes('-p'));
   assert.ok(hasContiguous(args, ['--output-format', 'stream-json']));
+});
+
+test('buildClaudeCommand: defaults to --permission-mode bypassPermissions; omittable', () => {
+  assert.ok(hasContiguous(buildClaudeCommand({}).args, ['--permission-mode', 'bypassPermissions']));
+  const custom = buildClaudeCommand({ permissionMode: 'plan' });
+  assert.ok(hasContiguous(custom.args, ['--permission-mode', 'plan']));
+  assert.ok(!buildClaudeCommand({ permissionMode: '' }).args.includes('--permission-mode'));
 });
 
 test('buildClaudeCommand: fresh call with systemPromptPath adds the flag and NOT --resume', () => {

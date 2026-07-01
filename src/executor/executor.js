@@ -77,6 +77,7 @@ export function makeClaudeExecutor(db, project, opts = {}) {
     workerId = 'runner',
     resume = false,
     bin = process.env.GFA_CLAUDE_BIN || undefined,
+    permissionMode = process.env.GFA_PERMISSION_MODE || 'bypassPermissions',
     spawn = realSpawn,
     ensureWorktree = realEnsureWorktree,
   } = opts;
@@ -118,6 +119,7 @@ export function makeClaudeExecutor(db, project, opts = {}) {
       model,
       resumeSessionId,
       bin,
+      permissionMode,
     });
 
     recordProgress(

@@ -1,8 +1,9 @@
 // ABOUTME: Pure Claude Code CLI adapter for be10x — builds the npx command/args and parses the
 // ABOUTME: agent's stream-json output. No process spawning (that lives in a separate runner).
 
-// Pinned Claude Code CLI version. Kept as a const so bumping it is a one-line change.
-export const CLAUDE_VERSION = '2.1.119';
+// Pinned Claude Code CLI version for the npx fallback. Kept as a const so bumping it is a one-line
+// change. (Set GFA_CLAUDE_BIN to a locally-installed `claude` to skip npx entirely.)
+export const CLAUDE_VERSION = '2.1.197';
 
 // The be10x working agreement, delivered to the CLI via --append-system-prompt-file (the runner
 // writes this to a temp file and passes the path to buildClaudeCommand). A few sentences, on
@@ -25,10 +26,24 @@ export const BE10X_SYSTEM_PROMPT = [
 //   - worktree           → `--add-dir <worktree>` when set
 //   - bin                → run this executable directly (a locally-installed `claude`, or a test stub)
 //                          instead of downloading via npx; the npx package prefix is dropped, flags stay
-export function buildClaudeCommand({ worktree, systemPromptPath, model, resumeSessionId, bin } = {}) {
+//   - permissionMode     → `--permission-mode <mode>` (default 'bypassPermissions'): a headless agent
+//                          cannot answer interactive tool prompts, so it must run in a non-asking mode.
+//                          The per-task worktree is the safety boundary; pass '' to omit the flag.
+export function buildClaudeCommand({
+  worktree,
+  systemPromptPath,
+  model,
+  resumeSessionId,
+  bin,
+  permissionMode = 'bypassPermissions',
+} = {}) {
   const command = bin || 'npx';
   const args = bin ? [] : ['-y', '@anthropic-ai/claude-code@' + CLAUDE_VERSION];
   args.push('-p', '--verbose', '--output-format', 'stream-json');
+
+  if (permissionMode) {
+    args.push('--permission-mode', permissionMode);
+  }
 
   if (model) {
     args.push('--model', model);
