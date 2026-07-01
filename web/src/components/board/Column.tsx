@@ -65,8 +65,11 @@ export function Column({
 
   return (
     <section className="flex h-full w-[300px] shrink-0 flex-col">
-      {/* Column header */}
-      <div className="flex h-9 items-center gap-2 px-1.5">
+      {/* Column header — a soft status-colored band so the board reads with colour, not flat grey. */}
+      <div
+        className="mb-1.5 flex h-9 items-center gap-2 rounded-[10px] px-2.5"
+        style={{ background: `color-mix(in oklab, ${meta.color} 10%, transparent)` }}
+      >
         <span className="size-2.5 shrink-0 rounded-full" style={{ background: meta.color }} />
         <h2 className="text-[13px] font-semibold text-foreground">{meta.label}</h2>
         <span className="text-[12px] font-medium tabular-nums text-muted-foreground/70">
@@ -86,7 +89,7 @@ export function Column({
       <div
         ref={setNodeRef}
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto scroll-thin rounded-xl px-1 pb-14 pt-1 transition-colors",
+          "min-h-0 flex-1 overflow-y-auto scroll-thin rounded-[12px] px-1 pb-14 pt-1 transition-colors",
           isOver && "bg-primary/[0.045] ring-1 ring-inset ring-primary/20",
         )}
       >
