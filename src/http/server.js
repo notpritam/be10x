@@ -3,12 +3,13 @@
 import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, normalize } from 'node:path';
+import { dirname, join, normalize, resolve } from 'node:path';
 import { openDb } from '../db/db.js';
 import { createUser, getUserByEmail, getUserById } from '../auth/users.js';
 import { verifyPassword } from '../auth/passwords.js';
 import { createSession, getSession, deleteSession } from '../auth/sessions.js';
-import { createTeam } from '../teams/teams.js';
+import { createToken, listTokens, revokeToken, getTokenOwner } from '../auth/tokens.js';
+import { createTeam, deleteTeam } from '../teams/teams.js';
 import { listMembers, addMember } from '../teams/memberships.js';
 import { assertCan } from '../authz/authz.js';
 import { createTask, getTask, listTasks, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
@@ -18,6 +19,7 @@ import { requestInput, answerInput, getOpenInputRequest } from '../tasks/input_r
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(here, '..', '..', 'public');
+const MCP_SERVER_PATH = resolve(here, '..', 'mcp', 'server.js');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
 
 function send(res, status, obj) {
@@ -125,6 +127,11 @@ const ROUTES = [
     const m = addMember(db, { teamId: params.id, userId: invitee.id, role: body.role });
     send(res, 200, { member: { userId: m.userId, role: m.role } });
   }],
+  ['DELETE', '/api/teams/:id', true, async ({ db, res, params, user }) => {
+    assertCan(db, user.id, 'team.delete', { teamId: params.id });
+    deleteTeam(db, params.id);
+    send(res, 200, { ok: true });
+  }],
   ['GET', '/api/tasks', true, async ({ db, req, res }) => {
     const q = new URL(req.url, 'http://x').searchParams;
     send(res, 200, { tasks: listTasks(db, { scope: q.get('scope') || undefined, teamId: q.get('teamId') || undefined, status: q.get('status') || undefined }) });
@@ -150,6 +157,14 @@ const ROUTES = [
   ['POST', '/api/tasks/:id/input/request', true, async ({ db, res, params, body, user }) => send(res, 200, { inputRequest: requestInput(db, params.id, body.question, { choices: body.choices || null, allowCustom: body.allowCustom !== false }, user.id) })],
   ['GET', '/api/tasks/:id/input', true, async ({ db, res, params }) => send(res, 200, { inputRequest: getOpenInputRequest(db, params.id) })],
   ['POST', '/api/input/:reqId/answer', true, async ({ db, res, params, body, user }) => { answerInput(db, params.reqId, body.answer, user.id); send(res, 200, { ok: true }); }],
+  ['POST', '/api/tokens', true, async ({ db, res, body, user }) => send(res, 200, { token: createToken(db, user.id, body.name || 'agent') })],
+  ['GET', '/api/tokens', true, async ({ db, res, user }) => send(res, 200, { tokens: listTokens(db, user.id) })],
+  ['DELETE', '/api/tokens/:id', true, async ({ db, res, params, user }) => {
+    if (getTokenOwner(db, params.id) !== user.id) throw new Error('NOT_FOUND');
+    revokeToken(db, params.id);
+    send(res, 200, { ok: true });
+  }],
+  ['GET', '/api/agent-config', true, async ({ res }) => send(res, 200, { mcpServerPath: MCP_SERVER_PATH, dbPath: process.env.GFA_DB_PATH || './gfa.db' })],
 ];
 
 export function createApp(db) {

@@ -40,6 +40,12 @@ export function getTeam(db, id) {
   return db.prepare(`SELECT ${TEAM_COLS} FROM teams WHERE id = ?`).get(id) ?? null;
 }
 
+// Memberships and team-scoped tasks cascade via their ON DELETE CASCADE foreign keys.
+export function deleteTeam(db, id) {
+  const info = db.prepare('DELETE FROM teams WHERE id = ?').run(id);
+  return { ok: true, changes: info.changes };
+}
+
 export function getTeamBySlug(db, slug) {
   return db.prepare(`SELECT ${TEAM_COLS} FROM teams WHERE slug = ?`).get(slug) ?? null;
 }
