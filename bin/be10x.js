@@ -11,7 +11,7 @@ import { createToken } from '../src/auth/tokens.js';
 import { listTasks } from '../src/tasks/tasks.js';
 import { makeClaudeExecutor } from '../src/executor/executor.js';
 import { detectProjectKey, registerProject, getProjectByKey, listProjects } from '../src/projects/projects.js';
-import { workLoop } from '../src/runner/runner.js';
+import { wakeLoop } from '../src/runner/runner.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SIGNUP_HINT = 'Sign up on the board first: be10x serve → http://localhost:4610';
@@ -138,10 +138,10 @@ async function cmdWork(args) {
 
   // Real executor: spawn an ephemeral Claude session in the task's own worktree and stream it to the board.
   const claudeExecute = makeClaudeExecutor(db, project, { model: process.env.GFA_MODEL, workerId });
-  const execute = async (task) => {
+  const execute = async (task, runOpts = {}) => {
     const stamp = () => new Date().toISOString();
-    console.log('[' + stamp() + '] ' + task.humanId + ' (' + task.type + ') — ' + task.title);
-    const summary = await claudeExecute(task);
+    console.log('[' + stamp() + '] ' + task.humanId + ' (' + (runOpts.mode || 'plan') + ') — ' + task.title);
+    const summary = await claudeExecute(task, runOpts);
     console.log(
       '[' + stamp() + '] ' + task.humanId + ' ' + (summary.done ? 'done' : 'failed') +
         (summary.sessionId ? ' · session ' + summary.sessionId : '')
@@ -150,9 +150,10 @@ async function cmdWork(args) {
   };
 
   console.log(
-    'be10x runner watching ' + key + (once ? ' (single pass)' : ' every ' + intervalMs + 'ms — Ctrl-C to stop')
+    'be10x runner watching ' + key + ' for board wakes' +
+      (once ? ' (single pass)' : ' every ' + intervalMs + 'ms — Ctrl-C to stop')
   );
-  const loop = workLoop(db, { projectId: project.id, workerId, intervalMs, execute, once });
+  const loop = wakeLoop(db, { projectId: project.id, workerId, intervalMs, execute, once });
 
   if (once) {
     const result = await loop.done;
