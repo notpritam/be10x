@@ -134,7 +134,7 @@ export function DeepDivePanel({
 
               {/* Right panel — the active section; collapses to just the icon strip. */}
               {rightPanel && (
-                <aside className="flex w-[340px] shrink-0 flex-col overflow-hidden border-l border-border/60 bg-muted/20">
+                <aside className="flex w-[340px] shrink-0 flex-col overflow-hidden border-l border-border/60 bg-muted/70">
                   <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
                     <h3 className="text-[12.5px] font-semibold text-foreground">
                       {rightPanel === "discussion" ? "Discussion" : rightPanel === "activity" ? "Activity" : "Info"}
@@ -168,7 +168,7 @@ export function DeepDivePanel({
               )}
 
               {/* Icon rail — always on the far right; click an icon to open its panel, the active one to collapse. */}
-              <nav className="flex w-12 shrink-0 flex-col items-center gap-1 border-l border-border/60 bg-muted/30 py-2.5">
+              <nav className="flex w-12 shrink-0 flex-col items-center gap-1 border-l border-border/60 bg-muted/70 py-2.5">
                 <RailIcon
                   label="Discussion"
                   active={rightPanel === "discussion"}
