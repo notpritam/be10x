@@ -10,6 +10,7 @@ import { PriorityPill, TypeTag, UserAvatar } from "@/components/common/bits";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { LifecycleStrip } from "./LifecycleStrip";
 import { ReviewActions } from "./ReviewActions";
+import { RequestReviewControl } from "./RequestReviewControl";
 import { InputRequestPanel } from "./InputRequestPanel";
 import { ActivityFeed } from "./ActivityFeed";
 import type { useTaskDetail } from "./useTaskDetail";
@@ -123,6 +124,8 @@ export function DeepDivePanel({
                 {task.status === "plan_review" && (
                   <ReviewActions taskId={task.id} onDone={refresh} />
                 )}
+
+                <RequestReviewControl task={task} onDone={refresh} />
 
                 <MoveButtons status={task.status} onMove={move} />
 

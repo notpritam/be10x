@@ -29,6 +29,36 @@ export interface Team {
   slug: string;
 }
 
+export type TeamRole = "owner" | "admin" | "member" | "viewer";
+
+export interface Member {
+  userId: string;
+  displayName: string | null;
+  email: string | null;
+  role: TeamRole;
+}
+
+/** A personal access token as shown in a list — never carries the plaintext secret. */
+export interface TokenInfo {
+  id: string;
+  name: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+
+/** A freshly minted token — the plaintext `token` is returned exactly once. */
+export interface MintedToken {
+  id: string;
+  name: string;
+  token: string;
+}
+
+/** Paths the MCP config needs, from GET /api/agent-config. */
+export interface AgentConfig {
+  mcpServerPath: string;
+  dbPath: string;
+}
+
 export interface AgentStatus {
   name?: string;
   state?: string;

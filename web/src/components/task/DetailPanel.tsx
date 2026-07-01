@@ -9,6 +9,7 @@ import { PriorityPill, TypeTag, UserAvatar } from "@/components/common/bits";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { LifecycleStrip } from "./LifecycleStrip";
 import { ReviewActions } from "./ReviewActions";
+import { RequestReviewControl } from "./RequestReviewControl";
 import { InputRequestPanel } from "./InputRequestPanel";
 import { ActivityFeed } from "./ActivityFeed";
 import { DeepDivePanel } from "./DeepDivePanel";
@@ -138,6 +139,8 @@ function QuickView({
               )}
 
               {task.status === "plan_review" && <ReviewActions taskId={task.id} onDone={refresh} />}
+
+              <RequestReviewControl task={task} onDone={refresh} />
 
               <MoveButtons status={task.status} onMove={move} />
 

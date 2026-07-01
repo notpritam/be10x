@@ -3,9 +3,11 @@
 import { useState, type ReactNode } from "react";
 import {
   ChevronsLeft,
+  GitPullRequestArrow,
   Inbox,
   LogOut,
   MessageCircleQuestion,
+  Plug,
   Plus,
   UserRound,
 } from "lucide-react";
@@ -31,9 +33,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 export function Sidebar({
   collapsed,
   onToggleCollapse,
+  onConnectAgent,
 }: {
   collapsed: boolean;
   onToggleCollapse: () => void;
+  onConnectAgent: () => void;
 }) {
   const { user, teams, view, setView, counts, logout } = useApp();
   const activeKey = viewKey(view);
@@ -96,6 +100,15 @@ export function Sidebar({
           active={activeKey === "needs_input"}
           onClick={() => setView({ kind: "needs_input" })}
         />
+        <NavRow
+          collapsed={collapsed}
+          icon={<GitPullRequestArrow className="size-[17px]" />}
+          label="Review queue"
+          count={counts.reviewQueue}
+          accent={counts.reviewQueue > 0}
+          active={activeKey === "review_queue"}
+          onClick={() => setView({ kind: "review_queue" })}
+        />
 
         <div className="mt-4 flex items-center justify-between pr-1">
           <Section label="Teams" collapsed={collapsed} inline />
@@ -155,6 +168,11 @@ export function Sidebar({
             <DropdownMenuLabel className="truncate text-muted-foreground">
               {user.email}
             </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onConnectAgent}>
+              <Plug className="size-4" />
+              Connect an agent
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => void logout()}

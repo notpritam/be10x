@@ -1,6 +1,6 @@
 // ABOUTME: Top bar for the active view — title + task count, the Board/List segmented control,
 // and the primary "New task" action.
-import { LayoutGrid, Plus, Rows3, type LucideIcon } from "lucide-react";
+import { LayoutGrid, Plus, Rows3, Users, type LucideIcon } from "lucide-react";
 import { useApp, type View } from "@/state/app-store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,8 @@ function viewTitle(view: View): string {
       return "Personal";
     case "needs_input":
       return "Needs you";
+    case "review_queue":
+      return "Review queue";
     case "team":
       return view.name;
   }
@@ -24,6 +26,8 @@ function viewSubtitle(view: View): string {
   switch (view.kind) {
     case "needs_input":
       return "Tasks paused on a question for you";
+    case "review_queue":
+      return "Plans waiting on your review";
     case "personal":
       return "Your personal-scope tasks";
     case "team":
@@ -37,10 +41,12 @@ export function Topbar({
   tab,
   onTab,
   onNewTask,
+  onManageTeam,
 }: {
   tab: BoardTab;
   onTab: (tab: BoardTab) => void;
   onNewTask: () => void;
+  onManageTeam: () => void;
 }) {
   const { view, visibleTasks } = useApp();
   return (
@@ -58,6 +64,12 @@ export function Topbar({
       </div>
 
       <div className="ml-auto flex items-center gap-2.5">
+        {view.kind === "team" && (
+          <Button variant="outline" onClick={onManageTeam} className="h-9 text-[13px]">
+            <Users className="size-4" />
+            Manage team
+          </Button>
+        )}
         <div className="inline-flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
           <SegButton active={tab === "board"} onClick={() => onTab("board")} icon={LayoutGrid} label="Board" />
           <SegButton active={tab === "list"} onClick={() => onTab("list")} icon={Rows3} label="List" />

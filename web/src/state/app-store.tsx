@@ -19,13 +19,19 @@ export type View =
   | { kind: "all" }
   | { kind: "personal" }
   | { kind: "needs_input" }
+  | { kind: "review_queue" }
   | { kind: "team"; teamId: string; name: string };
 
 export function viewKey(view: View): string {
   return view.kind === "team" ? `team:${view.teamId}` : view.kind;
 }
 
-function viewFilter(view: View): (task: Task) => boolean {
+/** A task awaiting the given user's review — mirrors GET /api/reviews/pending. */
+export function awaitsReview(task: Task, userId: string): boolean {
+  return task.status === "plan_review" && task.reviewerId === userId;
+}
+
+function viewFilter(view: View, userId: string): (task: Task) => boolean {
   switch (view.kind) {
     case "all":
       return () => true;
@@ -33,6 +39,8 @@ function viewFilter(view: View): (task: Task) => boolean {
       return (t) => t.scope === "personal";
     case "needs_input":
       return (t) => t.status === "needs_input";
+    case "review_queue":
+      return (t) => awaitsReview(t, userId);
     case "team":
       return (t) => t.teamId === view.teamId;
   }
@@ -44,7 +52,13 @@ interface AppState {
   allTasks: Task[];
   view: View;
   visibleTasks: Task[];
-  counts: { all: number; personal: number; needsInput: number; team: Record<string, number> };
+  counts: {
+    all: number;
+    personal: number;
+    needsInput: number;
+    reviewQueue: number;
+    team: Record<string, number>;
+  };
   tasksLoading: boolean;
   selectedTaskId: string | null;
   /** Whether the selected task is shown in the full-screen deep-dive (vs. the slide-over). */
@@ -209,7 +223,10 @@ export function AppProvider({
     [user],
   );
 
-  const visibleTasks = useMemo(() => allTasks.filter(viewFilter(view)), [allTasks, view]);
+  const visibleTasks = useMemo(
+    () => allTasks.filter(viewFilter(view, user.id)),
+    [allTasks, view, user.id],
+  );
 
   const counts = useMemo(() => {
     const team: Record<string, number> = {};
@@ -218,9 +235,10 @@ export function AppProvider({
       all: allTasks.length,
       personal: allTasks.filter((t) => t.scope === "personal").length,
       needsInput: allTasks.filter((t) => t.status === "needs_input").length,
+      reviewQueue: allTasks.filter((t) => awaitsReview(t, user.id)).length,
       team,
     };
-  }, [allTasks]);
+  }, [allTasks, user.id]);
 
   const value: AppState = {
     user,

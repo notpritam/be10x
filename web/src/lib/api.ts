@@ -1,7 +1,10 @@
 // ABOUTME: Typed client for the same-origin HTTP API. Relative paths only; the session
 // cookie (gfa_sid) rides along automatically because the app is served same-origin.
 import type {
+  AgentConfig,
   InputRequest,
+  Member,
+  MintedToken,
   ReviewVerdict,
   Severity,
   Status,
@@ -9,6 +12,8 @@ import type {
   TaskEvent,
   TaskType,
   Team,
+  TeamRole,
+  TokenInfo,
   User,
 } from "./types";
 
@@ -60,6 +65,10 @@ function post<T>(path: string, body?: unknown): Promise<T> {
   });
 }
 
+function del<T>(path: string): Promise<T> {
+  return request<T>(path, { method: "DELETE" });
+}
+
 export interface TaskFilter {
   scope?: string;
   teamId?: string;
@@ -98,6 +107,16 @@ export const api = {
   listTeams: () => request<{ teams: Team[] }>("/api/teams"),
   createTeam: (name: string) => post<{ team: Team }>("/api/teams", { name }),
 
+  // Team membership
+  listMembers: (teamId: string) =>
+    request<{ members: Member[] }>(`/api/teams/${teamId}/members`),
+  addMember: (teamId: string, email: string, role?: TeamRole) =>
+    post<{ member: { userId: string; role: TeamRole } }>(`/api/teams/${teamId}/members`, {
+      email,
+      ...(role ? { role } : {}),
+    }),
+  deleteTeam: (teamId: string) => del<{ ok: true }>(`/api/teams/${teamId}`),
+
   // Tasks
   listTasks: (filter?: TaskFilter) =>
     request<{ tasks: Task[] }>(`/api/tasks${taskQuery(filter)}`),
@@ -120,6 +139,14 @@ export const api = {
     post<{ task: Task }>(`/api/tasks/${id}/review/request`, { reviewerId }),
   submitReview: (id: string, verdict: ReviewVerdict, comment?: string) =>
     post<{ review: unknown }>(`/api/tasks/${id}/review/submit`, { verdict, comment: comment ?? "" }),
+  /** Tasks awaiting the current user's review. */
+  pendingReviews: () => request<{ tasks: Task[] }>("/api/reviews/pending"),
+
+  // Agent tokens & MCP config
+  listTokens: () => request<{ tokens: TokenInfo[] }>("/api/tokens"),
+  createToken: (name: string) => post<{ token: MintedToken }>("/api/tokens", { name }),
+  revokeToken: (id: string) => del<{ ok: true }>(`/api/tokens/${id}`),
+  agentConfig: () => request<AgentConfig>("/api/agent-config"),
 
   // Human-in-the-loop input
   getInput: (id: string) =>
@@ -145,6 +172,12 @@ export function errorMessage(err: unknown): string {
         return "That move isn't allowed from here.";
       case "ALREADY_ANSWERED":
         return "This question was already answered.";
+      case "USER_NOT_FOUND":
+        return "No account found with that email.";
+      case "ALREADY_MEMBER":
+        return "That person is already on the team.";
+      case "FORBIDDEN":
+        return "You don't have permission to do that.";
       case "NETWORK":
         return "Network error. Check your connection.";
       case "NO_SESSION":
