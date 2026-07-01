@@ -4,7 +4,7 @@
 import { Plus, Search, X } from "lucide-react";
 import { useApp } from "@/state/app-store";
 import { cn } from "@/lib/utils";
-import { BrandTile } from "@/components/common/Brandmark";
+import { BrandShader } from "@/components/brand/BrandShader";
 
 export function TabBar({ onNewTask }: { onNewTask: () => void }) {
   const { openTabs, selectedTaskId, selectTask, closeTab } = useApp();
@@ -20,8 +20,9 @@ export function TabBar({ onNewTask }: { onNewTask: () => void }) {
         title="Board"
         className="shrink-0 rounded-xl transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
-        <BrandTile
-          className={cn("size-9 rounded-xl", onBoard && "ring-2 ring-primary/30 ring-offset-2 ring-offset-background")}
+        <BrandShader
+          variant="ring-warp"
+          className={cn("size-9 rounded-[10px]", onBoard && "ring-2 ring-primary/30 ring-offset-2 ring-offset-background")}
         />
       </button>
 

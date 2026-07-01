@@ -44,16 +44,16 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  --radius-sm: calc(var(--radius) - 6px);
-  --radius-md: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 6px);
-  --radius-2xl: calc(var(--radius) + 12px);
+  --radius-xl: calc(var(--radius) + 2px);
+  --radius-2xl: calc(var(--radius) + 4px);
 }
 
 :root {
   color-scheme: light;
-  --radius: 1rem;
+  --radius: 0.75rem;
 
   /* Cool, near-neutral grays. Panels are white cards floating on a light-gray canvas. */
   --background: oklch(0.919 0.003 264); /* the canvas everything floats on */
