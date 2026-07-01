@@ -1,13 +1,14 @@
 // ABOUTME: Shared agent-interaction blocks used by both the slide-over and the deep-dive: the hand-off /
 // pick-up-now action row, and the comment thread the agent reads on its next wake.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Copy, SendHorizontal } from "lucide-react";
 import { toast } from "sonner";
-import type { Comment, Task } from "@/lib/types";
+import type { Comment, Task, TaskEvent } from "@/lib/types";
 import { api } from "@/lib/api";
 import { cn, relativeTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { describe } from "./ActivityFeed";
 
 // A discussion message collapses to a precise 160px; if it's taller, a Show more/less toggle reveals the
 // rest. Keeps long agent replies and pasted context from flooding the thread while staying one click away.
@@ -18,6 +19,23 @@ function copyText(text: string) {
     .writeText(text)
     .then(() => toast.success("Copied."))
     .catch(() => toast.error("Copy failed."));
+}
+
+// A single activity event rendered inline in the interaction timeline (a compact "step" line, lighter
+// than a message bubble) — reuses the Activity feed's describe() so the phrasing/icons stay consistent.
+function ActivityLine({ event, actorName }: { event: TaskEvent; actorName: string }) {
+  const { icon: Icon, phrase, tone } = describe(event);
+  return (
+    <li className="flex items-start gap-2 px-1 text-[12px] leading-snug text-muted-foreground">
+      <span className={cn("mt-[3px] shrink-0", tone === "accent" ? "text-primary" : "text-muted-foreground/60")}>
+        <Icon className="size-3.5" />
+      </span>
+      <span className="min-w-0">
+        <b className="font-medium text-foreground/75">{actorName}</b> {phrase}
+        <span className="ml-1.5 text-[10.5px] text-muted-foreground/60">{relativeTime(event.createdAt)}</span>
+      </span>
+    </li>
+  );
 }
 
 function CommentBody({ text }: { text: string }) {
@@ -109,10 +127,13 @@ export function AgentActions({ task, onDone }: { task: Task; onDone: () => void 
 // plan under review, or nudges an in-flight task); it's the human half of the plan/review loop.
 export function CommentThread({
   taskId,
+  events = [],
   resolveActor,
   onPosted,
 }: {
   taskId: string;
+  /** Task activity events, interleaved with the comments to form one interaction timeline. */
+  events?: TaskEvent[];
   resolveActor: (id: string) => string;
   onPosted: () => void;
 }) {
@@ -150,40 +171,57 @@ export function CommentThread({
     }
   }
 
+  // One interaction timeline: comments (as bubbles) + activity events (compact step lines), oldest first.
+  // The 'comment' event kind is dropped — comments already render as bubbles.
+  const items = useMemo(() => {
+    const merged: (
+      | { kind: "comment"; at: number; c: Comment }
+      | { kind: "event"; at: number; e: TaskEvent }
+    )[] = [
+      ...comments.map((c) => ({ kind: "comment" as const, at: c.createdAt, c })),
+      ...events.filter((e) => e.kind !== "comment").map((e) => ({ kind: "event" as const, at: e.createdAt, e })),
+    ];
+    merged.sort((a, b) => a.at - b.at);
+    return merged;
+  }, [comments, events]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Messages — fill the panel and scroll (no list height cap); each message still collapses at 160px. */}
       <div className="min-h-0 flex-1 overflow-y-auto scroll-thin px-4 py-4" style={{ minHeight: 200 }}>
-        {comments.length === 0 ? (
+        {items.length === 0 ? (
           <p className="grid h-full place-items-center px-4 text-center text-[12.5px] text-muted-foreground">
-            No messages yet — say something to steer the agent.
+            No interaction yet — say something to steer the agent.
           </p>
         ) : (
-          <ul className="space-y-3.5">
-            {comments.map((c) => (
-              <li key={c.id} className="group flex flex-col gap-1">
-                <div className="flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
-                  <span className="font-medium text-foreground/80">{resolveActor(c.author)}</span>
-                  {c.anchor !== "general" && (
-                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">{c.anchor}</span>
-                  )}
-                  <span className="ml-auto tabular-nums">{relativeTime(c.createdAt)}</span>
-                  <button
-                    type="button"
-                    onClick={() => copyText(c.body)}
-                    title="Copy message"
-                    aria-label="Copy message"
-                    className="grid size-5 place-items-center rounded text-muted-foreground/70 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                  >
-                    <Copy className="size-3" />
-                  </button>
-                </div>
-                {/* Bubble */}
-                <div className="rounded-lg rounded-tl-sm border border-border/60 bg-card px-3 py-2 shadow-card">
-                  <CommentBody text={c.body} />
-                </div>
-              </li>
-            ))}
+          <ul className="space-y-3">
+            {items.map((it) =>
+              it.kind === "comment" ? (
+                <li key={`c-${it.c.id}`} className="group flex flex-col gap-1">
+                  <div className="flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
+                    <span className="font-medium text-foreground/80">{resolveActor(it.c.author)}</span>
+                    {it.c.anchor !== "general" && (
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">{it.c.anchor}</span>
+                    )}
+                    <span className="ml-auto tabular-nums">{relativeTime(it.c.createdAt)}</span>
+                    <button
+                      type="button"
+                      onClick={() => copyText(it.c.body)}
+                      title="Copy message"
+                      aria-label="Copy message"
+                      className="grid size-5 place-items-center rounded text-muted-foreground/70 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                    >
+                      <Copy className="size-3" />
+                    </button>
+                  </div>
+                  <div className="rounded-lg rounded-tl-sm border border-border/60 bg-card px-3 py-2 shadow-card">
+                    <CommentBody text={it.c.body} />
+                  </div>
+                </li>
+              ) : (
+                <ActivityLine key={`e-${it.e.id}`} event={it.e} actorName={resolveActor(it.e.actor)} />
+              ),
+            )}
           </ul>
         )}
       </div>

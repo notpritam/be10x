@@ -3,7 +3,7 @@
 // shared detail controller + parts so it stays in lockstep with the slide-over. Collapse (or Escape)
 // returns to the slide-over; close returns to the board.
 import { useEffect, useState, type ReactNode } from "react";
-import { Activity, Bug, Copy, History, Info, Maximize2, MessageSquare, Share2, X } from "lucide-react";
+import { Bug, Copy, History, Info, Maximize2, MessageSquare, Share2, X } from "lucide-react";
 import { toast } from "sonner";
 import type { Status } from "@/lib/types";
 import { useApp } from "@/state/app-store";
@@ -20,7 +20,6 @@ import { AgentActions, CommentThread } from "./agent-parts";
 import { ReviewActions } from "./ReviewActions";
 import { RequestReviewControl } from "./RequestReviewControl";
 import { InputRequestPanel } from "./InputRequestPanel";
-import { ActivityFeed } from "./ActivityFeed";
 import type { useTaskDetail } from "./useTaskDetail";
 import {
   AgentStatusBlock,
@@ -51,7 +50,8 @@ export function DeepDivePanel({
   const task = detail?.task;
   const isStale = task && taskId !== task.id;
   // Which right-rail panel is open (null = collapsed to just the icon strip).
-  const [rightPanel, setRightPanel] = useState<"discussion" | "activity" | "info" | "debug" | null>("discussion");
+  // "discussion" is the merged Interaction panel (comments + activity in one timeline).
+  const [rightPanel, setRightPanel] = useState<"discussion" | "info" | "debug" | null>("discussion");
   const [shareOpen, setShareOpen] = useState(false);
   const [planExpanded, setPlanExpanded] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -179,13 +179,7 @@ export function DeepDivePanel({
                 <aside className="flex w-[340px] shrink-0 flex-col overflow-hidden border-l border-border/60 bg-muted/70">
                   <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
                     <h3 className="text-[12.5px] font-semibold text-foreground">
-                      {rightPanel === "discussion"
-                        ? "Discussion"
-                        : rightPanel === "activity"
-                          ? "Activity"
-                          : rightPanel === "debug"
-                            ? "Debug"
-                            : "Info"}
+                      {rightPanel === "discussion" ? "Interaction" : rightPanel === "debug" ? "Debug" : "Info"}
                     </h3>
                     {rightPanel === "discussion" &&
                       (detail.input ? (
@@ -195,22 +189,14 @@ export function DeepDivePanel({
                       ) : (
                         <AgentLiveStatus task={task} runs={detail.runs} compact />
                       ))}
-                    {rightPanel === "activity" && (
-                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
-                        {detail.events.length}
-                      </span>
-                    )}
                   </div>
                   {/* Discussion fills the panel as a chat (input pinned at the foot); the others scroll. */}
                   {rightPanel === "discussion" ? (
-                    <CommentThread taskId={task.id} resolveActor={resolveActor} onPosted={refresh} />
+                    <CommentThread taskId={task.id} events={detail.events} resolveActor={resolveActor} onPosted={refresh} />
                   ) : rightPanel === "debug" ? (
                     <DebugPanelContent taskId={task.id} />
                   ) : (
                     <div className="min-h-0 flex-1 overflow-y-auto scroll-thin px-3 py-3">
-                      {rightPanel === "activity" && (
-                        <ActivityFeed events={detail.events} resolveActor={resolveActor} />
-                      )}
                       {rightPanel === "info" && <InfoPanel task={task} runs={detail.runs} events={detail.events} />}
                     </div>
                   )}
@@ -220,18 +206,11 @@ export function DeepDivePanel({
               {/* Icon rail — always on the far right; click an icon to open its panel, the active one to collapse. */}
               <nav className="flex w-12 shrink-0 flex-col items-center gap-1 border-l border-border/60 bg-muted/70 py-2.5">
                 <RailIcon
-                  label="Discussion"
+                  label="Interaction"
                   active={rightPanel === "discussion"}
                   onClick={() => setRightPanel((p) => (p === "discussion" ? null : "discussion"))}
                 >
                   <MessageSquare className="size-[18px]" />
-                </RailIcon>
-                <RailIcon
-                  label="Activity"
-                  active={rightPanel === "activity"}
-                  onClick={() => setRightPanel((p) => (p === "activity" ? null : "activity"))}
-                >
-                  <Activity className="size-[18px]" />
                 </RailIcon>
                 <RailIcon
                   label="Info"

@@ -31,7 +31,7 @@ function clip(v: unknown, n = 160): string | undefined {
   return s && s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
-function describe(event: TaskEvent): { icon: LucideIcon; phrase: ReactNode; tone?: "accent" } {
+export function describe(event: TaskEvent): { icon: LucideIcon; phrase: ReactNode; tone?: "accent" } {
   const p = event.payload ?? {};
   switch (event.kind) {
     case "created":
