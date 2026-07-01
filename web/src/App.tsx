@@ -9,6 +9,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthScreen } from "@/components/auth/AuthScreen";
 import { AppShell } from "@/components/shell/AppShell";
 import { BootSplash } from "@/components/common/BootSplash";
+import { ShareReviewPage } from "@/components/share/ShareReviewPage";
 
 type Session = "loading" | User | null;
 
@@ -28,9 +29,15 @@ export function App() {
 
   const handleSignedOut = useCallback(() => setSession(null), []);
 
+  // A public share/review link (/share/<token>) renders without an account — external reviewers.
+  const shareToken =
+    typeof window !== "undefined" ? /^\/share\/([^/]+)\/?$/.exec(window.location.pathname)?.[1] : undefined;
+
   return (
     <TooltipProvider delayDuration={200}>
-      {session === "loading" ? (
+      {shareToken ? (
+        <ShareReviewPage token={decodeURIComponent(shareToken)} />
+      ) : session === "loading" ? (
         <BootSplash />
       ) : session === null ? (
         <AuthScreen onAuthed={setSession} />

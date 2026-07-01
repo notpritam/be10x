@@ -36,11 +36,13 @@ export function Sidebar({
   onToggleCollapse,
   onConnectAgent,
   onNewTask,
+  onProfile,
 }: {
   collapsed: boolean;
   onToggleCollapse: () => void;
   onConnectAgent: () => void;
   onNewTask: () => void;
+  onProfile: () => void;
 }) {
   const { user, teams, projects, view, setView, counts, logout } = useApp();
   const activeKey = viewKey(view);
@@ -208,6 +210,10 @@ export function Sidebar({
               {user.email}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onProfile}>
+              <UserRound className="size-4" />
+              Profile
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={onConnectAgent}>
               <Plug className="size-4" />
               Connect an agent

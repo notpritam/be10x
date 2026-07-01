@@ -1,7 +1,8 @@
 // ABOUTME: The app frame — full-height sidebar on the left, main area on the right. The main area shows
-// one of: the New Task page (composing), the active task page (a tab selected in the sidebar), or the
-// board/list with its header. No top tab bar — open tasks live in the sidebar.
+// one of: the Profile page, the New Task page (composing), the active task page (a tab), or the
+// board/list. The tab bar carries the view context + open tabs + board controls.
 import { useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { useApp } from "@/state/app-store";
 import { Sidebar } from "./Sidebar";
 import { TabBar } from "./TabBar";
@@ -9,6 +10,7 @@ import { type BoardTab } from "./Topbar";
 import { BoardView } from "@/components/board/BoardView";
 import { ListView } from "@/components/board/ListView";
 import { NewTaskPage } from "@/components/task/NewTaskPage";
+import { ProfilePage } from "@/components/user/ProfilePage";
 import { DeepDivePanel } from "@/components/task/DeepDivePanel";
 import { useTaskDetail } from "@/components/task/useTaskDetail";
 import { ManageTeamDialog } from "@/components/team/ManageTeamDialog";
@@ -19,12 +21,22 @@ export function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [tab, setTab] = useState<BoardTab>("board");
   const [composing, setComposing] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [manageTeamOpen, setManageTeamOpen] = useState(false);
   const [connectAgentOpen, setConnectAgentOpen] = useState(false);
 
-  // One detail controller feeds the active task page (the tab selected in the sidebar).
+  // One detail controller feeds the active task page (the tab selected in the tab bar).
   const ctrl = useTaskDetail(selectedTaskId);
   const activeTeam = view.kind === "team" ? { id: view.teamId, name: view.name } : null;
+
+  const startCompose = () => {
+    setShowProfile(false);
+    setComposing(true);
+  };
+  const leaveOverlays = () => {
+    setComposing(false);
+    setShowProfile(false);
+  };
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -32,17 +44,29 @@ export function AppShell() {
         collapsed={collapsed}
         onToggleCollapse={() => setCollapsed((c) => !c)}
         onConnectAgent={() => setConnectAgentOpen(true)}
-        onNewTask={() => setComposing(true)}
+        onNewTask={startCompose}
+        onProfile={() => {
+          setComposing(false);
+          setShowProfile(true);
+        }}
       />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <TabBar
-          onNavigate={() => setComposing(false)}
-          tab={tab}
-          onTab={setTab}
-          onNewTask={() => setComposing(true)}
-        />
-        {composing ? (
+        <TabBar onNavigate={leaveOverlays} tab={tab} onTab={setTab} onNewTask={startCompose} />
+        {showProfile ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex shrink-0 items-center border-b border-border/60 px-4 py-2">
+              <button
+                type="button"
+                onClick={() => setShowProfile(false)}
+                className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <ArrowLeft className="size-4" /> Back
+              </button>
+            </div>
+            <ProfilePage />
+          </div>
+        ) : composing ? (
           <NewTaskPage
             onCancel={() => setComposing(false)}
             onCreated={(task) => {
@@ -51,17 +75,11 @@ export function AppShell() {
             }}
           />
         ) : selectedTaskId ? (
-          <DeepDivePanel
-            inline
-            taskId={selectedTaskId}
-            open
-            onClose={() => closeTab(selectedTaskId)}
-            ctrl={ctrl}
-          />
+          <DeepDivePanel inline taskId={selectedTaskId} open onClose={() => closeTab(selectedTaskId)} ctrl={ctrl} />
         ) : (
           <div className="min-h-0 flex-1">
             {tab === "board" ? (
-              <BoardView onNewTask={() => setComposing(true)} onConnectAgent={() => setConnectAgentOpen(true)} />
+              <BoardView onNewTask={startCompose} onConnectAgent={() => setConnectAgentOpen(true)} />
             ) : (
               <ListView />
             )}

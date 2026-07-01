@@ -4,7 +4,6 @@
 // returns to the slide-over; close returns to the board.
 import { useEffect, useState, type ReactNode } from "react";
 import { Activity, Info, MessageSquare, Share2 } from "lucide-react";
-import { toast } from "sonner";
 import type { Status } from "@/lib/types";
 import { useApp } from "@/state/app-store";
 import { cn } from "@/lib/utils";
@@ -14,6 +13,7 @@ import { WorkSection } from "./WorkSection";
 import { InfoPanel } from "./InfoPanel";
 import { AgentLiveStatus } from "./AgentLiveStatus";
 import { DebugControl } from "./DebugControl";
+import { ShareDialog } from "@/components/share/ShareDialog";
 import { AgentActions, CommentThread } from "./agent-parts";
 import { ReviewActions } from "./ReviewActions";
 import { RequestReviewControl } from "./RequestReviewControl";
@@ -50,18 +50,10 @@ export function DeepDivePanel({
   const isStale = task && taskId !== task.id;
   // Which right-rail panel is open (null = collapsed to just the icon strip).
   const [rightPanel, setRightPanel] = useState<"discussion" | "activity" | "info" | null>("discussion");
+  const [shareOpen, setShareOpen] = useState(false);
 
   function move(to: Status) {
     void onMove(to);
-  }
-
-  // Share this exact page — copies the deep-link (/t/<id>/full). Grows into the permissioned share
-  // dialog (keyed link, run-agent vs comment-only) once that lands.
-  function sharePage() {
-    navigator.clipboard
-      .writeText(window.location.href)
-      .then(() => toast.success("Page link copied — anyone you share it with lands here."))
-      .catch(() => toast.error("Couldn't copy the link."));
   }
 
   // Escape steps back to the slide-over (overlay mode only; as an inline tab page there's nowhere to go).
@@ -195,9 +187,9 @@ export function DeepDivePanel({
                 <div className="mt-auto flex flex-col items-center gap-1">
                   <button
                     type="button"
-                    onClick={sharePage}
-                    aria-label="Share this page"
-                    title="Share this page"
+                    onClick={() => setShareOpen(true)}
+                    aria-label="Share for review"
+                    title="Share for review"
                     className="grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                   >
                     <Share2 className="size-[18px]" />
@@ -206,6 +198,7 @@ export function DeepDivePanel({
                 </div>
               </nav>
             </div>
+            <ShareDialog taskId={task.id} open={shareOpen} onOpenChange={setShareOpen} />
           </div>
         )}
     </div>
