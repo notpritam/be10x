@@ -249,6 +249,19 @@ export function startServer({ dbPath, port } = {}) {
   const db = openDb(process.env.GFA_DB_PATH || dbPath || './gfa.db');
   const app = createApp(db);
   const p = Number(port || process.env.PORT || 4600);
+  // Fail with a clear, actionable message instead of an unhandled EADDRINUSE stack trace.
+  app.on('error', (err) => {
+    if (err && err.code === 'EADDRINUSE') {
+      console.error(
+        `be10x: port ${p} is already in use (another be10x server is probably running).\n` +
+          `  free it:        lsof -ti tcp:${p} -sTCP:LISTEN | xargs kill\n` +
+          `  or use another: be10x serve --port ${p + 1}`
+      );
+    } else {
+      console.error('be10x server error: ' + String(err?.message ?? err));
+    }
+    process.exit(1);
+  });
   app.listen(p, '127.0.0.1', () => console.log('HTTP_URL=http://localhost:' + p + '/'));
   return app;
 }
