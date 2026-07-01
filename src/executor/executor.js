@@ -40,9 +40,9 @@ function contentText(content) {
 // this is the varying part (task, mode, and the delta that triggered the wake).
 const MODE_DIRECTIVE = {
   plan:
-    'PLAN MODE. Research the task and the codebase, then record a concrete plan by calling gfa_plan_task with { id, plan: { steps: [...], diagram: "<mermaid or ascii>" } }. If a decision needs the human, call gfa_request_input. When the plan is ready, call gfa_submit_plan to send it for review. Do NOT implement any change yet.',
+    'PLAN MODE. Research the task and the codebase, then record a concrete plan by calling gfa_plan_task. Make the plan visual and easy to grasp — the plan value can be a rich HTML string the board renders safely in a sandbox (use it for diagrams, wireframes, tables, or flow visualizations), or markdown, or { steps: [...], diagram: "...", html: "..." }, or a { blocks: [...] } mix. Choose what best explains THIS task. If a decision needs the human, call gfa_request_input. When the plan is ready, call gfa_submit_plan to send it for review. Do NOT implement any change yet.',
   revise:
-    'REVISE MODE. Your plan is under review. Address the feedback below by updating the plan via gfa_plan_task, then call gfa_submit_plan again. Do NOT implement yet.',
+    'REVISE MODE. Your plan is under review. Address the feedback below by updating the plan via gfa_plan_task (rich HTML / markdown / structured — whatever conveys it best), then call gfa_submit_plan again. Do NOT implement yet.',
   input_answer:
     'CONTINUE. The human answered your question (below). Resume where you left off and keep the plan/progress current via the gfa_* tools.',
   execute:

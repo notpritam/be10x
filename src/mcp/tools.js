@@ -85,12 +85,14 @@ export const TOOLS = [
   },
   {
     name: 'gfa_plan_task',
-    description: 'Attach an implementation plan to a task.',
+    description:
+      'Attach the task plan (shown on the board). The plan can be a rich HTML string (rendered safely in a sandbox — use it for diagrams, wireframes, tables, and visualizations), a markdown string, a structured { steps, diagram }, or a { blocks: [...] } mix — choose what best explains the task. Favour showing over prose.',
     inputSchema: {
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Task id.' },
-        plan: freeObject('The plan (e.g. { steps: [...] }).'),
+        // No `type` constraint: the plan may be a string (HTML/markdown) or an object/array.
+        plan: { description: 'The plan: a rich HTML string, markdown string, or an object like { steps, diagram, html } or { blocks: [...] }.' },
       },
       required: ['id', 'plan'],
       additionalProperties: false,
