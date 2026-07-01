@@ -128,3 +128,30 @@ CREATE TABLE IF NOT EXISTS runs (
   started_at    INTEGER,
   ended_at      INTEGER
 );
+
+-- Human context delivered to the agent: a comment on the plan (or the diagram, or general). anchor lets
+-- the board pin a thread to a plan line / diagram node. seen_at is stamped once the agent has folded the
+-- comment into a wake prompt, so follow-up wakes stay delta-only (unseen comments only).
+CREATE TABLE IF NOT EXISTS comments (
+  id         TEXT PRIMARY KEY,
+  task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  author     TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  anchor     TEXT NOT NULL DEFAULT 'general',
+  created_at INTEGER NOT NULL,
+  seen_at    INTEGER
+);
+
+-- The wake queue: the event→run bridge. A board event (hand-off, comment, input answer, approval,
+-- pick-up-now) enqueues a row; the scheduler claims the oldest pending one (claimed_at IS NULL) with an
+-- optimistic UPDATE and drives the agent. reason picks the executor mode; context_json is the delta that
+-- triggered the wake. This is what makes "staying on a task" a re-wake from durable state, not a live process.
+CREATE TABLE IF NOT EXISTS wake_queue (
+  id           TEXT PRIMARY KEY,
+  task_id      TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  reason       TEXT NOT NULL,
+  context_json TEXT,
+  enqueued_at  INTEGER NOT NULL,
+  claimed_at   INTEGER,
+  claimed_by   TEXT
+);

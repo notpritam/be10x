@@ -8,6 +8,6 @@ test('openDb applies the schema and enforces foreign keys', () => {
     .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     .all()
     .map((r) => r.name);
-  assert.deepEqual(tables, ['input_requests', 'memberships', 'projects', 'reviews', 'runs', 'sessions', 'task_events', 'tasks', 'teams', 'tokens', 'users']);
+  assert.deepEqual(tables, ['comments', 'input_requests', 'memberships', 'projects', 'reviews', 'runs', 'sessions', 'task_events', 'tasks', 'teams', 'tokens', 'users', 'wake_queue']);
   assert.equal(db.pragma('foreign_keys', { simple: true }), 1);
 });
