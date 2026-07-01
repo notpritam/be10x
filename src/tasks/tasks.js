@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { getType, validateContent } from './types.js';
 import { assertTransition } from './lifecycle.js';
 import { appendEvent } from './events.js';
+import { recordPlanVersion } from '../plans/versions.js';
 
 function hydrate(row) {
   return {
@@ -75,6 +76,8 @@ export function setResearch(db, id, research, actor) {
 export function setPlan(db, id, plan, actor) {
   db.prepare('UPDATE tasks SET plan_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(plan), Date.now(), id);
   appendEvent(db, id, actor, 'plan', { plan });
+  // Snapshot this plan as an immutable version so the board can show history and restore an earlier one.
+  recordPlanVersion(db, { taskId: id, plan, createdBy: actor });
   // A recorded plan supersedes any still-open question the agent asked while figuring it out — close them
   // so a stale "needs your input" can't linger on the board once the agent has moved on.
   const open = db.prepare("SELECT id FROM input_requests WHERE task_id = ? AND status = 'open'").all(id);

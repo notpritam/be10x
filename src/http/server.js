@@ -23,6 +23,7 @@ import { listRunsForTask } from '../executor/runs.js';
 import { taskDebug } from '../tasks/debug.js';
 import { listProjects, registerProject, detectProjectKey } from '../projects/projects.js';
 import { createShareLink, listShareLinksForTask, revokeShareLink, getActiveShareLinkByToken, shareView } from '../share/share.js';
+import { listPlanVersions, getPlanVersion } from '../plans/versions.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(here, '..', '..', 'public');
@@ -226,6 +227,14 @@ const ROUTES = [
     send(res, 200, { task });
   }],
   ['POST', '/api/tasks/:id/plan', true, async ({ db, res, params, body, user }) => send(res, 200, { task: setPlan(db, params.id, body.plan, user.id) })],
+  // Plan history: list past snapshots (newest-first), or restore one (re-sets it as the current plan,
+  // which itself snapshots a fresh version).
+  ['GET', '/api/tasks/:id/plan-versions', true, async ({ db, res, params }) => send(res, 200, { versions: listPlanVersions(db, params.id) })],
+  ['POST', '/api/tasks/:id/plan-versions/:versionId/restore', true, async ({ db, res, params, user }) => {
+    const version = getPlanVersion(db, params.versionId);
+    if (!version) throw new Error('NOT_FOUND');
+    send(res, 200, { task: setPlan(db, params.id, version.plan, user.id) });
+  }],
   ['POST', '/api/tasks/:id/research', true, async ({ db, res, params, body, user }) => send(res, 200, { task: setResearch(db, params.id, body.research, user.id) })],
   ['POST', '/api/tasks/:id/content', true, async ({ db, res, params, body, user }) => send(res, 200, { task: updateContent(db, params.id, body.patch || {}, user.id) })],
   ['POST', '/api/tasks/:id/rate', true, async ({ db, res, params, body, user }) => send(res, 200, { task: rateTask(db, params.id, body.rating, user.id) })],

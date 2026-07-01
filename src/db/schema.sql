@@ -172,3 +172,14 @@ CREATE TABLE IF NOT EXISTS share_links (
   created_at INTEGER NOT NULL,
   revoked_at INTEGER
 );
+
+-- Plan history: every time a task's plan is set (setPlan) an immutable snapshot lands here, so the board
+-- can show previous-vs-new plans and restore an earlier one. plan_json is the whole plan at that moment;
+-- created_by is the actor who set it (loose string, may be an agent id — no FK). Newest-first by created_at.
+CREATE TABLE IF NOT EXISTS plan_versions (
+  id         TEXT PRIMARY KEY,
+  task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  plan_json  TEXT NOT NULL,
+  created_by TEXT,
+  created_at INTEGER NOT NULL
+);
