@@ -110,3 +110,14 @@ export interface InputRequest {
 }
 
 export type ReviewVerdict = "approved" | "changes_requested";
+
+/** A comment on a task — the human's channel for steering the agent (plan feedback, direction). */
+export interface Comment {
+  id: string;
+  taskId: string;
+  author: string;
+  body: string;
+  anchor: string;
+  createdAt: number;
+  seenAt: number | null;
+}

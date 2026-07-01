@@ -2,6 +2,7 @@
 // cookie (gfa_sid) rides along automatically because the app is served same-origin.
 import type {
   AgentConfig,
+  Comment,
   InputRequest,
   Member,
   MintedToken,
@@ -147,6 +148,13 @@ export const api = {
   createToken: (name: string) => post<{ token: MintedToken }>("/api/tokens", { name }),
   revokeToken: (id: string) => del<{ ok: true }>(`/api/tokens/${id}`),
   agentConfig: () => request<AgentConfig>("/api/agent-config"),
+
+  // Agent orchestration — hand a task to the agent, ping it to pick up now, and the comment thread it reads
+  handToAgent: (id: string) => post<{ task: Task }>(`/api/tasks/${id}/hand-to-agent`),
+  pickUpNow: (id: string) => post<{ ok: true; wake: unknown }>(`/api/tasks/${id}/pick-up-now`),
+  listComments: (id: string) => request<{ comments: Comment[] }>(`/api/tasks/${id}/comments`),
+  addComment: (id: string, body: string, anchor?: string) =>
+    post<{ comment: Comment }>(`/api/tasks/${id}/comments`, { body, ...(anchor ? { anchor } : {}) }),
 
   // Human-in-the-loop input
   getInput: (id: string) =>
