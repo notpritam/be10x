@@ -69,6 +69,23 @@ test('a comment on a plan_review task enqueues a revise wake and appears in the 
   });
 });
 
+test('creating with handOff + isolation starts the agent (researching + plan wake) and records isolation', async () => {
+  await withServerDb(async (base, db) => {
+    const c = await signup(base);
+    // no repos linked on a fresh db
+    assert.deepEqual((await api(base, 'GET', '/api/projects', { cookie: c })).json.projects, []);
+
+    const r = await api(base, 'POST', '/api/tasks', {
+      cookie: c,
+      body: { type: 'general', scope: 'personal', title: 'Ship it', content: { summary: 's' }, isolation: 'branch', handOff: true },
+    });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.task.status, 'researching');
+    assert.equal(r.json.task.content.isolation, 'branch');
+    assert.ok(listPendingWakes(db, r.json.task.id).some((w) => w.reason === 'plan'));
+  });
+});
+
 test('approving a review enqueues an execute wake; pick-up-now enqueues its own', async () => {
   await withServerDb(async (base, db) => {
     const c = await signup(base);

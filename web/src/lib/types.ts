@@ -29,6 +29,18 @@ export interface Team {
   slug: string;
 }
 
+/** A linked repository the agent can work a task in (from `be10x link`). */
+export interface Project {
+  id: string;
+  key: string;
+  name: string;
+  defaultBranch: string | null;
+  rootPath: string | null;
+}
+
+/** Per-task isolation: a fresh worktree (default) or work in the repo root directly. */
+export type Isolation = "worktree" | "branch";
+
 export type TeamRole = "owner" | "admin" | "member" | "viewer";
 
 export interface Member {

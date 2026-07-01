@@ -4,8 +4,10 @@ import type {
   AgentConfig,
   Comment,
   InputRequest,
+  Isolation,
   Member,
   MintedToken,
+  Project,
   ReviewVerdict,
   Severity,
   Status,
@@ -93,6 +95,12 @@ export interface CreateTaskInput {
   content: Record<string, unknown>;
   teamId?: string | null;
   severity?: Severity;
+  /** Which linked repo the agent works this task in. */
+  projectId?: string | null;
+  /** Isolation: a fresh worktree (default) or the repo root in place. */
+  isolation?: Isolation;
+  /** Hand straight to the agent (→ researching + a plan wake) on create. */
+  handOff?: boolean;
 }
 
 export const api = {
@@ -117,6 +125,9 @@ export const api = {
       ...(role ? { role } : {}),
     }),
   deleteTeam: (teamId: string) => del<{ ok: true }>(`/api/teams/${teamId}`),
+
+  // Projects (linked repos)
+  listProjects: () => request<{ projects: Project[] }>("/api/projects"),
 
   // Tasks
   listTasks: (filter?: TaskFilter) =>

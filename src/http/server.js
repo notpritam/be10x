@@ -18,6 +18,7 @@ import { requestReview, submitReview } from '../reviews/reviews.js';
 import { requestInput, answerInput, getOpenInputRequest } from '../tasks/input_requests.js';
 import { addComment, listComments } from '../tasks/comments.js';
 import { enqueueWake } from '../executor/wake.js';
+import { listProjects } from '../projects/projects.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(here, '..', '..', 'public');
@@ -138,9 +139,23 @@ const ROUTES = [
     const q = new URL(req.url, 'http://x').searchParams;
     send(res, 200, { tasks: listTasks(db, { scope: q.get('scope') || undefined, teamId: q.get('teamId') || undefined, status: q.get('status') || undefined }) });
   }],
-  ['POST', '/api/tasks', true, async ({ db, res, body, user }) => send(res, 200, {
-    task: createTask(db, { type: body.type, scope: body.scope, title: body.title, ownerId: user.id, content: body.content || {}, teamId: body.teamId || null, severity: body.severity || 'medium' }),
-  })],
+  ['GET', '/api/projects', true, async ({ db, res }) => send(res, 200, { projects: listProjects(db) })],
+  ['POST', '/api/tasks', true, async ({ db, res, body, user }) => {
+    // Orchestration inputs: which repo (projectId), isolation (worktree|branch, stored on content so the
+    // executor can honor it), and whether to start the agent planning immediately (handOff).
+    const content = { ...(body.content || {}) };
+    if (body.isolation) content.isolation = body.isolation;
+    let task = createTask(db, {
+      type: body.type, scope: body.scope, title: body.title, ownerId: user.id,
+      content, teamId: body.teamId || null, projectId: body.projectId || null, severity: body.severity || 'medium',
+    });
+    if (body.handOff) {
+      transition(db, task.id, 'researching', user.id, { handOff: true });
+      enqueueWake(db, task.id, 'plan');
+      task = getTask(db, task.id);
+    }
+    send(res, 200, { task });
+  }],
   ['GET', '/api/tasks/:id', true, async ({ db, res, params }) => {
     const t = getTask(db, params.id);
     if (!t) throw new Error('NO_TASK');

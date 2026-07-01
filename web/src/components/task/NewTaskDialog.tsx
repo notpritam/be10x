@@ -1,16 +1,23 @@
 // ABOUTME: Create a task — type, scope (derived from the current view), title, and the summary/symptom
 // that satisfies the type's required content field. New tasks land in backlog (backend rule).
 import { useEffect, useState, type ReactNode } from "react";
-import { Code2, Lightbulb, Loader2 } from "lucide-react";
+import { Check, Code2, GitBranch, Lightbulb, Loader2, TreePine } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "@/state/app-store";
-import { errorMessage } from "@/lib/api";
-import type { Severity, TaskType } from "@/lib/types";
+import { api, errorMessage } from "@/lib/api";
+import type { Isolation, Project, Severity, TaskType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +42,10 @@ export function NewTaskDialog({
   const [title, setTitle] = useState("");
   const [detail, setDetail] = useState("");
   const [severity, setSeverity] = useState<Severity>("medium");
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectId, setProjectId] = useState<string>("");
+  const [isolation, setIsolation] = useState<Isolation>("worktree");
+  const [startNow, setStartNow] = useState(true);
   const [busy, setBusy] = useState(false);
 
   const scope =
@@ -43,12 +54,20 @@ export function NewTaskDialog({
       : { scope: "personal", teamId: null as string | null, label: "Personal" };
 
   useEffect(() => {
-    if (open) {
-      setType("general");
-      setTitle("");
-      setDetail("");
-      setSeverity("medium");
-    }
+    if (!open) return;
+    setType("general");
+    setTitle("");
+    setDetail("");
+    setSeverity("medium");
+    setIsolation("worktree");
+    setStartNow(true);
+    api
+      .listProjects()
+      .then((r) => {
+        setProjects(r.projects);
+        setProjectId(r.projects[0]?.id ?? "");
+      })
+      .catch(() => setProjects([]));
   }, [open]);
 
   const detailLabel = type === "code-issue" ? "Symptom" : "Summary";
@@ -70,8 +89,11 @@ export function NewTaskDialog({
         title: title.trim(),
         content,
         severity,
+        projectId: projectId || null,
+        isolation,
+        handOff: startNow,
       });
-      toast.success(`${task.humanId} created.`);
+      toast.success(startNow ? `${task.humanId} created — handed to the agent.` : `${task.humanId} created.`);
       onOpenChange(false);
       selectTask(task.id);
     } catch (err) {
@@ -165,6 +187,80 @@ export function NewTaskDialog({
               ))}
             </div>
           </div>
+
+          <div className="h-px bg-border/70" />
+          <p className="-mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
+            Agent
+          </p>
+
+          {/* Repository — which linked repo the agent works this task in */}
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-[12.5px] text-foreground/80">Repository</Label>
+            <Select value={projectId || "none"} onValueChange={(v) => setProjectId(v === "none" ? "" : v)}>
+              <SelectTrigger className="h-10 bg-background text-[13px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Personal — any running agent</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} · {p.key}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11.5px] text-muted-foreground">
+              {projects.length === 0
+                ? "No repos linked yet — run be10x link in a repo. Until then the agent uses whichever runner is up."
+                : "The repo the agent works this task in."}
+            </p>
+          </div>
+
+          {/* Isolation — a fresh worktree, or the repo in place */}
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-[12.5px] text-foreground/80">Isolation</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <TypeButton
+                active={isolation === "worktree"}
+                onClick={() => setIsolation("worktree")}
+                icon={<TreePine className="size-4" />}
+                title="Worktree"
+                hint="Isolated checkout"
+              />
+              <TypeButton
+                active={isolation === "branch"}
+                onClick={() => setIsolation("branch")}
+                icon={<GitBranch className="size-4" />}
+                title="In place"
+                hint="Work in the repo"
+              />
+            </div>
+          </div>
+
+          {/* Start the agent immediately (hand-off on create) */}
+          <button
+            type="button"
+            onClick={() => setStartNow((v) => !v)}
+            className={cn(
+              "flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+              startNow ? "border-primary/40 bg-primary/[0.06]" : "border-border bg-background hover:bg-accent/40",
+            )}
+          >
+            <span className="min-w-0">
+              <span className="block text-[13px] font-semibold text-foreground">Start the agent now</span>
+              <span className="block text-[11.5px] text-muted-foreground">
+                Hand straight to the agent to start planning
+              </span>
+            </span>
+            <span
+              className={cn(
+                "ml-3 grid size-5 shrink-0 place-items-center rounded-md border transition-colors",
+                startNow ? "border-primary bg-primary text-primary-foreground" : "border-border",
+              )}
+            >
+              {startNow ? <Check className="size-3.5" /> : null}
+            </span>
+          </button>
         </div>
 
         <DialogFooter>

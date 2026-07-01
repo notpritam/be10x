@@ -116,20 +116,27 @@ export function makeClaudeExecutor(db, project, opts = {}) {
     const wantResume = runOpts.resume !== undefined ? runOpts.resume : resume || mode !== 'plan';
 
     const branch = worktreeBranch(task.humanId, task.title);
+    // Per-task isolation (set at create time): 'worktree' (default) cuts a fresh isolated checkout;
+    // 'branch' works in the repo root itself, leaving branch management to the agent.
+    const isolation = task.content?.isolation === 'branch' ? 'branch' : 'worktree';
 
-    // Isolate the task in its own worktree. A worktree failure is a hard setup error: record it and
-    // rethrow so the runner marks the task blocked (no run row is opened for a task we can't stage).
     let wt;
-    try {
-      wt = await ensureWorktree(project.rootPath, { branch, baseRef: project.defaultBranch });
-    } catch (e) {
-      recordProgress(
-        db,
-        task.id,
-        { state: 'blocked', step: 'worktree', message: 'could not create worktree: ' + (e?.message ?? e) },
-        workerId
-      );
-      throw e;
+    if (isolation === 'branch') {
+      wt = { path: project.rootPath, branch, baseRef: project.defaultBranch, reused: true };
+    } else {
+      // A worktree failure is a hard setup error: record it and rethrow so the runner marks the task
+      // blocked (no run row is opened for a task we can't stage).
+      try {
+        wt = await ensureWorktree(project.rootPath, { branch, baseRef: project.defaultBranch });
+      } catch (e) {
+        recordProgress(
+          db,
+          task.id,
+          { state: 'blocked', step: 'worktree', message: 'could not create worktree: ' + (e?.message ?? e) },
+          workerId
+        );
+        throw e;
+      }
     }
 
     // Resume the agent's saved session on a wake; a missing/lost id falls back to a fresh session seeded
