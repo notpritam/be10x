@@ -2,6 +2,7 @@
 // ABOUTME: bumps updated_at, and appends a task_events row. Pure core; no HTTP/MCP.
 import { randomUUID } from 'node:crypto';
 import { getType, validateContent } from './types.js';
+import { assertTransition } from './lifecycle.js';
 import { appendEvent } from './events.js';
 
 function hydrate(row) {
@@ -62,4 +63,43 @@ export function listTasks(db, { scope, teamId, status, ownerId } = {}) {
   if (ownerId) { where.push('owner_id = ?'); args.push(ownerId); }
   const sql = 'SELECT * FROM tasks' + (where.length ? ' WHERE ' + where.join(' AND ') : '') + ' ORDER BY created_at';
   return db.prepare(sql).all(...args).map(hydrate);
+}
+
+export function setResearch(db, id, research, actor) {
+  db.prepare('UPDATE tasks SET research_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(research), Date.now(), id);
+  appendEvent(db, id, actor, 'research', { research });
+  return getTask(db, id);
+}
+
+export function setPlan(db, id, plan, actor) {
+  db.prepare('UPDATE tasks SET plan_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(plan), Date.now(), id);
+  appendEvent(db, id, actor, 'plan', { plan });
+  return getTask(db, id);
+}
+
+export function updateContent(db, id, patch, actor) {
+  const task = getTask(db, id);
+  if (!task) throw new Error('NO_TASK');
+  const merged = { ...task.content, ...patch };
+  db.prepare('UPDATE tasks SET content_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(merged), Date.now(), id);
+  appendEvent(db, id, actor, 'content', { patch });
+  return getTask(db, id);
+}
+
+export function transition(db, id, to, actor, meta = {}) {
+  const task = getTask(db, id);
+  if (!task) throw new Error('NO_TASK');
+  assertTransition(task.status, to);
+  db.prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?').run(to, Date.now(), id);
+  appendEvent(db, id, actor, 'status', { from: task.status, to, ...meta });
+  return getTask(db, id);
+}
+
+export function retryTask(db, id, actor) {
+  const task = getTask(db, id);
+  if (!task) throw new Error('NO_TASK');
+  const n = task.retryCount + 1;
+  db.prepare('UPDATE tasks SET retry_count = ?, updated_at = ? WHERE id = ?').run(n, Date.now(), id);
+  appendEvent(db, id, actor, 'retry', { retryCount: n });
+  return getTask(db, id);
 }
