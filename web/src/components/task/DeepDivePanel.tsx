@@ -3,7 +3,7 @@
 // shared detail controller + parts so it stays in lockstep with the slide-over. Collapse (or Escape)
 // returns to the slide-over; close returns to the board.
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, Minimize2, Share2, X } from "lucide-react";
+import { Activity, Info, MessageSquare, Minimize2, Share2, X } from "lucide-react";
 import { toast } from "sonner";
 import type { Status } from "@/lib/types";
 import { useApp } from "@/state/app-store";
@@ -12,6 +12,7 @@ import { PriorityPill, TypeTag } from "@/components/common/bits";
 import { LifecycleStrip } from "./LifecycleStrip";
 import { PlanView } from "./PlanView";
 import { WorkSection } from "./WorkSection";
+import { InfoPanel } from "./InfoPanel";
 import { AgentLiveStatus } from "./AgentLiveStatus";
 import { DebugControl } from "./DebugControl";
 import { AgentActions, CommentThread } from "./agent-parts";
@@ -52,8 +53,8 @@ export function DeepDivePanel({
   const { detail, loading, refresh, onMove } = ctrl;
   const task = detail?.task;
   const isStale = task && taskId !== task.id;
-  const [discussionOpen, setDiscussionOpen] = useState(true);
-  const [activityOpen, setActivityOpen] = useState(true);
+  // Which right-rail panel is open (null = collapsed to just the icon strip).
+  const [rightPanel, setRightPanel] = useState<"discussion" | "activity" | "info" | null>("discussion");
 
   function move(to: Status) {
     void onMove(to);
@@ -126,10 +127,10 @@ export function DeepDivePanel({
               </div>
             </header>
 
-            {/* Body — wide main column + activity rail (stacks under on narrow screens) */}
-            <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1.7fr)_minmax(348px,1fr)]">
+            {/* Body — main column + a collapsible right icon-sidebar (Discussion / Activity / Info). */}
+            <div className="flex min-h-0 flex-1">
               {/* Main */}
-              <div className="min-h-0 space-y-6 overflow-y-auto scroll-thin border-border/60 px-8 py-7 lg:border-r">
+              <div className="min-h-0 flex-1 space-y-6 overflow-y-auto scroll-thin px-8 py-7">
                 <LifecycleStrip status={task.status} />
 
                 {/* An open question the agent asked — answerable anytime, not only in needs_input. */}
@@ -169,35 +170,72 @@ export function DeepDivePanel({
                 </Section>
               </div>
 
-              {/* Discussion + activity rail — each section collapses to free space and the discussion
-                  scrolls internally, so the column never runs away with height. */}
-              <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto scroll-thin border-t border-border/60 bg-muted/30 px-4 py-4 lg:border-t-0">
-                <RailSection
-                  title="Discussion"
-                  open={discussionOpen}
-                  onToggle={() => setDiscussionOpen((v) => !v)}
-                  badge={
-                    detail.input ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-600">
-                        <span className="size-1.5 rounded-full bg-amber-500" /> Waiting for you
+              {/* Right panel — the active section; collapses to just the icon strip. */}
+              {rightPanel && (
+                <aside className="flex w-[340px] shrink-0 flex-col overflow-hidden border-l border-border/60 bg-muted/20">
+                  <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-2.5">
+                    <h3 className="text-[12.5px] font-semibold text-foreground">
+                      {rightPanel === "discussion" ? "Discussion" : rightPanel === "activity" ? "Activity" : "Info"}
+                    </h3>
+                    {rightPanel === "discussion" &&
+                      (detail.input ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-600">
+                          <span className="size-1.5 rounded-full bg-amber-500" /> Waiting for you
+                        </span>
+                      ) : (
+                        <AgentLiveStatus task={task} runs={detail.runs} compact />
+                      ))}
+                    {rightPanel === "activity" && (
+                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+                        {detail.events.length}
                       </span>
-                    ) : (
-                      <AgentLiveStatus task={task} runs={detail.runs} compact />
-                    )
-                  }
-                >
-                  <CommentThread taskId={task.id} resolveActor={resolveActor} onPosted={refresh} />
-                </RailSection>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setRightPanel(null)}
+                      aria-label="Collapse panel"
+                      title="Collapse"
+                      className="ml-auto grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto scroll-thin px-4 py-4">
+                    {rightPanel === "discussion" && (
+                      <CommentThread taskId={task.id} resolveActor={resolveActor} onPosted={refresh} />
+                    )}
+                    {rightPanel === "activity" && (
+                      <ActivityFeed events={detail.events} resolveActor={resolveActor} />
+                    )}
+                    {rightPanel === "info" && <InfoPanel task={task} runs={detail.runs} events={detail.events} />}
+                  </div>
+                </aside>
+              )}
 
-                <RailSection
-                  title="Activity"
-                  count={detail.events.length}
-                  open={activityOpen}
-                  onToggle={() => setActivityOpen((v) => !v)}
+              {/* Icon rail — always on the far right; click an icon to open its panel, the active one to collapse. */}
+              <nav className="flex w-12 shrink-0 flex-col items-center gap-1 border-l border-border/60 bg-muted/30 py-2.5">
+                <RailIcon
+                  label="Discussion"
+                  active={rightPanel === "discussion"}
+                  onClick={() => setRightPanel((p) => (p === "discussion" ? null : "discussion"))}
                 >
-                  <ActivityFeed events={detail.events} resolveActor={resolveActor} />
-                </RailSection>
-              </aside>
+                  <MessageSquare className="size-[18px]" />
+                </RailIcon>
+                <RailIcon
+                  label="Activity"
+                  active={rightPanel === "activity"}
+                  onClick={() => setRightPanel((p) => (p === "activity" ? null : "activity"))}
+                >
+                  <Activity className="size-[18px]" />
+                </RailIcon>
+                <RailIcon
+                  label="Info"
+                  active={rightPanel === "info"}
+                  onClick={() => setRightPanel((p) => (p === "info" ? null : "info"))}
+                >
+                  <Info className="size-[18px]" />
+                </RailIcon>
+              </nav>
             </div>
           </div>
         )}
@@ -205,43 +243,30 @@ export function DeepDivePanel({
   );
 }
 
-// A collapsible rail section (Discussion / Activity). The header stays put; the body toggles so the
-// user can fold either away to free vertical space. `badge` carries a live status chip (agent running,
-// waiting for input) on the right.
-function RailSection({
-  title,
-  count,
-  badge,
-  open,
-  onToggle,
+// One icon in the right rail — toggles its panel open/closed; the active icon shows a raised card.
+function RailIcon({
+  label,
+  active,
+  onClick,
   children,
 }: {
-  title: string;
-  count?: number;
-  badge?: ReactNode;
-  open: boolean;
-  onToggle: () => void;
+  label: string;
+  active: boolean;
+  onClick: () => void;
   children: ReactNode;
 }) {
   return (
-    <section className="shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/50">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none"
-      >
-        <ChevronDown
-          className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !open && "-rotate-90")}
-        />
-        <h3 className="text-[12.5px] font-semibold text-foreground">{title}</h3>
-        {count != null && (
-          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
-            {count}
-          </span>
-        )}
-        {badge && <span className="ml-auto min-w-0 truncate">{badge}</span>}
-      </button>
-      {open && <div className="border-t border-border/50 px-3 py-3">{children}</div>}
-    </section>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className={cn(
+        "grid size-9 place-items-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+        active ? "bg-card text-foreground shadow-card" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
   );
 }
