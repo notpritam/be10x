@@ -13,6 +13,7 @@ import { PlanView } from "./PlanView";
 import { PlanVersions } from "./PlanVersions";
 import { TaskOverview } from "./TaskOverview";
 import { TaskChecklist } from "./TaskChecklist";
+import { CurrentStep } from "./CurrentStep";
 import { WorkSection } from "./WorkSection";
 import { InfoPanel } from "./InfoPanel";
 import { AgentLiveStatus } from "./AgentLiveStatus";
@@ -106,14 +107,13 @@ export function DeepDivePanel({
               <div className="min-h-0 flex-1 space-y-6 overflow-y-auto scroll-thin px-8 py-7">
                 <LifecycleStrip status={task.status} />
 
+                {/* Lead with where we are + what's here — not the Move/Plan controls. */}
+                <CurrentStep task={task} runs={detail.runs} />
+
                 {/* Plan review sits here, in place — not pinned to the foot. */}
                 {task.status === "plan_review" && <ReviewActions taskId={task.id} onDone={refresh} />}
 
-                <RequestReviewControl task={task} onDone={refresh} />
-
                 <AgentActions task={task} onDone={refresh} />
-
-                <MoveButtons status={task.status} onMove={move} />
 
                 {/* The agent's live implementation task list — what it's working on, what's done/left. */}
                 <TaskChecklist todos={task.agent?.todos} />
@@ -178,6 +178,10 @@ export function DeepDivePanel({
                 <Section title="Agent">
                   <AgentStatusBlock task={task} />
                 </Section>
+
+                {/* Move / request-review controls at the foot — the artifacts lead the view, not the controls. */}
+                <RequestReviewControl task={task} onDone={refresh} />
+                <MoveButtons status={task.status} onMove={move} />
               </div>
 
               {/* The agent's open question floats at the foot, collapsible — never covers the page. */}
