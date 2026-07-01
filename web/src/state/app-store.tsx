@@ -59,6 +59,25 @@ function urlForSelection(id: string | null, expanded: boolean): string {
   return `/t/${encodeURIComponent(id)}${expanded ? "/full" : ""}`;
 }
 
+// --- open tabs (Chrome-like workspace) -------------------------------------
+// Opened tasks become tabs/pages. The set is persisted so a refresh restores the whole workspace, not
+// just the active task (which the URL already carries).
+export interface TabRef {
+  id: string;
+  humanId: string;
+  title: string;
+}
+const TABS_KEY = "be10x.tabs";
+function loadTabs(): TabRef[] {
+  try {
+    const raw = localStorage.getItem(TABS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter((t) => t && typeof t.id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 interface AppState {
   user: User;
   teams: Team[];
@@ -76,6 +95,8 @@ interface AppState {
   selectedTaskId: string | null;
   /** Whether the selected task is shown in the full-screen deep-dive (vs. the slide-over). */
   expanded: boolean;
+  /** Tasks opened as tabs in the workspace (the active one is `selectedTaskId`). */
+  openTabs: TabRef[];
 
   setView: (view: View) => void;
   reloadTasks: () => Promise<void>;
@@ -85,6 +106,8 @@ interface AppState {
   moveTask: (taskId: string, to: Status) => Promise<boolean>;
   applyTask: (task: Task) => void;
   selectTask: (id: string | null) => void;
+  /** Close a task tab; if it was active, the neighbouring tab (or the board) takes over. */
+  closeTab: (id: string) => void;
   /** Promote the open task from the slide-over to the full-screen deep-dive. */
   expandTask: () => void;
   /** Collapse the deep-dive back to the slide-over (keeps the task open). */
@@ -116,8 +139,11 @@ export function AppProvider({
   const [view, setView] = useState<View>({ kind: "all" });
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() => parseLocation().id);
   const [expanded, setExpanded] = useState<boolean>(() => parseLocation().expanded);
+  const [openTabs, setOpenTabs] = useState<TabRef[]>(() => loadTabs());
   const tasksRef = useRef<Task[]>([]);
   tasksRef.current = allTasks;
+  const openTabsRef = useRef<TabRef[]>([]);
+  openTabsRef.current = openTabs;
 
   const reloadTeams = useCallback(async () => {
     try {
@@ -167,6 +193,42 @@ export function AppProvider({
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
+
+  // Persist the open tabs so a refresh restores the whole workspace, not just the active task.
+  useEffect(() => {
+    try {
+      localStorage.setItem(TABS_KEY, JSON.stringify(openTabs));
+    } catch {
+      /* storage may be unavailable — non-fatal */
+    }
+  }, [openTabs]);
+
+  // Keep tab labels fresh from the loaded tasks (fills placeholders from a deep link, tracks renames).
+  useEffect(() => {
+    if (!allTasks.length) return;
+    setOpenTabs((prev) => {
+      let changed = false;
+      const next = prev.map((t) => {
+        const task = allTasks.find((x) => x.id === t.id);
+        if (task && (task.humanId !== t.humanId || task.title !== t.title)) {
+          changed = true;
+          return { id: t.id, humanId: task.humanId, title: task.title };
+        }
+        return t;
+      });
+      return changed ? next : prev;
+    });
+  }, [allTasks]);
+
+  // The task in the URL (deep link / refresh) is always represented as an open tab.
+  useEffect(() => {
+    if (!selectedTaskId) return;
+    setOpenTabs((prev) =>
+      prev.some((t) => t.id === selectedTaskId)
+        ? prev
+        : [...prev, { id: selectedTaskId, humanId: "…", title: "Task" }],
+    );
+  }, [selectedTaskId]);
 
   const applyTask = useCallback((task: Task) => {
     setAllTasks((prev) => {
@@ -243,8 +305,26 @@ export function AppProvider({
 
   const selectTask = useCallback((id: string | null) => {
     setSelectedTaskId(id);
-    // Deselecting always drops back out of the full-screen view.
-    if (id === null) setExpanded(false);
+    if (id === null) {
+      setExpanded(false);
+      return;
+    }
+    // Opening a task registers (or re-activates) its tab — every card/row already routes through here.
+    const task = tasksRef.current.find((t) => t.id === id);
+    setOpenTabs((prev) =>
+      prev.some((t) => t.id === id)
+        ? prev
+        : [...prev, { id, humanId: task?.humanId ?? "…", title: task?.title ?? "Task" }],
+    );
+  }, []);
+
+  const closeTab = useCallback((id: string) => {
+    const tabs = openTabsRef.current;
+    const idx = tabs.findIndex((t) => t.id === id);
+    const next = tabs.filter((t) => t.id !== id);
+    setOpenTabs(next);
+    // Closing the active tab hands off to the neighbour (or the board when none remain).
+    setSelectedTaskId((cur) => (cur === id ? next[idx]?.id ?? next[idx - 1]?.id ?? null : cur));
   }, []);
 
   const expandTask = useCallback(() => setExpanded(true), []);
@@ -287,6 +367,7 @@ export function AppProvider({
     tasksLoading,
     selectedTaskId,
     expanded,
+    openTabs,
     setView,
     reloadTasks,
     reloadTeams,
@@ -295,6 +376,7 @@ export function AppProvider({
     moveTask,
     applyTask,
     selectTask,
+    closeTab,
     expandTask,
     collapseTask,
     logout,

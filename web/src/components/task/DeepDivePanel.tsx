@@ -38,12 +38,15 @@ export function DeepDivePanel({
   onClose,
   onCollapse,
   ctrl,
+  inline = false,
 }: {
   taskId: string | null;
   open: boolean;
   onClose: () => void;
-  onCollapse: () => void;
+  onCollapse?: () => void;
   ctrl: ReturnType<typeof useTaskDetail>;
+  /** Render as the active tab's page (fills the main area) rather than a fixed overlay. */
+  inline?: boolean;
 }) {
   const { resolveActor } = useApp();
   const { detail, loading, refresh, onMove } = ctrl;
@@ -65,9 +68,9 @@ export function DeepDivePanel({
       .catch(() => toast.error("Couldn't copy the link."));
   }
 
-  // Escape steps back to the slide-over (this is a page, not a modal, so wire the key ourselves).
+  // Escape steps back to the slide-over (overlay mode only; as an inline tab page there's nowhere to go).
   useEffect(() => {
-    if (!open) return;
+    if (!open || !onCollapse) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCollapse();
     };
@@ -78,7 +81,13 @@ export function DeepDivePanel({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-background">
+    <div
+      className={
+        inline
+          ? "relative flex h-full min-h-0 flex-col bg-background"
+          : "fixed inset-0 z-40 flex flex-col bg-background"
+      }
+    >
       {!task || isStale ? (
         <PanelLoading />
       ) : (
@@ -105,9 +114,11 @@ export function DeepDivePanel({
                     <Share2 className="size-[16px]" />
                   </HeaderIconButton>
                   <DebugControl taskId={task.id} />
-                  <HeaderIconButton label="Collapse to side panel" onClick={onCollapse}>
-                    <Minimize2 className="size-[16px]" />
-                  </HeaderIconButton>
+                  {onCollapse && (
+                    <HeaderIconButton label="Collapse to side panel" onClick={onCollapse}>
+                      <Minimize2 className="size-[16px]" />
+                    </HeaderIconButton>
+                  )}
                   <HeaderIconButton label="Close" onClick={onClose}>
                     <X className="size-[17px]" />
                   </HeaderIconButton>
