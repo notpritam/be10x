@@ -6,7 +6,7 @@ export function BrandTile({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "grid size-8 shrink-0 place-items-center rounded-[10px] bg-primary text-primary-foreground shadow-[0_2px_8px_rgba(232,98,13,0.35)]",
+        "grid size-8 shrink-0 place-items-center rounded-[8px] bg-primary text-primary-foreground shadow-[0_2px_8px_rgba(232,98,13,0.35)]",
         className,
       )}
       aria-hidden

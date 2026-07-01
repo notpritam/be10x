@@ -81,7 +81,7 @@ export function InfoPanel({ task, runs, events }: { task: Task; runs: Run[]; eve
   const hasRepo = !!run && !!(run.branch || run.worktreePath || run.model || run.sessionId || run.executor);
 
   return (
-    <div className="overflow-hidden rounded-[13px] border border-border/60 bg-card shadow-card">
+    <div className="overflow-hidden rounded-[8px] border border-border/60 bg-card shadow-card">
       <header className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
         <Info className="size-4 shrink-0 text-muted-foreground" />
         <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground" title={task.title}>

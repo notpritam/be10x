@@ -39,7 +39,7 @@ function DraggableCard({
         }
       }}
       className={cn(
-        "card-rise cursor-grab rounded-[12px] outline-none transition-opacity active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "card-rise cursor-grab rounded-[8px] outline-none transition-opacity active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         isDragging && "opacity-40",
       )}
       style={{ "--stagger": Math.min(index, 12) } as CSSProperties}
@@ -67,7 +67,7 @@ export function Column({
     <section className="flex h-full w-[300px] shrink-0 flex-col">
       {/* Column header — a soft status-colored band so the board reads with colour, not flat grey. */}
       <div
-        className="mb-1.5 flex h-9 items-center gap-2 rounded-[10px] px-2.5"
+        className="mb-1.5 flex h-9 items-center gap-2 rounded-[8px] px-2.5"
         style={{ background: `color-mix(in oklab, ${meta.color} 10%, transparent)` }}
       >
         <span className="size-2.5 shrink-0 rounded-full" style={{ background: meta.color }} />
@@ -89,7 +89,7 @@ export function Column({
       <div
         ref={setNodeRef}
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto scroll-thin rounded-[12px] px-1 pb-14 pt-1 transition-colors",
+          "min-h-0 flex-1 overflow-y-auto scroll-thin rounded-[8px] px-1 pb-14 pt-1 transition-colors",
           isOver && "bg-primary/[0.045] ring-1 ring-inset ring-primary/20",
         )}
       >
@@ -101,7 +101,7 @@ export function Column({
           {tasks.length === 0 && (
             <div
               className={cn(
-                "mt-1 rounded-[12px] border border-dashed border-border/70 py-8 text-center text-[12px] text-muted-foreground/60 transition-colors",
+                "mt-1 rounded-[8px] border border-dashed border-border/70 py-8 text-center text-[12px] text-muted-foreground/60 transition-colors",
                 isOver && "border-primary/40 text-primary/70",
               )}
             >
@@ -113,7 +113,7 @@ export function Column({
             <button
               type="button"
               onClick={onAddTask}
-              className="flex items-center gap-1.5 rounded-[12px] border border-dashed border-border/70 px-3 py-2.5 text-[12.5px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              className="flex items-center gap-1.5 rounded-[8px] border border-dashed border-border/70 px-3 py-2.5 text-[12.5px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >
               <Plus className="size-4" />
               Add task
