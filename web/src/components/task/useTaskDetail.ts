@@ -5,13 +5,14 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import { STATUS_META } from "@/lib/lifecycle";
-import type { InputRequest, Status, Task, TaskEvent } from "@/lib/types";
+import type { InputRequest, Run, Status, Task, TaskEvent } from "@/lib/types";
 import { useApp } from "@/state/app-store";
 
 export interface Detail {
   task: Task;
   events: TaskEvent[];
   input: InputRequest | null;
+  runs: Run[];
 }
 
 // A pending question only matters while the agent is actively working the task. Past that (approved,
@@ -36,12 +37,13 @@ export function useTaskDetail(taskId: string | null): TaskDetailController {
       try {
         // Always fetch any open question — the agent can ask during planning (researching), not only
         // when the task formally pauses in needs_input, and the human must be able to answer it anytime.
-        const [{ task }, { events }, { inputRequest }] = await Promise.all([
+        const [{ task }, { events }, { inputRequest }, { runs }] = await Promise.all([
           api.getTask(id),
           api.events(id),
           api.getInput(id),
+          api.listRuns(id),
         ]);
-        setDetail({ task, events, input: INPUT_STATES.has(task.status) ? inputRequest : null });
+        setDetail({ task, events, input: INPUT_STATES.has(task.status) ? inputRequest : null, runs });
         applyTask(task);
       } catch (err) {
         if (!opts?.silent) toast.error(errorMessage(err));

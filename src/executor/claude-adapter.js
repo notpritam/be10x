@@ -88,6 +88,13 @@ function findSessionId(value, depth = 0) {
   return null;
 }
 
+// The model the agent is running on: top-level `model` on the init line, else the assistant message's.
+function findModel(obj) {
+  if (typeof obj.model === 'string') return obj.model;
+  if (obj.message && typeof obj.message === 'object' && typeof obj.message.model === 'string') return obj.message.model;
+  return null;
+}
+
 // The message uuid is the id used for resume/truncation; fall back to the inner Anthropic message id.
 function findMessageId(obj) {
   if (typeof obj.uuid === 'string') return obj.uuid;
@@ -137,6 +144,7 @@ export function parseStreamLine(line) {
     raw: obj,
     type,
     sessionId: findSessionId(obj),
+    model: findModel(obj),
     messageId: findMessageId(obj),
     text: extractAssistantText(obj),
     result: isResult ? obj : null,
@@ -149,6 +157,7 @@ export function parseStreamLine(line) {
 // `done`/`result` flip once the terminal `type:'result'` line arrives.
 export class StreamAccumulator {
   #sessionId = null;
+  #model = null;
   #done = false;
   #result = null;
   #text = '';
@@ -160,6 +169,9 @@ export class StreamAccumulator {
 
     if (event.sessionId && this.#sessionId === null) {
       this.#sessionId = event.sessionId;
+    }
+    if (event.model && this.#model === null) {
+      this.#model = event.model;
     }
     if (event.text) {
       this.#text += event.text;
@@ -173,6 +185,10 @@ export class StreamAccumulator {
 
   get sessionId() {
     return this.#sessionId;
+  }
+
+  get model() {
+    return this.#model;
   }
 
   get done() {

@@ -10,6 +10,7 @@ import { PriorityPill, TypeTag, UserAvatar } from "@/components/common/bits";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { LifecycleStrip } from "./LifecycleStrip";
 import { PlanView } from "./PlanView";
+import { WorkSection } from "./WorkSection";
 import { AgentActions, CommentThread } from "./agent-parts";
 import { ReviewActions } from "./ReviewActions";
 import { RequestReviewControl } from "./RequestReviewControl";
@@ -139,6 +140,10 @@ export function DeepDivePanel({
 
                 <Section title="Details">
                   <TaskContent task={task} />
+                </Section>
+
+                <Section title="Work">
+                  <WorkSection task={task} runs={detail.runs} />
                 </Section>
 
                 {task.research != null && (

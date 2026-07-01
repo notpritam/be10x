@@ -123,6 +123,25 @@ export interface InputRequest {
 
 export type ReviewVerdict = "approved" | "changes_requested";
 
+/** One execution of the agent against a task — the "where/how it worked" metadata. */
+export interface Run {
+  id: string;
+  taskId: string;
+  projectId: string | null;
+  sessionId: string | null;
+  executor: string;
+  model: string | null;
+  worktreePath: string | null;
+  branch: string | null;
+  baseRef: string | null;
+  status: "starting" | "running" | "done" | "failed";
+  result: unknown | null;
+  error: string | null;
+  createdAt: number;
+  startedAt: number | null;
+  endedAt: number | null;
+}
+
 /** A comment on a task — the human's channel for steering the agent (plan feedback, direction). */
 export interface Comment {
   id: string;

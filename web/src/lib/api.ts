@@ -9,6 +9,7 @@ import type {
   MintedToken,
   Project,
   ReviewVerdict,
+  Run,
   Severity,
   Status,
   Task,
@@ -135,6 +136,8 @@ export const api = {
   getTask: (id: string) => request<{ task: Task }>(`/api/tasks/${id}`),
   createTask: (input: CreateTaskInput) => post<{ task: Task }>("/api/tasks", input),
   events: (id: string) => request<{ events: TaskEvent[] }>(`/api/tasks/${id}/events`),
+  /** The agent's execution history for a task — branch, model, session, status, timing. */
+  listRuns: (id: string) => request<{ runs: Run[] }>(`/api/tasks/${id}/runs`),
 
   // Task actions
   transition: (id: string, to: Status) =>

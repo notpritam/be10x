@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { buildClaudeCommand, BE10X_SYSTEM_PROMPT, StreamAccumulator } from './claude-adapter.js';
 import { ensureWorktree as realEnsureWorktree, worktreeBranch } from './worktree.js';
-import { createRun, setRunSession, setRunPid, markRunning, finishRun, getLatestRunForTask } from './runs.js';
+import { createRun, setRunSession, setRunModel, setRunPid, markRunning, finishRun, getLatestRunForTask } from './runs.js';
 import { recordProgress } from '../worker/worker.js';
 
 const BOARD_MSG_MAX = 280;
@@ -189,6 +189,7 @@ export function makeClaudeExecutor(db, project, opts = {}) {
 
       const acc = new StreamAccumulator();
       let sessionPersisted = false;
+      let modelPersisted = false;
       let stdoutBuf = '';
       let stderrBuf = '';
       let settled = false;
@@ -202,6 +203,10 @@ export function makeClaudeExecutor(db, project, opts = {}) {
           sessionPersisted = true;
           setRunSession(db, run.id, acc.sessionId);
           markRunning(db, run.id);
+        }
+        if (acc.model && !modelPersisted) {
+          modelPersisted = true;
+          setRunModel(db, run.id, acc.model);
         }
         if (ev.text) {
           recordProgress(db, task.id, { state: 'working', step: 'agent', message: truncate(ev.text) }, workerId);

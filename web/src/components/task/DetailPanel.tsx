@@ -10,6 +10,7 @@ import { PriorityPill, TypeTag, UserAvatar } from "@/components/common/bits";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { LifecycleStrip } from "./LifecycleStrip";
 import { PlanView } from "./PlanView";
+import { WorkSection } from "./WorkSection";
 import { ReviewActions } from "./ReviewActions";
 import { RequestReviewControl } from "./RequestReviewControl";
 import { InputRequestPanel } from "./InputRequestPanel";
@@ -154,6 +155,10 @@ function QuickView({
 
               <Section title="Details">
                 <TaskContent task={task} />
+              </Section>
+
+              <Section title="Work">
+                <WorkSection task={task} runs={detail.runs} />
               </Section>
 
               {task.research != null && (

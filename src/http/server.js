@@ -18,6 +18,7 @@ import { requestReview, submitReview } from '../reviews/reviews.js';
 import { requestInput, answerInput, getOpenInputRequest } from '../tasks/input_requests.js';
 import { addComment, listComments } from '../tasks/comments.js';
 import { enqueueWake } from '../executor/wake.js';
+import { listRunsForTask } from '../executor/runs.js';
 import { listProjects } from '../projects/projects.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -162,6 +163,7 @@ const ROUTES = [
     send(res, 200, { task: t });
   }],
   ['GET', '/api/tasks/:id/events', true, async ({ db, res, params }) => send(res, 200, { events: listEvents(db, params.id) })],
+  ['GET', '/api/tasks/:id/runs', true, async ({ db, res, params }) => send(res, 200, { runs: listRunsForTask(db, params.id) })],
   ['POST', '/api/tasks/:id/transition', true, async ({ db, res, params, body, user }) => {
     const task = transition(db, params.id, body.to, user.id);
     // A drag that hands the task to the agent (→researching) or approves it (→ready_to_work) wakes it.

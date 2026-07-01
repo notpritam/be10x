@@ -11,6 +11,8 @@ function hydrate(row) {
     taskId: row.task_id,
     projectId: row.project_id,
     sessionId: row.session_id,
+    executor: row.executor,
+    model: row.model,
     worktreePath: row.worktree_path,
     branch: row.branch,
     baseRef: row.base_ref,
@@ -58,6 +60,12 @@ export function setRunSession(db, id, sessionId) {
 
 export function setRunPid(db, id, pid) {
   db.prepare('UPDATE runs SET pid = ? WHERE id = ?').run(pid, id);
+  return getRun(db, id);
+}
+
+// Persist the model the agent actually ran on (scraped from its stream), so the board can show it.
+export function setRunModel(db, id, model) {
+  db.prepare('UPDATE runs SET model = ? WHERE id = ?').run(model, id);
   return getRun(db, id);
 }
 

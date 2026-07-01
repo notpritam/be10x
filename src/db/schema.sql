@@ -117,6 +117,8 @@ CREATE TABLE IF NOT EXISTS runs (
   task_id       TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   project_id    TEXT,
   session_id    TEXT,
+  executor      TEXT NOT NULL DEFAULT 'claude',
+  model         TEXT,
   worktree_path TEXT,
   branch        TEXT,
   base_ref      TEXT,

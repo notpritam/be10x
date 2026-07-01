@@ -13,9 +13,9 @@ import { Textarea } from "@/components/ui/textarea";
 export function AgentActions({ task, onDone }: { task: Task; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const canHandOff = task.status === "backlog";
-  const canPing = ["researching", "plan_review", "ready_to_work", "in_progress", "needs_input", "verifying"].includes(
-    task.status,
-  );
+  // Only where the agent has meaningful next work — not verifying/done/terminal, where a ping would
+  // wrongly re-plan (there's no "verify" mode yet). needs_input should be answered, not pinged.
+  const canPing = ["researching", "plan_review", "ready_to_work", "in_progress"].includes(task.status);
   if (!canHandOff && !canPing) return null;
 
   async function run(action: () => Promise<unknown>, ok: string) {

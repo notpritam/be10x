@@ -61,3 +61,23 @@ export function claimNextWake(db, { projectId, workerId = 'runner' } = {}) {
   }
   return null;
 }
+
+// Board-wide claim: the oldest pending wake for ANY task that has a project (the executor needs the
+// project's repo to work in). Used by the runner baked into `be10x serve`, which works every linked
+// repo — so a user adds a folder on the board and it just works, no per-repo terminal.
+export function claimNextWakeAny(db, workerId = 'runner') {
+  const rows = db
+    .prepare(
+      `SELECT w.id FROM wake_queue w JOIN tasks t ON t.id = w.task_id
+       WHERE w.claimed_at IS NULL AND t.project_id IS NOT NULL
+       ORDER BY w.enqueued_at, w.rowid`
+    )
+    .all();
+  for (const { id } of rows) {
+    const res = db
+      .prepare('UPDATE wake_queue SET claimed_at = ?, claimed_by = ? WHERE id = ? AND claimed_at IS NULL')
+      .run(Date.now(), workerId, id);
+    if (res.changes === 1) return getWake(db, id);
+  }
+  return null;
+}
