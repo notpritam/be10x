@@ -1,0 +1,37 @@
+// ABOUTME: The cron worker's core: atomically claim the next ready_to_work agent-executable task,
+// ABOUTME: and recordProgress — the changes-watcher sink that streams step/message/changes onto the task.
+import { getType } from '../tasks/types.js';
+import { getTask } from '../tasks/tasks.js';
+import { appendEvent } from '../tasks/events.js';
+
+// Claim the oldest ready_to_work task whose type is agent-executable. The conditional UPDATE makes the
+// claim atomic, so two workers polling at once can never grab the same task.
+export function claimNextReadyTask(db, workerId = 'worker') {
+  const rows = db.prepare("SELECT id, type FROM tasks WHERE status = 'ready_to_work' ORDER BY created_at, rowid").all();
+  for (const row of rows) {
+    let executable = false;
+    try {
+      executable = getType(row.type).agentExecutable;
+    } catch {
+      executable = false;
+    }
+    if (!executable) continue;
+    const res = db
+      .prepare("UPDATE tasks SET status = 'in_progress', updated_at = ? WHERE id = ? AND status = 'ready_to_work'")
+      .run(Date.now(), row.id);
+    if (res.changes === 1) {
+      appendEvent(db, row.id, workerId, 'status', { from: 'ready_to_work', to: 'in_progress', claimedBy: workerId });
+      return getTask(db, row.id);
+    }
+  }
+  return null;
+}
+
+// Stream progress / agent status onto a task (the changes-watcher data sink). Overwrites the latest
+// agent block and appends a progress event so the board shows real movement, not just a spinner.
+export function recordProgress(db, taskId, { state = 'working', step = '', message = '', todos = [], changes = null } = {}, actor = 'agent') {
+  const agent = { state, step, message, todos, changes, updatedAt: Date.now() };
+  db.prepare('UPDATE tasks SET agent_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(agent), Date.now(), taskId);
+  appendEvent(db, taskId, actor, 'progress', { step, message, changes });
+  return getTask(db, taskId);
+}
