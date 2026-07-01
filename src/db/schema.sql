@@ -106,3 +106,25 @@ CREATE TABLE IF NOT EXISTS projects (
   root_path      TEXT,
   created_at     INTEGER NOT NULL
 );
+
+-- One execution of an ephemeral Claude agent session against a task, in that task's git worktree.
+-- session_id is Claude Code's own session id, scraped from stream-json and persisted so a later run can
+-- --resume it; it stays null until the first stream event carrying it arrives. FK to tasks only
+-- (project_id is a loose string mirroring tasks.project_id). This is the durable half of the "sessions
+-- disposable, state durable" model: lose the process, resume from the saved session_id + worktree.
+CREATE TABLE IF NOT EXISTS runs (
+  id            TEXT PRIMARY KEY,
+  task_id       TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  project_id    TEXT,
+  session_id    TEXT,
+  worktree_path TEXT,
+  branch        TEXT,
+  base_ref      TEXT,
+  status        TEXT NOT NULL DEFAULT 'starting' CHECK (status IN ('starting','running','done','failed')),
+  pid           INTEGER,
+  result_json   TEXT,
+  error         TEXT,
+  created_at    INTEGER NOT NULL,
+  started_at    INTEGER,
+  ended_at      INTEGER
+);
