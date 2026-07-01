@@ -75,6 +75,17 @@ export function setResearch(db, id, research, actor) {
 export function setPlan(db, id, plan, actor) {
   db.prepare('UPDATE tasks SET plan_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(plan), Date.now(), id);
   appendEvent(db, id, actor, 'plan', { plan });
+  // A recorded plan supersedes any still-open question the agent asked while figuring it out — close them
+  // so a stale "needs your input" can't linger on the board once the agent has moved on.
+  const open = db.prepare("SELECT id FROM input_requests WHERE task_id = ? AND status = 'open'").all(id);
+  if (open.length) {
+    const now = Date.now();
+    const upd = db.prepare("UPDATE input_requests SET status = 'cancelled', answered_at = ? WHERE id = ? AND status = 'open'");
+    for (const r of open) {
+      upd.run(now, r.id);
+      appendEvent(db, id, actor, 'input_cancelled', { requestId: r.id, reason: 'superseded_by_plan' });
+    }
+  }
   return getTask(db, id);
 }
 

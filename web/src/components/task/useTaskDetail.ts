@@ -14,6 +14,10 @@ export interface Detail {
   input: InputRequest | null;
 }
 
+// A pending question only matters while the agent is actively working the task. Past that (approved,
+// verifying, done, terminal) a still-"open" request is stale — don't surface it as "needs your input".
+const INPUT_STATES = new Set<Status>(["researching", "plan_review", "needs_input", "in_progress", "blocked"]);
+
 export interface TaskDetailController {
   detail: Detail | null;
   loading: boolean;
@@ -37,7 +41,7 @@ export function useTaskDetail(taskId: string | null): TaskDetailController {
           api.events(id),
           api.getInput(id),
         ]);
-        setDetail({ task, events, input: inputRequest });
+        setDetail({ task, events, input: INPUT_STATES.has(task.status) ? inputRequest : null });
         applyTask(task);
       } catch (err) {
         if (!opts?.silent) toast.error(errorMessage(err));
