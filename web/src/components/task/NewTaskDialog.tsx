@@ -1,7 +1,7 @@
 // ABOUTME: Create a task — type, scope (derived from the current view), title, and the summary/symptom
 // that satisfies the type's required content field. New tasks land in backlog (backend rule).
 import { useEffect, useState, type ReactNode } from "react";
-import { Check, Code2, FolderPlus, GitBranch, Lightbulb, Loader2, TreePine } from "lucide-react";
+import { Check, Code2, FolderPlus, GitBranch, Lightbulb, Loader2, MessagesSquare, TreePine } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "@/state/app-store";
 import { api, errorMessage } from "@/lib/api";
@@ -77,18 +77,25 @@ export function NewTaskDialog({
       .catch(() => setProjects([]));
   }, [open]);
 
-  const detailLabel = type === "code-issue" ? "Symptom" : "Summary";
+  const detailLabel = type === "code-issue" ? "Symptom" : type === "query" ? "Question" : "Summary";
   const detailPlaceholder =
     type === "code-issue"
       ? "What's going wrong? e.g. double submit creates two sessions"
-      : "The gist. e.g. outline the key questions for the Q3 brief";
+      : type === "query"
+        ? "Ask the agent anything — e.g. what's the riskiest part of this repo?"
+        : "The gist. e.g. outline the key questions for the Q3 brief";
   const canSubmit = title.trim().length > 0 && detail.trim().length > 0 && !busy;
 
   async function submit() {
     if (!canSubmit) return;
     setBusy(true);
     try {
-      const content = type === "code-issue" ? { symptom: detail.trim() } : { summary: detail.trim() };
+      const content =
+        type === "code-issue"
+          ? { symptom: detail.trim() }
+          : type === "query"
+            ? { question: detail.trim() }
+            : { summary: detail.trim() };
       const task = await createTask({
         type,
         scope: scope.scope,
@@ -126,7 +133,7 @@ export function NewTaskDialog({
           {/* Type */}
           <div className="flex flex-col gap-1.5">
             <Label className="text-[12.5px] text-foreground/80">Type</Label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <TypeButton
                 active={type === "general"}
                 onClick={() => setType("general")}
@@ -140,6 +147,13 @@ export function NewTaskDialog({
                 icon={<Code2 className="size-4" />}
                 title="Code issue"
                 hint="Bug or defect"
+              />
+              <TypeButton
+                active={type === "query"}
+                onClick={() => setType("query")}
+                icon={<MessagesSquare className="size-4" />}
+                title="Query"
+                hint="Chat with the agent"
               />
             </div>
           </div>

@@ -30,7 +30,8 @@ function truncate(s, n = BOARD_MSG_MAX) {
 function contentText(content) {
   if (typeof content === 'string') return content.trim();
   if (content && typeof content === 'object') {
-    const body = content.description || content.body || content.text;
+    const body =
+      content.description || content.body || content.text || content.question || content.summary || content.symptom;
     if (typeof body === 'string') return body.trim();
   }
   return '';
@@ -50,6 +51,8 @@ const MODE_DIRECTIVE = {
   pick_up_now:
     'The human asked you to pick this up now. Read the current plan, comments, and status, and take the most useful next step using the gfa_* tools.',
   follow_up: 'Continue this task from its saved state using the gfa_* tools.',
+  chat:
+    'CHAT MODE. This is a conversational task, not a build. Read the discussion below and reply to the human by calling gfa_reply with { taskId: <the task db id above>, message: "..." }. Be conversational and helpful; do NOT write a plan or implement anything. If the human asks you to create a task, call gfa_create_task and then tell them what you made. Reply once, then stop until they write again.',
 };
 
 // The prompt delivered on stdin: task identity (so the agent addresses the gfa_* tools correctly), the

@@ -25,7 +25,7 @@ function seed() {
   return { db, owner, reviewer, tok, ctx };
 }
 
-test('TOOLS registers exactly the 14 be10x front-door tools, all well-formed', () => {
+test('TOOLS registers exactly the 15 be10x front-door tools, all well-formed', () => {
   const names = TOOLS.map((t) => t.name).sort();
   assert.deepEqual(names, [
     'gfa_answer_input',
@@ -36,6 +36,7 @@ test('TOOLS registers exactly the 14 be10x front-door tools, all well-formed', (
     'gfa_mark_ready',
     'gfa_plan_task',
     'gfa_rate_task',
+    'gfa_reply',
     'gfa_request_input',
     'gfa_research_task',
     'gfa_submit_for_review',

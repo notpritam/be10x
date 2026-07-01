@@ -115,6 +115,8 @@ const REASON_MODE = { plan: 'plan', revise: 'revise', input_answer: 'input_answe
 // The executor mode a wake maps to. pick_up_now is contextual — it means "do the useful next thing",
 // which depends on where the task currently sits.
 function modeForWake(wake, task) {
+  // A query/chat task is always a conversation — never plan/review/execute, whatever woke it.
+  if (task.type === 'query') return 'chat';
   if (wake.reason === 'pick_up_now') {
     if (task.status === 'plan_review') return 'revise';
     if (['ready_to_work', 'in_progress', 'needs_input'].includes(task.status)) return 'execute';

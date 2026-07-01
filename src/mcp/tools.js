@@ -3,6 +3,7 @@
 import { createTask, getTask, listTasks, setResearch, setPlan, transition, rateTask, setRefs } from '../tasks/tasks.js';
 import { requestReview } from '../reviews/reviews.js';
 import { requestInput, answerInput } from '../tasks/input_requests.js';
+import { addComment } from '../tasks/comments.js';
 import { claimNextReadyTask, recordProgress } from '../worker/worker.js';
 import { STATES } from '../tasks/lifecycle.js';
 
@@ -179,6 +180,21 @@ export const TOOLS = [
         { state: args.state, step: args.step, message: args.message, todos: args.todos, changes: args.changes },
         ctx.userId
       ),
+  },
+  {
+    name: 'gfa_reply',
+    description:
+      'Post a conversational reply to the task discussion — this is how you talk back to the human on a query/chat task. Your reply shows as from the agent. For code tasks use gfa_plan_task / gfa_update_progress instead.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', description: 'Task id.' },
+        message: { type: 'string', description: 'Your reply to the human.' },
+      },
+      required: ['taskId', 'message'],
+      additionalProperties: false,
+    },
+    handler: (db, ctx, args) => addComment(db, args.taskId, { author: 'agent', body: args.message, anchor: 'general' }),
   },
   {
     name: 'gfa_request_input',

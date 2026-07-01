@@ -15,6 +15,15 @@ export const TASK_TYPES = {
     flow: ['research', 'plan', 'discuss', 'decide'],
     agentExecutable: false,
   },
+  // A back-and-forth chat with the agent — no plan/review gate. The agent replies in the discussion
+  // (gfa_reply) and can spawn real tasks (gfa_create_task) from the conversation.
+  query: {
+    label: 'Query / chat',
+    required: ['question'],
+    optional: ['context'],
+    flow: ['chat'],
+    agentExecutable: true,
+  },
 };
 
 export function getType(type) {

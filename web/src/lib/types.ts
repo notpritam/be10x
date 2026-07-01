@@ -1,6 +1,6 @@
 // ABOUTME: Shared domain types mirroring the backend HTTP contract.
 
-export type TaskType = "general" | "code-issue";
+export type TaskType = "general" | "code-issue" | "query";
 export type Severity = "high" | "medium" | "low";
 
 export type Status =
