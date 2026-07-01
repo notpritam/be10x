@@ -3,7 +3,8 @@
 // shared detail controller + parts so it stays in lockstep with the slide-over. Collapse (or Escape)
 // returns to the slide-over; close returns to the board.
 import { useEffect, useState, type ReactNode } from "react";
-import { Activity, Info, MessageSquare, Share2 } from "lucide-react";
+import { Activity, Copy, Info, Maximize2, MessageSquare, Share2, X } from "lucide-react";
+import { toast } from "sonner";
 import type { Status } from "@/lib/types";
 import { useApp } from "@/state/app-store";
 import { cn } from "@/lib/utils";
@@ -51,9 +52,20 @@ export function DeepDivePanel({
   // Which right-rail panel is open (null = collapsed to just the icon strip).
   const [rightPanel, setRightPanel] = useState<"discussion" | "activity" | "info" | null>("discussion");
   const [shareOpen, setShareOpen] = useState(false);
+  const [planExpanded, setPlanExpanded] = useState(false);
 
   function move(to: Status) {
     void onMove(to);
+  }
+
+  function copyPlan() {
+    const p = task?.plan;
+    if (p == null) return;
+    const text = typeof p === "string" ? p : JSON.stringify(p, null, 2);
+    navigator.clipboard
+      .writeText(text)
+      .then(() => toast.success("Plan copied."))
+      .catch(() => toast.error("Copy failed."));
   }
 
   // Escape steps back to the slide-over (overlay mode only; as an inline tab page there's nowhere to go).
@@ -98,11 +110,34 @@ export function DeepDivePanel({
 
                 <MoveButtons status={task.status} onMove={move} />
 
-                {/* Plan first — it's the artifact under review. */}
+                {/* Plan first — the artifact under review. Copy its content or expand it full-screen. */}
                 {task.plan != null && (
-                  <Section title="Plan">
+                  <section>
+                    <div className="mb-2 flex items-center gap-2">
+                      <h3 className="text-[12px] font-semibold text-muted-foreground/80">Plan</h3>
+                      <div className="ml-auto flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={copyPlan}
+                          title="Copy plan"
+                          aria-label="Copy plan"
+                          className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                        >
+                          <Copy className="size-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPlanExpanded(true)}
+                          title="Expand plan"
+                          aria-label="Expand plan"
+                          className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                        >
+                          <Maximize2 className="size-4" />
+                        </button>
+                      </div>
+                    </div>
                     <PlanView plan={task.plan} />
-                  </Section>
+                  </section>
                 )}
 
                 <Section title="Details">
@@ -198,6 +233,34 @@ export function DeepDivePanel({
                 </div>
               </nav>
             </div>
+            {planExpanded && task.plan != null && (
+              <div className="fixed inset-0 z-50 flex flex-col bg-background">
+                <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-5 py-3">
+                  <h2 className="text-[14px] font-semibold text-foreground">Plan · {task.humanId}</h2>
+                  <div className="ml-auto flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={copyPlan}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                      <Copy className="size-4" /> Copy
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPlanExpanded(false)}
+                      aria-label="Close"
+                      title="Close"
+                      className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                      <X className="size-[18px]" />
+                    </button>
+                  </div>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto scroll-thin px-8 py-6">
+                  <PlanView plan={task.plan} />
+                </div>
+              </div>
+            )}
             <ShareDialog taskId={task.id} open={shareOpen} onOpenChange={setShareOpen} />
           </div>
         )}
