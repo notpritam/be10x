@@ -1,7 +1,7 @@
 // ABOUTME: Shared agent-interaction blocks used by both the slide-over and the deep-dive: the hand-off /
 // pick-up-now action row, and the comment thread the agent reads on its next wake.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, Copy } from "lucide-react";
+import { ChevronDown, Copy, SendHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import type { Comment, Task } from "@/lib/types";
 import { api } from "@/lib/api";
@@ -188,8 +188,8 @@ export function CommentThread({
           className="text-[13px]"
         />
         <div className="flex justify-end">
-          <Button size="sm" disabled={busy || !body.trim()} onClick={post}>
-            Post comment
+          <Button size="sm" disabled={busy || !body.trim()} onClick={post} className="gap-1.5" aria-label="Send">
+            <SendHorizontal className="size-4" /> Send
           </Button>
         </div>
       </div>

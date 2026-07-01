@@ -169,7 +169,7 @@ export function DeepDivePanel({
               {/* Right panel — the active section; collapses to just the icon strip. */}
               {rightPanel && (
                 <aside className="flex w-[340px] shrink-0 flex-col overflow-hidden border-l border-border/60 bg-muted/20">
-                  <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-2.5">
+                  <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
                     <h3 className="text-[12.5px] font-semibold text-foreground">
                       {rightPanel === "discussion" ? "Discussion" : rightPanel === "activity" ? "Activity" : "Info"}
                     </h3>
@@ -186,25 +186,18 @@ export function DeepDivePanel({
                         {detail.events.length}
                       </span>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => setRightPanel(null)}
-                      aria-label="Collapse panel"
-                      title="Collapse"
-                      className="ml-auto grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    >
-                      <X className="size-4" />
-                    </button>
                   </div>
-                  <div className="min-h-0 flex-1 overflow-y-auto scroll-thin px-4 py-4">
-                    {rightPanel === "discussion" && (
-                      <CommentThread taskId={task.id} resolveActor={resolveActor} onPosted={refresh} />
-                    )}
-                    {rightPanel === "activity" && (
-                      <ActivityFeed events={detail.events} resolveActor={resolveActor} />
-                    )}
-                    {rightPanel === "info" && <InfoPanel task={task} runs={detail.runs} events={detail.events} />}
-                  </div>
+                  {/* Discussion fills the panel as a chat (input pinned at the foot); the others scroll. */}
+                  {rightPanel === "discussion" ? (
+                    <CommentThread taskId={task.id} resolveActor={resolveActor} onPosted={refresh} />
+                  ) : (
+                    <div className="min-h-0 flex-1 overflow-y-auto scroll-thin px-3 py-3">
+                      {rightPanel === "activity" && (
+                        <ActivityFeed events={detail.events} resolveActor={resolveActor} />
+                      )}
+                      {rightPanel === "info" && <InfoPanel task={task} runs={detail.runs} events={detail.events} />}
+                    </div>
+                  )}
                 </aside>
               )}
 
