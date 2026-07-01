@@ -9,7 +9,7 @@ import { openDb } from '../src/db/db.js';
 import { getUserByEmail } from '../src/auth/users.js';
 import { createToken } from '../src/auth/tokens.js';
 import { listTasks } from '../src/tasks/tasks.js';
-import { recordProgress } from '../src/worker/worker.js';
+import { makeClaudeExecutor } from '../src/executor/executor.js';
 import { detectProjectKey, registerProject, getProjectByKey, listProjects } from '../src/projects/projects.js';
 import { workLoop } from '../src/runner/runner.js';
 
@@ -136,17 +136,17 @@ async function cmdWork(args) {
   const intervalMs = (args.interval && args.interval !== true ? Number(args.interval) : 3) * 1000;
   const once = !!args.once;
 
-  // Default executor: log the claim and drop a "runner picked up" progress note onto the task.
+  // Real executor: spawn an ephemeral Claude session in the task's own worktree and stream it to the board.
+  const claudeExecute = makeClaudeExecutor(db, project, { model: process.env.GFA_MODEL, workerId });
   const execute = async (task) => {
+    const stamp = () => new Date().toISOString();
+    console.log('[' + stamp() + '] ' + task.humanId + ' (' + task.type + ') — ' + task.title);
+    const summary = await claudeExecute(task);
     console.log(
-      '[' + new Date().toISOString() + '] claimed ' + task.humanId + ' (' + task.type + ') — ' + task.title
+      '[' + stamp() + '] ' + task.humanId + ' ' + (summary.done ? 'done' : 'failed') +
+        (summary.sessionId ? ' · session ' + summary.sessionId : '')
     );
-    recordProgress(
-      db,
-      task.id,
-      { state: 'working', step: 'runner picked up', message: 'runner picked up ' + task.humanId },
-      workerId
-    );
+    return summary;
   };
 
   console.log(
