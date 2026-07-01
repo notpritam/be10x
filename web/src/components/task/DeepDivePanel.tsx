@@ -3,12 +3,11 @@
 // shared detail controller + parts so it stays in lockstep with the slide-over. Collapse (or Escape)
 // returns to the slide-over; close returns to the board.
 import { useEffect, useState, type ReactNode } from "react";
-import { Activity, Info, MessageSquare, Minimize2, Share2, X } from "lucide-react";
+import { Activity, Info, MessageSquare, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import type { Status } from "@/lib/types";
 import { useApp } from "@/state/app-store";
 import { cn } from "@/lib/utils";
-import { PriorityPill, TypeTag } from "@/components/common/bits";
 import { LifecycleStrip } from "./LifecycleStrip";
 import { PlanView } from "./PlanView";
 import { WorkSection } from "./WorkSection";
@@ -24,19 +23,15 @@ import type { useTaskDetail } from "./useTaskDetail";
 import {
   AgentStatusBlock,
   DataValue,
-  HeaderIconButton,
   MoveButtons,
   PanelLoading,
-  RefreshingHint,
   Section,
-  StatusBadge,
   TaskContent,
 } from "./detail-parts";
 
 export function DeepDivePanel({
   taskId,
   open,
-  onClose,
   onCollapse,
   ctrl,
   inline = false,
@@ -50,7 +45,7 @@ export function DeepDivePanel({
   inline?: boolean;
 }) {
   const { resolveActor } = useApp();
-  const { detail, loading, refresh, onMove } = ctrl;
+  const { detail, refresh, onMove } = ctrl;
   const task = detail?.task;
   const isStale = task && taskId !== task.id;
   // Which right-rail panel is open (null = collapsed to just the icon strip).
@@ -93,37 +88,8 @@ export function DeepDivePanel({
         <PanelLoading />
       ) : (
         <div className="flex h-full min-h-0 flex-col">
-            {/* Header — one compact row: chips → title → live status → controls. Kept to a single line
-                so the page starts at the content, not a tall banner. */}
-            <header className="shrink-0 border-b border-border/60 bg-card/40 px-5 py-2.5">
-              <div className="flex items-center gap-2.5">
-                <span className="shrink-0 font-mono text-[11.5px] font-medium tracking-wide text-muted-foreground">
-                  {task.humanId}
-                </span>
-                <TypeTag type={task.type} />
-                <PriorityPill severity={task.severity} />
-                <StatusBadge status={task.status} />
-                <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
-                  {task.title}
-                </h1>
-                <AgentLiveStatus task={task} runs={detail.runs} compact />
-                {loading && <RefreshingHint />}
-
-                {/* Controls — right-aligned, easy to grab: share · debug · collapse · close */}
-                <div className="ml-auto flex shrink-0 items-center gap-0.5">
-                  {onCollapse && (
-                    <HeaderIconButton label="Collapse to side panel" onClick={onCollapse}>
-                      <Minimize2 className="size-[16px]" />
-                    </HeaderIconButton>
-                  )}
-                  <HeaderIconButton label="Close" onClick={onClose}>
-                    <X className="size-[17px]" />
-                  </HeaderIconButton>
-                </div>
-              </div>
-            </header>
-
-            {/* Body — main column + a collapsible right icon-sidebar (Discussion / Activity / Info). */}
+            {/* No page header — the task's identity + status live in the Info panel (right rail). The
+                body is the plan/details/work + the collapsible right icon-sidebar. */}
             <div className="flex min-h-0 flex-1">
               {/* Main */}
               <div className="min-h-0 flex-1 space-y-6 overflow-y-auto scroll-thin px-8 py-7">
