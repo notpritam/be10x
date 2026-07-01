@@ -8,5 +8,5 @@
     "@modelcontextprotocol/sdk": "^1.0.0",
     "better-sqlite3": "^11.8.0"
   },
-  "scripts": { "test": "node --test" }
+  "scripts": { "test": "node --test test/*.test.js" }
 }
