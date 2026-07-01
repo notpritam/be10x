@@ -23,15 +23,12 @@ export const BE10X_SYSTEM_PROMPT = [
 //                          so we must NOT also pass --append-system-prompt-file)
 //   - systemPromptPath   → `--append-system-prompt-file <path>` only on a fresh (non-resumed) run
 //   - worktree           → `--add-dir <worktree>` when set
-export function buildClaudeCommand({ worktree, systemPromptPath, model, resumeSessionId } = {}) {
-  const args = [
-    '-y',
-    '@anthropic-ai/claude-code@' + CLAUDE_VERSION,
-    '-p',
-    '--verbose',
-    '--output-format',
-    'stream-json',
-  ];
+//   - bin                → run this executable directly (a locally-installed `claude`, or a test stub)
+//                          instead of downloading via npx; the npx package prefix is dropped, flags stay
+export function buildClaudeCommand({ worktree, systemPromptPath, model, resumeSessionId, bin } = {}) {
+  const command = bin || 'npx';
+  const args = bin ? [] : ['-y', '@anthropic-ai/claude-code@' + CLAUDE_VERSION];
+  args.push('-p', '--verbose', '--output-format', 'stream-json');
 
   if (model) {
     args.push('--model', model);
@@ -49,7 +46,7 @@ export function buildClaudeCommand({ worktree, systemPromptPath, model, resumeSe
     args.push('--add-dir', worktree);
   }
 
-  return { command: 'npx', args };
+  return { command, args };
 }
 
 // Defensively locate a session id anywhere in a parsed event. The real CLI puts `session_id` at the

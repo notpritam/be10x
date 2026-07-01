@@ -75,6 +75,17 @@ test('buildClaudeCommand: includes --model when model is given, omits when not',
   assert.ok(!without.args.includes('--model'));
 });
 
+test('buildClaudeCommand: bin override runs the executable directly and drops the npx prefix', () => {
+  const { command, args } = buildClaudeCommand({ bin: '/opt/claude', worktree: '/w', systemPromptPath: '/s.txt' });
+  assert.equal(command, '/opt/claude');
+  assert.ok(!args.includes('-y'));
+  assert.ok(!args.some((a) => a.startsWith('@anthropic-ai/claude-code')));
+  // the real CLI flags are still present so a local `claude` gets the same behaviour as npx
+  assert.ok(hasContiguous(args, ['--output-format', 'stream-json']));
+  assert.ok(hasContiguous(args, ['--append-system-prompt-file', '/s.txt']));
+  assert.ok(hasContiguous(args, ['--add-dir', '/w']));
+});
+
 test('parseStreamLine: returns null for blank and non-JSON lines', () => {
   assert.equal(parseStreamLine(''), null);
   assert.equal(parseStreamLine('   '), null);
