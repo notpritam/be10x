@@ -1,13 +1,13 @@
-// ABOUTME: The full-screen "deep dive" for a task — a large centered Dialog with a roomy two-column
-// layout: a wide main column (lifecycle, contextual actions, moves, content, plan, research, agent)
-// and a spacious activity/comments rail. Reuses the shared detail controller + parts so it stays in
-// lockstep with the slide-over. Collapse returns to the slide-over; close returns to the board.
+// ABOUTME: The full-screen "deep dive" for a task — a real page (URL /t/<id>/full), not a modal: a
+// full-viewport panel with a roomy two-column layout (main column + activity/comments rail). Reuses the
+// shared detail controller + parts so it stays in lockstep with the slide-over. Collapse (or Escape)
+// returns to the slide-over; close returns to the board.
+import { useEffect } from "react";
 import { Minimize2, X } from "lucide-react";
 import type { Status } from "@/lib/types";
 import { useApp } from "@/state/app-store";
 import { relativeTime } from "@/lib/utils";
 import { PriorityPill, TypeTag, UserAvatar } from "@/components/common/bits";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { LifecycleStrip } from "./LifecycleStrip";
 import { PlanView } from "./PlanView";
 import { WorkSection } from "./WorkSection";
@@ -52,20 +52,24 @@ export function DeepDivePanel({
     void onMove(to);
   }
 
+  // Escape steps back to the slide-over (this is a page, not a modal, so wire the key ourselves).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCollapse();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onCollapse]);
+
+  if (!open) return null;
+
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent
-        showCloseButton={false}
-        aria-describedby={undefined}
-        className="flex h-[92vh] max-w-[min(1200px,95vw)] flex-col overflow-hidden rounded-2xl p-0 gap-0 sm:max-w-[min(1200px,95vw)] shadow-panel"
-      >
-        {!task || isStale ? (
-          <>
-            <DialogTitle className="sr-only">Loading task</DialogTitle>
-            <PanelLoading />
-          </>
-        ) : (
-          <div className="flex h-full min-h-0 flex-col">
+    <div className="fixed inset-0 z-40 flex flex-col bg-background">
+      {!task || isStale ? (
+        <PanelLoading />
+      ) : (
+        <div className="flex h-full min-h-0 flex-col">
             {/* Header — spans both columns */}
             <header className="shrink-0 border-b border-border/70 bg-card/40 px-8 pt-6 pb-5">
               <div className="flex items-start gap-4">
@@ -80,9 +84,9 @@ export function DeepDivePanel({
                     <PriorityPill severity={task.severity} />
                     <StatusBadge status={task.status} />
                   </div>
-                  <DialogTitle className="max-w-4xl text-[27px] font-bold leading-[1.12] tracking-[-0.02em] text-foreground">
+                  <h1 className="max-w-4xl text-[27px] font-bold leading-[1.12] tracking-[-0.02em] text-foreground">
                     {task.title}
-                  </DialogTitle>
+                  </h1>
                   <div className="mt-3.5 flex flex-wrap items-center gap-x-5 gap-y-1.5">
                     <span className="inline-flex items-center gap-2 text-[12.5px] text-muted-foreground">
                       <UserAvatar
@@ -176,7 +180,6 @@ export function DeepDivePanel({
             </div>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+    </div>
   );
 }
