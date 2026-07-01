@@ -1,0 +1,188 @@
+<!doctype html>
+<!-- ABOUTME: be10x — a visual of how the system works right now (front doors · setup · task lifecycle · state flow). -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>be10x — the flow, right now</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#f6f6f3;--surface:#fff;--surface2:#fbfbf9;--line:#eceae5;--line2:#e2e0da;
+    --ink:#1b1a17;--mut:#6b6a64;--dim:#9c9a92;--acc:#e8620d;--acc-hi:#c9540b;--acc-soft:#fdf0e5;
+    --human:#2563eb;--human-soft:#eaf0fe;--agent:#0d9488;--agent-soft:#e6f5f3;
+    --disp:'Plus Jakarta Sans',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--disp);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1000px;margin:0 auto;padding:40px 26px 70px}
+  .mono{font-family:var(--mono);font-size:.88em}
+  h1{font-size:34px;font-weight:800;letter-spacing:-.03em;margin:0 0 4px}
+  h1 b{color:var(--acc)}
+  .sub{color:var(--mut);margin:0 0 8px;font-size:16px}
+  .k{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin:36px 0 12px;font-weight:600}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 2px rgba(28,26,22,.04),0 10px 26px -14px rgba(28,26,22,.14);padding:22px}
+  /* architecture */
+  .arch{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:8px}
+  @media(max-width:760px){.arch{grid-template-columns:1fr;gap:12px}.arch .arrow{transform:rotate(90deg)}}
+  .node{border-radius:13px;padding:15px 16px;text-align:center;border:1px solid var(--line2);background:var(--surface2)}
+  .node .t{font-weight:700;font-size:15px;display:flex;align-items:center;justify-content:center;gap:7px}
+  .node .d{font-size:12.5px;color:var(--mut);margin-top:4px;line-height:1.45}
+  .node.human{border-color:#cdddfb;background:var(--human-soft)}
+  .node.human .t{color:var(--human)}
+  .node.agent{border-color:#bfe6e0;background:var(--agent-soft)}
+  .node.agent .t{color:var(--agent)}
+  .node.core{border-color:#f3d9c3;background:var(--acc-soft)}
+  .node.core .t{color:var(--acc-hi)}
+  .node.db{border-color:var(--line2);background:#1b1a17;color:#fff}
+  .node.db .t{color:#fff}.node.db .d{color:#b8b6ae}
+  .col{display:flex;flex-direction:column;gap:8px}
+  .arrow{color:var(--dim);font-size:20px;text-align:center}
+  .doors-note{font-size:12.5px;color:var(--mut);margin-top:14px;text-align:center}
+  .doors-note b{color:var(--ink)}
+  /* setup steps */
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  @media(max-width:760px){.steps{grid-template-columns:1fr 1fr}}
+  .step{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px}
+  .step .n{width:24px;height:24px;border-radius:8px;background:var(--acc);color:#fff;font-weight:700;font-size:13px;display:grid;place-items:center;margin-bottom:9px}
+  .step .st{font-weight:700;font-size:14px;margin-bottom:4px}
+  .step .sd{font-size:12.6px;color:var(--mut);line-height:1.5}
+  .step code{font-family:var(--mono);font-size:11.5px;background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:1px 5px;color:var(--acc-hi)}
+  /* lifecycle pipeline */
+  .pipe{display:flex;flex-wrap:wrap;align-items:stretch;gap:0}
+  .stage{flex:1 1 105px;min-width:100px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin:5px;display:flex;flex-direction:column;gap:5px;box-shadow:0 1px 2px rgba(28,26,22,.04)}
+  .stage .dot{width:9px;height:9px;border-radius:50%}
+  .stage .sn{font-weight:700;font-size:13.5px;letter-spacing:-.01em}
+  .stage .who{font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:2px 6px;border-radius:20px;align-self:flex-start}
+  .who.h{background:var(--human-soft);color:var(--human)}
+  .who.a{background:var(--agent-soft);color:var(--agent)}
+  .who.ha{background:#f0eef0;color:var(--mut)}
+  .stage .sd{font-size:11.5px;color:var(--mut);line-height:1.4}
+  .pipearrow{align-self:center;color:var(--dim);font-family:var(--mono);font-size:16px}
+  .loopnote{margin-top:14px;display:flex;flex-direction:column;gap:7px}
+  .loopnote .lp{font-size:13px;color:var(--mut);border-left:3px solid var(--line2);padding-left:11px}
+  .loopnote .lp b{color:var(--ink)}
+  .loopnote .lp.amber{border-left-color:var(--acc)}
+  /* state flow */
+  .state{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center}
+  @media(max-width:760px){.state{grid-template-columns:1fr}}
+  .sbox{border:1px solid var(--line);border-radius:13px;padding:15px 16px;background:var(--surface)}
+  .sbox h3{margin:0 0 8px;font-size:14px;font-weight:700;display:flex;align-items:center;gap:7px}
+  .sbox ul{margin:0;padding-left:18px;font-size:12.8px;color:var(--mut);line-height:1.6}
+  .sbox .mono{color:var(--acc-hi)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;font-size:12.5px;color:var(--mut)}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .legend .sw{width:12px;height:12px;border-radius:4px}
+  .foot{margin-top:40px;color:var(--dim);font-size:12px;font-family:var(--mono)}
+  .walk{margin:0;padding:0;list-style:none;counter-reset:w}
+  .walk li{position:relative;counter-increment:w;padding:0 0 17px 46px;font-size:14px;color:var(--mut);line-height:1.6}
+  .walk li:last-child{padding-bottom:0}
+  .walk li b{color:var(--ink);font-weight:700}
+  .walk li .mono{color:var(--acc-hi)}
+  .walk li::before{content:counter(w);position:absolute;left:0;top:-2px;width:28px;height:28px;border-radius:9px;background:var(--acc-soft);color:var(--acc-hi);border:1px solid #f3d9c3;font-weight:700;font-size:13px;font-family:var(--disp);display:grid;place-items:center}
+  .walk li::after{content:"";position:absolute;left:13px;top:28px;bottom:4px;width:2px;background:var(--line)}
+  .walk li:last-child::after{display:none}
+  .walk .tag{display:inline-block;font-family:var(--mono);font-size:10.5px;padding:1px 7px;border-radius:20px;background:#eef2e9;color:#16a34a;margin-left:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>be<b>10x</b> — the flow, right now</h1>
+  <p class="sub">One board. Two front doors. Everything durable in one place.</p>
+
+  <div class="k">The picture</div>
+  <div class="card">
+    <div class="arch">
+      <div class="col">
+        <div class="node human"><div class="t">👤 You</div><div class="d">the web board · localhost:4610</div></div>
+        <div class="node agent"><div class="t">🤖 Your agent</div><div class="d">Claude Code, via MCP tools</div></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="node core"><div class="t">⚙️ be10x core</div><div class="d">typed tasks · governed lifecycle · review gate · input · worker</div></div>
+      <div class="arrow">→</div>
+      <div class="node db"><div class="t">🗄️ SQLite</div><div class="d">tasks · events · agent state — the single source of truth</div></div>
+    </div>
+    <div class="doors-note"><b>You</b> drive the board; <b>your agent</b> drives the MCP tools (<span class="mono">gfa_*</span>). Both hit the same core and the same rows — a task you drag and a task your agent claims are the same task.</div>
+  </div>
+
+  <div class="k">Get connected — 4 steps (once per repo)</div>
+  <div class="steps">
+    <div class="step"><div class="n">1</div><div class="st">Serve</div><div class="sd"><code>be10x serve</code> — the board + API at <span class="mono">localhost:4610</span>.</div></div>
+    <div class="step"><div class="n">2</div><div class="st">Sign up</div><div class="sd">Create your account on the board; make or join a team.</div></div>
+    <div class="step"><div class="n">3</div><div class="st">Link your repo</div><div class="sd"><code>be10x link</code> in the repo — registers it by its git remote, mints a token, writes <span class="mono">.be10x/mcp.json</span>.</div></div>
+    <div class="step"><div class="n">4</div><div class="st">Connect the agent</div><div class="sd">Open the repo in Claude Code — it now has the <span class="mono">gfa_*</span> tools and can see &amp; drive tasks.</div></div>
+  </div>
+
+  <div class="k">The task lifecycle — how work actually moves</div>
+  <div class="card">
+    <div class="pipe">
+      <div class="stage"><span class="dot" style="background:#94938c"></span><span class="sn">Capture</span><span class="who ha">you / agent</span><span class="sd">A task is added (any type).</span></div>
+      <span class="pipearrow">›</span>
+      <div class="stage"><span class="dot" style="background:#0d9488"></span><span class="sn">Research</span><span class="who a">agent</span><span class="sd">Agent gathers context, attaches findings.</span></div>
+      <span class="pipearrow">›</span>
+      <div class="stage"><span class="dot" style="background:#0d9488"></span><span class="sn">Plan</span><span class="who a">agent</span><span class="sd">Drafts the plan — nothing runs yet.</span></div>
+      <span class="pipearrow">›</span>
+      <div class="stage"><span class="dot" style="background:#d99400"></span><span class="sn">Review</span><span class="who h">you</span><span class="sd">Tag a reviewer → approve or request changes.</span></div>
+      <span class="pipearrow">›</span>
+      <div class="stage"><span class="dot" style="background:#16a34a"></span><span class="sn">Ready</span><span class="who ha">gate</span><span class="sd">Approved → queued for work.</span></div>
+      <span class="pipearrow">›</span>
+      <div class="stage"><span class="dot" style="background:#2563eb"></span><span class="sn">In progress</span><span class="who a">agent claims</span><span class="sd">Runner/agent claims it &amp; works; streams progress.</span></div>
+      <span class="pipearrow">›</span>
+      <div class="stage"><span class="dot" style="background:#e8620d"></span><span class="sn">Needs input</span><span class="who h">you</span><span class="sd">Agent pauses, asks; your answer resumes it.</span></div>
+      <span class="pipearrow">›</span>
+      <div class="stage"><span class="dot" style="background:#0891b2"></span><span class="sn">Verify</span><span class="who a">agent</span><span class="sd">Self-rates against done-criteria.</span></div>
+      <span class="pipearrow">›</span>
+      <div class="stage"><span class="dot" style="background:#16a34a"></span><span class="sn">Done</span><span class="who ha">recorded</span><span class="sd">Output/refs written back.</span></div>
+    </div>
+    <div class="loopnote">
+      <div class="lp amber"><b>Governed:</b> dragging a card on the board is a real lifecycle move — only legal transitions apply; illegal drags snap back with a reason.</div>
+      <div class="lp"><b>Loops:</b> a rejected review → back to research/plan; a failed verify → back to in-progress. Nothing is a dead end.</div>
+    </div>
+  </div>
+
+  <div class="k">How state stays in sync</div>
+  <div class="card">
+    <div class="state">
+      <div class="sbox"><h3>🤖 Agent writes</h3><ul>
+        <li><span class="mono">gfa_claim_task</span> → picks up a Ready task</li>
+        <li><span class="mono">gfa_update_progress</span> → step · message · what changed</li>
+        <li><span class="mono">gfa_request_input</span> → pauses &amp; asks you</li>
+        <li><span class="mono">gfa_submit_output</span> → records the result</li>
+      </ul></div>
+      <div class="arrow">↔</div>
+      <div class="sbox"><h3>👤 You see &amp; act</h3><ul>
+        <li>Board shows the live <b>agent panel</b> + full <b>activity feed</b></li>
+        <li>Open a task → the full-screen deep-dive</li>
+        <li>Approve reviews · answer input requests</li>
+        <li>Drag between lanes (governed)</li>
+      </ul></div>
+    </div>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--human)"></span>you (human)</span>
+      <span><span class="sw" style="background:var(--agent)"></span>agent</span>
+      <span><span class="sw" style="background:var(--acc)"></span>be10x core</span>
+      <span>every action is an event — nothing is hidden, nothing is lost</span>
+    </div>
+  </div>
+
+  <div class="k">Walkthrough — you create a task, and how your agent works it</div>
+  <div class="card">
+    <ol class="walk">
+      <li><b>You create the task.</b><span class="tag">website or agent</span> Fill the form on the board (or your agent calls <span class="mono">gfa_create_task</span>). It lands in <b>Backlog</b>. <b>Nothing runs yet</b> — it's just captured &amp; logged.</li>
+      <li><b>You shape &amp; approve it.</b> Research → plan (you or the agent), tag a reviewer, approve → the task reaches <b>Ready to work</b>. That gate is deliberate: no work starts without an approved plan.</li>
+      <li><b>Your agent picks it up — no copy‑paste.</b> Because you ran <span class="mono">be10x link</span>, your agent in that repo already sees this exact task (same DB). It calls <span class="mono">gfa_claim_task</span> (or the <span class="mono">be10x work</span> runner auto‑claims) → status flips to <b>In progress</b>.</li>
+      <li><b>It works in your repo &amp; streams progress.</b> As it goes it calls <span class="mono">gfa_update_progress</span> — the board's <b>agent panel + activity feed update live</b>. You never refresh or move anything by hand.</li>
+      <li><b>It pauses to ask you.</b> Hit a decision? <span class="mono">gfa_request_input</span> parks it in <b>Needs input</b>; you answer on the website; it resumes right where it left off.</li>
+      <li><b>You supervise from the website.</b> Approve reviews, answer inputs, watch it verify &amp; finish — same data on both sides, always live.</li>
+    </ol>
+    <div class="loopnote" style="margin-top:18px">
+      <div class="lp amber"><b>There is no "sync" step.</b> The website and the CLI/agent are two views of one SQLite DB. Create anywhere, work anywhere, watch anywhere — it's the same task, live on both.</div>
+    </div>
+  </div>
+
+  <p class="foot">be10x · current flow · humans on the board, agents on MCP, one durable core</p>
+</div>
+</body>
+</html>
