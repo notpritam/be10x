@@ -3,7 +3,7 @@
 // shared detail controller + parts so it stays in lockstep with the slide-over. Collapse (or Escape)
 // returns to the slide-over; close returns to the board.
 import { useEffect, useState, type ReactNode } from "react";
-import { Bug, ChevronUp, Copy, History, Info, Maximize2, MessageSquare, Share2, X } from "lucide-react";
+import { Bug, ChevronUp, Copy, History, Info, Layers, Maximize2, MessageSquare, Share2, X } from "lucide-react";
 import { toast } from "sonner";
 import type { Status } from "@/lib/types";
 import { useApp } from "@/state/app-store";
@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { LifecycleStrip } from "./LifecycleStrip";
 import { PlanView } from "./PlanView";
 import { PlanVersions } from "./PlanVersions";
+import { TaskOverview } from "./TaskOverview";
 import { WorkSection } from "./WorkSection";
 import { InfoPanel } from "./InfoPanel";
 import { AgentLiveStatus } from "./AgentLiveStatus";
@@ -56,6 +57,7 @@ export function DeepDivePanel({
   const [planExpanded, setPlanExpanded] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [interactionBarOpen, setInteractionBarOpen] = useState(true);
+  const [overviewOpen, setOverviewOpen] = useState(false);
 
   function move(to: Status) {
     void onMove(to);
@@ -255,6 +257,9 @@ export function DeepDivePanel({
                 >
                   <Info className="size-[18px]" />
                 </RailIcon>
+                <RailIcon label="Overview — plans, changes, steps" active={overviewOpen} onClick={() => setOverviewOpen(true)}>
+                  <Layers className="size-[18px]" />
+                </RailIcon>
 
                 {/* Actions moved off the header to keep it clean — share + debug live at the rail's foot. */}
                 <div className="mt-auto flex flex-col items-center gap-1">
@@ -306,6 +311,14 @@ export function DeepDivePanel({
               </div>
             )}
             <ShareDialog taskId={task.id} open={shareOpen} onOpenChange={setShareOpen} />
+            {overviewOpen && (
+              <TaskOverview
+                task={task}
+                runs={detail.runs}
+                events={detail.events}
+                onClose={() => setOverviewOpen(false)}
+              />
+            )}
           </div>
         )}
     </div>
