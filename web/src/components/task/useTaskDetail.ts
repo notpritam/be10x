@@ -27,20 +27,22 @@ export function useTaskDetail(taskId: string | null): TaskDetailController {
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(
-    async (id: string) => {
-      setLoading(true);
+    async (id: string, opts?: { silent?: boolean }) => {
+      if (!opts?.silent) setLoading(true);
       try {
-        const [{ task }, { events }] = await Promise.all([api.getTask(id), api.events(id)]);
-        let input: InputRequest | null = null;
-        if (task.status === "needs_input") {
-          input = (await api.getInput(id)).inputRequest;
-        }
-        setDetail({ task, events, input });
+        // Always fetch any open question — the agent can ask during planning (researching), not only
+        // when the task formally pauses in needs_input, and the human must be able to answer it anytime.
+        const [{ task }, { events }, { inputRequest }] = await Promise.all([
+          api.getTask(id),
+          api.events(id),
+          api.getInput(id),
+        ]);
+        setDetail({ task, events, input: inputRequest });
         applyTask(task);
       } catch (err) {
-        toast.error(errorMessage(err));
+        if (!opts?.silent) toast.error(errorMessage(err));
       } finally {
-        setLoading(false);
+        if (!opts?.silent) setLoading(false);
       }
     },
     [applyTask],
@@ -50,6 +52,14 @@ export function useTaskDetail(taskId: string | null): TaskDetailController {
     if (taskId) void load(taskId);
     // Keep the last detail cached while closing so exit animations don't flash the loader;
     // a stale id is guarded by callers via `detail.task.id !== taskId`.
+  }, [taskId, load]);
+
+  // Live updates: while a task is open, poll it silently so the agent's progress, plan, questions, and
+  // status changes appear on their own — no manual refresh. (v1 will move to a push/URL-aware model.)
+  useEffect(() => {
+    if (!taskId) return;
+    const t = setInterval(() => void load(taskId, { silent: true }), 3000);
+    return () => clearInterval(t);
   }, [taskId, load]);
 
   const refresh = useCallback(() => {

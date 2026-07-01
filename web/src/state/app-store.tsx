@@ -131,6 +131,13 @@ export function AppProvider({
     void reloadTasks();
   }, [reloadTeams, reloadTasks]);
 
+  // Board-wide live updates: poll all tasks so cards move between columns on their own as the agent
+  // works — no manual refresh. (reloadTasks only clears the loading flag, so re-polling never flashes.)
+  useEffect(() => {
+    const t = setInterval(() => void reloadTasks(), 4000);
+    return () => clearInterval(t);
+  }, [reloadTasks]);
+
   const applyTask = useCallback((task: Task) => {
     setAllTasks((prev) => {
       const idx = prev.findIndex((t) => t.id === task.id);

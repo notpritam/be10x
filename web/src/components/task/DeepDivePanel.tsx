@@ -9,6 +9,8 @@ import { relativeTime } from "@/lib/utils";
 import { PriorityPill, TypeTag, UserAvatar } from "@/components/common/bits";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { LifecycleStrip } from "./LifecycleStrip";
+import { PlanView } from "./PlanView";
+import { AgentActions, CommentThread } from "./agent-parts";
 import { ReviewActions } from "./ReviewActions";
 import { RequestReviewControl } from "./RequestReviewControl";
 import { InputRequestPanel } from "./InputRequestPanel";
@@ -117,27 +119,27 @@ export function DeepDivePanel({
               <div className="min-h-0 space-y-6 overflow-y-auto scroll-thin border-border/60 px-8 py-7 lg:border-r">
                 <LifecycleStrip status={task.status} />
 
-                {task.status === "needs_input" && detail.input && (
-                  <InputRequestPanel request={detail.input} onAnswered={refresh} />
-                )}
+                {/* An open question the agent asked — answerable anytime, not only in needs_input. */}
+                {detail.input && <InputRequestPanel request={detail.input} onAnswered={refresh} />}
 
-                {task.status === "plan_review" && (
-                  <ReviewActions taskId={task.id} onDone={refresh} />
-                )}
+                {task.status === "plan_review" && <ReviewActions taskId={task.id} onDone={refresh} />}
 
                 <RequestReviewControl task={task} onDone={refresh} />
 
+                <AgentActions task={task} onDone={refresh} />
+
                 <MoveButtons status={task.status} onMove={move} />
+
+                {/* Plan first — it's the artifact under review. */}
+                {task.plan != null && (
+                  <Section title="Plan">
+                    <PlanView plan={task.plan} />
+                  </Section>
+                )}
 
                 <Section title="Details">
                   <TaskContent task={task} />
                 </Section>
-
-                {task.plan != null && (
-                  <Section title="Plan">
-                    <DataValue value={task.plan} />
-                  </Section>
-                )}
 
                 {task.research != null && (
                   <Section title="Research">
@@ -150,15 +152,21 @@ export function DeepDivePanel({
                 </Section>
               </div>
 
-              {/* Activity / comments rail */}
-              <aside className="flex min-h-0 flex-col overflow-y-auto scroll-thin border-t border-border/60 bg-muted/30 px-6 py-7 lg:border-t-0">
-                <h3 className="mb-4 flex items-center gap-2 text-[12.5px] font-semibold text-foreground">
-                  Activity &amp; comments
-                  <span className="rounded-full bg-card px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
-                    {detail.events.length}
-                  </span>
-                </h3>
-                <ActivityFeed events={detail.events} resolveActor={resolveActor} />
+              {/* Discussion + activity rail */}
+              <aside className="flex min-h-0 flex-col gap-6 overflow-y-auto scroll-thin border-t border-border/60 bg-muted/30 px-6 py-7 lg:border-t-0">
+                <div>
+                  <h3 className="mb-3 text-[12.5px] font-semibold text-foreground">Discussion</h3>
+                  <CommentThread taskId={task.id} resolveActor={resolveActor} onPosted={refresh} />
+                </div>
+                <div>
+                  <h3 className="mb-4 flex items-center gap-2 text-[12.5px] font-semibold text-foreground">
+                    Activity
+                    <span className="rounded-full bg-card px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+                      {detail.events.length}
+                    </span>
+                  </h3>
+                  <ActivityFeed events={detail.events} resolveActor={resolveActor} />
+                </div>
               </aside>
             </div>
           </div>

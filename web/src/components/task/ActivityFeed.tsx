@@ -1,10 +1,12 @@
 // ABOUTME: Activity feed rendered from GET /api/tasks/:id/events — a compact timeline of what happened.
 import { type CSSProperties, type ReactNode, useMemo } from "react";
 import {
+  Activity,
   ArrowRight,
   CheckCircle2,
   ClipboardList,
   CornerDownLeft,
+  MessageCircle,
   MessageCircleQuestion,
   Pencil,
   Plus,
@@ -22,6 +24,11 @@ import { cn, relativeTime } from "@/lib/utils";
 
 function asString(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
+}
+
+function clip(v: unknown, n = 160): string | undefined {
+  const s = asString(v);
+  return s && s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
 function describe(event: TaskEvent): { icon: LucideIcon; phrase: ReactNode; tone?: "accent" } {
@@ -79,6 +86,29 @@ function describe(event: TaskEvent): { icon: LucideIcon; phrase: ReactNode; tone
       };
     case "review_requested":
       return { icon: GitPullRequestArrow, phrase: <>requested a review</> };
+    case "progress": {
+      const step = asString(p.step);
+      const msg = clip(p.message);
+      return {
+        icon: Activity,
+        phrase: (
+          <>
+            {step ? <b className="font-semibold text-foreground">{step}</b> : <>working</>}
+            {msg ? <span className="text-foreground/90"> — {msg}</span> : null}
+          </>
+        ),
+      };
+    }
+    case "comment":
+      return {
+        icon: MessageCircle,
+        phrase: (
+          <>
+            commented: <span className="text-foreground">{clip(p.body)}</span>
+          </>
+        ),
+        tone: "accent",
+      };
     default:
       return { icon: Dot, phrase: <>{event.kind.replace(/_/g, " ")}</> };
   }
