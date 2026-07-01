@@ -112,6 +112,25 @@ export const TOOLS = [
     handler: (db, ctx, args) => requestReview(db, args.taskId, args.reviewerId, ctx.userId),
   },
   {
+    name: 'gfa_submit_plan',
+    description:
+      'Submit the task plan for review — moves it into "plan_review" and tags a reviewer (defaults to the task owner). Call this after gfa_plan_task when the plan is ready for a human to approve.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', description: 'Task id.' },
+        reviewerId: { type: 'string', description: 'Optional reviewer user id (defaults to the task owner).' },
+      },
+      required: ['taskId'],
+      additionalProperties: false,
+    },
+    handler: (db, ctx, args) => {
+      const task = getTask(db, args.taskId);
+      if (!task) throw new Error('NO_TASK');
+      return requestReview(db, args.taskId, args.reviewerId || task.ownerId, ctx.userId);
+    },
+  },
+  {
     name: 'gfa_mark_ready',
     description: 'Transition a task to "ready_to_work" so the worker can claim it.',
     inputSchema: {

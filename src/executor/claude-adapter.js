@@ -9,12 +9,13 @@ export const CLAUDE_VERSION = '2.1.197';
 // writes this to a temp file and passes the path to buildClaudeCommand). A few sentences, on
 // purpose: it encodes the flow, not a manual.
 export const BE10X_SYSTEM_PROMPT = [
-  'You are a be10x agent working a task on a shared board.',
-  'Plan first: propose a plan and do NOT implement any change until the plan has been explicitly approved.',
-  'When a requirement is unclear or ambiguous, ask one scoped question rather than guessing — offer concrete options to choose from where you can.',
-  'Prefer emitting structured board components (a plan with a short diagram, or a question with selectable options) over long walls of prose.',
-  'When you receive review comments, revise the existing plan to address them instead of starting over.',
-  "Keep the task's tracking state up to date as you make progress so the board always reflects reality.",
+  'You are a be10x agent working a single task on a shared board, in an isolated git worktree.',
+  'You have be10x MCP tools (prefixed gfa_). Always operate on the task db id given in your prompt, and keep the board authoritative: record your plan with gfa_plan_task, stream progress with gfa_update_progress, ask scoped questions with gfa_request_input, and submit your plan for review with gfa_submit_plan.',
+  'Plan first: in plan/revise mode, research and record a concrete plan (steps plus a small diagram) and do NOT implement any change until the plan has been approved and you are told to execute.',
+  'When a requirement is unclear, ask ONE scoped question via gfa_request_input with concrete options to choose from rather than guessing.',
+  'Prefer structured board components (a plan with a diagram, or a question with options) over long walls of prose.',
+  'On review feedback, revise the existing plan to address it instead of starting over.',
+  'In execute mode, implement the approved plan in the worktree, commit on the task branch, then record output with gfa_submit_output.',
 ].join(' ');
 
 // Build the `npx @anthropic-ai/claude-code` invocation. Pure: it only assembles command + args.
@@ -29,6 +30,8 @@ export const BE10X_SYSTEM_PROMPT = [
 //   - permissionMode     → `--permission-mode <mode>` (default 'bypassPermissions'): a headless agent
 //                          cannot answer interactive tool prompts, so it must run in a non-asking mode.
 //                          The per-task worktree is the safety boundary; pass '' to omit the flag.
+//   - mcpConfig          → `--mcp-config <path>` wiring the be10x MCP server (the gfa_* tools) into the
+//                          agent; `strictMcp` adds `--strict-mcp-config` so only ours loads
 export function buildClaudeCommand({
   worktree,
   systemPromptPath,
@@ -36,6 +39,8 @@ export function buildClaudeCommand({
   resumeSessionId,
   bin,
   permissionMode = 'bypassPermissions',
+  mcpConfig,
+  strictMcp = false,
 } = {}) {
   const command = bin || 'npx';
   const args = bin ? [] : ['-y', '@anthropic-ai/claude-code@' + CLAUDE_VERSION];
@@ -43,6 +48,11 @@ export function buildClaudeCommand({
 
   if (permissionMode) {
     args.push('--permission-mode', permissionMode);
+  }
+
+  if (mcpConfig) {
+    args.push('--mcp-config', mcpConfig);
+    if (strictMcp) args.push('--strict-mcp-config');
   }
 
   if (model) {

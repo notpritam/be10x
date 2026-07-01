@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { openDb } from '../src/db/db.js';
-import { getLatestRunForTask } from '../src/executor/runs.js';
+import { getLatestRunForTask, createRun, setRunSession } from '../src/executor/runs.js';
 import { makeClaudeExecutor, buildPrompt } from '../src/executor/executor.js';
 
 // A task row must exist for recordProgress (UPDATE tasks + appendEvent) to land.
@@ -58,15 +61,59 @@ function agentState(db, taskId) {
   return row?.agent_json ? JSON.parse(row.agent_json) : null;
 }
 
-test('buildPrompt: fresh run carries the task; resume re-orients', () => {
-  const fresh = buildPrompt(TASK, { resume: false });
-  assert.match(fresh, /GFA-1/);
-  assert.match(fresh, /Fix the bug/);
-  assert.match(fresh, /The thing is broken\./);
-  assert.match(fresh, /plan first/);
-  const resumed = buildPrompt(TASK, { resume: true });
-  assert.match(resumed, /Continue task GFA-1/);
-  assert.doesNotMatch(resumed, /The thing is broken/);
+test('buildPrompt: carries task identity + the mode directive + comment deltas', () => {
+  const plan = buildPrompt(TASK, { mode: 'plan' });
+  assert.match(plan, /GFA-1/);
+  assert.match(plan, /task db id: t1/);
+  assert.match(plan, /Fix the bug/);
+  assert.match(plan, /The thing is broken\./);
+  assert.match(plan, /PLAN MODE/);
+  assert.match(plan, /gfa_plan_task/);
+
+  const execute = buildPrompt(TASK, { mode: 'execute' });
+  assert.match(execute, /EXECUTE MODE/);
+  assert.match(execute, /gfa_submit_output/);
+
+  const revise = buildPrompt(TASK, { mode: 'revise', comments: [{ anchor: 'plan_line', body: 'tighten step 2' }] });
+  assert.match(revise, /REVISE MODE/);
+  assert.match(revise, /tighten step 2/);
+});
+
+test('execute mode resumes the prior session (--resume, no fresh system prompt)', async () => {
+  const db = seed();
+  const prior = createRun(db, { taskId: 't1' });
+  setRunSession(db, prior.id, 'sess-prev');
+  const spawn = fakeSpawn({
+    stdout: ['{"type":"result","subtype":"success","session_id":"sess-prev","result":"done"}'],
+    exitCode: 0,
+  });
+  const execute = makeClaudeExecutor(db, PROJECT, { spawn, ensureWorktree: fakeEnsure() });
+
+  await execute(TASK, { mode: 'execute' });
+
+  const args = spawn.calls[0].args;
+  assert.ok(args.includes('--resume'));
+  assert.equal(args[args.indexOf('--resume') + 1], 'sess-prev');
+  assert.ok(!args.includes('--append-system-prompt-file'));
+});
+
+test('the be10x MCP config is wired in when the repo has one', async () => {
+  const db = seed();
+  const repo = mkdtempSync(join(tmpdir(), 'be10x-mcp-'));
+  mkdirSync(join(repo, '.be10x'), { recursive: true });
+  writeFileSync(join(repo, '.be10x', 'mcp.json'), '{"mcpServers":{}}');
+  const spawn = fakeSpawn({
+    stdout: ['{"type":"result","subtype":"success","session_id":"s","result":"ok"}'],
+    exitCode: 0,
+  });
+  const execute = makeClaudeExecutor(db, { ...PROJECT, rootPath: repo }, { spawn, ensureWorktree: fakeEnsure() });
+
+  await execute(TASK, { mode: 'plan' });
+
+  const args = spawn.calls[0].args;
+  assert.ok(args.includes('--mcp-config'));
+  assert.equal(args[args.indexOf('--mcp-config') + 1], join(repo, '.be10x', 'mcp.json'));
+  assert.ok(args.includes('--strict-mcp-config'));
 });
 
 test('a successful run scrapes + persists the session id and marks the run done', async () => {

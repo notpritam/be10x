@@ -25,7 +25,7 @@ function seed() {
   return { db, owner, reviewer, tok, ctx };
 }
 
-test('TOOLS registers exactly the 13 be10x front-door tools, all well-formed', () => {
+test('TOOLS registers exactly the 14 be10x front-door tools, all well-formed', () => {
   const names = TOOLS.map((t) => t.name).sort();
   assert.deepEqual(names, [
     'gfa_answer_input',
@@ -40,6 +40,7 @@ test('TOOLS registers exactly the 13 be10x front-door tools, all well-formed', (
     'gfa_research_task',
     'gfa_submit_for_review',
     'gfa_submit_output',
+    'gfa_submit_plan',
     'gfa_update_progress',
   ]);
   for (const t of TOOLS) {
@@ -48,6 +49,15 @@ test('TOOLS registers exactly the 13 be10x front-door tools, all well-formed', (
     assert.equal(t.inputSchema.type, 'object');
     assert.equal(typeof t.handler, 'function');
   }
+});
+
+test('gfa_submit_plan sends a researching task to plan_review, defaulting the reviewer to the owner', () => {
+  const { db, ctx, owner } = seed();
+  const t = call(db, ctx, 'gfa_create_task', { type: 'general', scope: 'personal', title: 'Plan me', content: { summary: 'x' } });
+  transition(db, t.id, 'researching', owner.id);
+  const res = call(db, ctx, 'gfa_submit_plan', { taskId: t.id });
+  assert.equal(res.status, 'plan_review');
+  assert.equal(res.reviewerId, owner.id);
 });
 
 test('gfa_create_task (owned by ctx user) then gfa_get_task returns the same task', () => {

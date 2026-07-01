@@ -8,7 +8,7 @@
 // `ensureWorktree` are injected (defaulting to the real implementations) so the stream/persistence
 // logic is unit-testable without a real git repo or the CLI on PATH.
 import { spawn as realSpawn } from 'node:child_process';
-import { writeFileSync, unlinkSync } from 'node:fs';
+import { writeFileSync, unlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -36,18 +36,34 @@ function contentText(content) {
   return '';
 }
 
-// The prompt delivered on stdin. A fresh run gets the full task; a resume just re-orients the agent
-// (its plan + history are already in the resumed session, and new comments live on the board it reads).
-export function buildPrompt(task, { resume = false } = {}) {
-  if (resume) {
-    return `Continue task ${task.humanId}. Read any new comments, review feedback, or answered input requests on the board and revise your plan to address them before proceeding.`;
-  }
+// The per-turn instruction for each wake mode. The stable working agreement lives in the system prompt;
+// this is the varying part (task, mode, and the delta that triggered the wake).
+const MODE_DIRECTIVE = {
+  plan:
+    'PLAN MODE. Research the task and the codebase, then record a concrete plan by calling gfa_plan_task with { id, plan: { steps: [...], diagram: "<mermaid or ascii>" } }. If a decision needs the human, call gfa_request_input. When the plan is ready, call gfa_submit_plan to send it for review. Do NOT implement any change yet.',
+  revise:
+    'REVISE MODE. Your plan is under review. Address the feedback below by updating the plan via gfa_plan_task, then call gfa_submit_plan again. Do NOT implement yet.',
+  input_answer:
+    'CONTINUE. The human answered your question (below). Resume where you left off and keep the plan/progress current via the gfa_* tools.',
+  execute:
+    'EXECUTE MODE. Your plan was approved. Implement it in this worktree, calling gfa_update_progress as you go, and commit on this branch. When done, call gfa_submit_output with any artifacts and move the task to verifying.',
+  pick_up_now:
+    'The human asked you to pick this up now. Read the current plan, comments, and status, and take the most useful next step using the gfa_* tools.',
+  follow_up: 'Continue this task from its saved state using the gfa_* tools.',
+};
+
+// The prompt delivered on stdin: task identity (so the agent addresses the gfa_* tools correctly), the
+// details, the mode directive, and any delta (unseen comments + the triggering context) for this wake.
+export function buildPrompt(task, { mode = 'plan', comments = [], wakeContext = null } = {}) {
+  const header = `You are working be10x task ${task.humanId} (task db id: ${task.id}). Use this exact id for every gfa_* tool call.\nTitle: ${task.title}`;
   const body = contentText(task.content);
-  return (
-    `Task ${task.humanId}: ${task.title}\n\n` +
-    (body ? body + '\n\n' : '') +
-    'Follow the be10x working agreement: produce a plan first and wait for approval before implementing.'
-  );
+  const bodyBlock = body ? `\n\nDetails:\n${body}` : '';
+  const directive = MODE_DIRECTIVE[mode] || MODE_DIRECTIVE.plan;
+  const commentBlock = comments.length
+    ? '\n\nNew human comments to address:\n' + comments.map((c, i) => `${i + 1}. [${c.anchor}] ${c.body}`).join('\n')
+    : '';
+  const ctxBlock = wakeContext ? `\n\nContext for this wake:\n${JSON.stringify(wakeContext)}` : '';
+  return `${header}${bodyBlock}\n\n${directive}${commentBlock}${ctxBlock}`;
 }
 
 // Write the be10x system prompt to a unique temp file for a fresh run; returns its path (or null on a
@@ -82,7 +98,23 @@ export function makeClaudeExecutor(db, project, opts = {}) {
     ensureWorktree = realEnsureWorktree,
   } = opts;
 
-  return async function execute(task) {
+  // A per-repo MCP config (written by `be10x link` at the repo root) wires the be10x gfa_* tools into the
+  // spawned agent. When absent, the agent runs without board tools (degraded, but never crashes).
+  const mcpConfigPath = join(project.rootPath, '.be10x', 'mcp.json');
+
+  // A nested `claude` refuses to start if it inherits the parent's CLAUDECODE* markers — strip them.
+  const childEnv = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!/^CLAUDE_?CODE/i.test(k)) childEnv[k] = v;
+  }
+
+  return async function execute(task, runOpts = {}) {
+    const mode = runOpts.mode || 'plan';
+    const comments = runOpts.comments || [];
+    const wakeContext = runOpts.wakeContext || null;
+    // Fresh on a first plan; resume the prior session on every follow-up wake (override per run if needed).
+    const wantResume = runOpts.resume !== undefined ? runOpts.resume : resume || mode !== 'plan';
+
     const branch = worktreeBranch(task.humanId, task.title);
 
     // Isolate the task in its own worktree. A worktree failure is a hard setup error: record it and
@@ -100,9 +132,10 @@ export function makeClaudeExecutor(db, project, opts = {}) {
       throw e;
     }
 
-    // Resume the prior session for this task when asked (Slice-2 wake path); Slice 1 always runs fresh.
-    const prior = resume ? getLatestRunForTask(db, task.id) : null;
-    const resumeSessionId = prior?.sessionId || null;
+    // Resume the agent's saved session on a wake; a missing/lost id falls back to a fresh session seeded
+    // from durable state (the plan + comments in the prompt) — the stateless-resumable principle.
+    const resumeSessionId = wantResume ? getLatestRunForTask(db, task.id)?.sessionId || null : null;
+    const useMcp = existsSync(mcpConfigPath);
 
     const run = createRun(db, {
       taskId: task.id,
@@ -120,6 +153,8 @@ export function makeClaudeExecutor(db, project, opts = {}) {
       resumeSessionId,
       bin,
       permissionMode,
+      mcpConfig: useMcp ? mcpConfigPath : undefined,
+      strictMcp: useMcp,
     });
 
     recordProgress(
@@ -127,19 +162,19 @@ export function makeClaudeExecutor(db, project, opts = {}) {
       task.id,
       {
         state: 'working',
-        step: 'spawning',
-        message: `${resumeSessionId ? 'resuming' : 'starting'} agent in ${branch}`,
+        step: mode,
+        message: `${resumeSessionId ? 'resuming' : 'starting'} agent (${mode}) in ${branch}`,
       },
       workerId
     );
 
     return await new Promise((resolve) => {
-      const child = spawn(command, args, { cwd: wt.path, stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = spawn(command, args, { cwd: wt.path, env: childEnv, stdio: ['pipe', 'pipe', 'pipe'] });
       if (child.pid) setRunPid(db, run.id, child.pid);
 
       // Deliver the prompt on stdin, then close it so the CLI's print mode runs to completion.
       try {
-        child.stdin.write(buildPrompt(task, { resume: !!resumeSessionId }));
+        child.stdin.write(buildPrompt(task, { mode, comments, wakeContext }));
         child.stdin.end();
       } catch {
         // if stdin is already gone the child.error/close path handles it
@@ -188,6 +223,7 @@ export function makeClaudeExecutor(db, project, opts = {}) {
           sessionId: acc.sessionId,
           worktree: wt.path,
           branch,
+          mode,
           done: acc.done,
           ...extra,
         };
