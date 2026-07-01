@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   research_json TEXT,
   rating_json   TEXT,
   refs_json     TEXT,
+  agent_json    TEXT,
   retry_count   INTEGER NOT NULL DEFAULT 0,
   created_at    INTEGER NOT NULL,
   updated_at    INTEGER NOT NULL
@@ -70,4 +71,26 @@ CREATE TABLE IF NOT EXISTS task_events (
   kind         TEXT NOT NULL,
   payload_json TEXT NOT NULL DEFAULT '{}',
   created_at   INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reviews (
+  id          TEXT PRIMARY KEY,
+  task_id     TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  reviewer_id TEXT NOT NULL REFERENCES users(id),
+  verdict     TEXT NOT NULL CHECK (verdict IN ('approved','changes_requested')),
+  comment     TEXT NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS input_requests (
+  id           TEXT PRIMARY KEY,
+  task_id      TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  question     TEXT NOT NULL,
+  choices_json TEXT,
+  allow_custom INTEGER NOT NULL DEFAULT 1,
+  answer       TEXT,
+  answered_by  TEXT REFERENCES users(id),
+  status       TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','answered','cancelled')),
+  created_at   INTEGER NOT NULL,
+  answered_at  INTEGER
 );

@@ -24,6 +24,7 @@ function hydrate(row) {
     research: row.research_json ? JSON.parse(row.research_json) : null,
     rating: row.rating_json ? JSON.parse(row.rating_json) : null,
     refs: row.refs_json ? JSON.parse(row.refs_json) : null,
+    agent: row.agent_json ? JSON.parse(row.agent_json) : null,
     retryCount: row.retry_count,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
