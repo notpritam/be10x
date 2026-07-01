@@ -151,45 +151,61 @@ export function CommentThread({
   }
 
   return (
-    <div className="space-y-3">
-      {comments.length > 0 && (
-        <div className="max-h-[44vh] overflow-y-auto scroll-thin pr-0.5">
-          <ul className="space-y-2">
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Messages — fill the panel and scroll (no list height cap); each message still collapses at 160px. */}
+      <div className="min-h-0 flex-1 overflow-y-auto scroll-thin px-4 py-4" style={{ minHeight: 200 }}>
+        {comments.length === 0 ? (
+          <p className="grid h-full place-items-center px-4 text-center text-[12.5px] text-muted-foreground">
+            No messages yet — say something to steer the agent.
+          </p>
+        ) : (
+          <ul className="space-y-3.5">
             {comments.map((c) => (
-            <li key={c.id} className="group rounded-lg border border-border/60 bg-card px-3 py-1.5 shadow-card">
-              <div className="mb-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-                <span className="font-medium text-foreground/80">{resolveActor(c.author)}</span>
-                {c.anchor !== "general" && (
-                  <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">{c.anchor}</span>
-                )}
-                <span className="ml-auto tabular-nums">{relativeTime(c.createdAt)}</span>
-                <button
-                  type="button"
-                  onClick={() => copyText(c.body)}
-                  title="Copy message"
-                  aria-label="Copy message"
-                  className="grid size-5 place-items-center rounded text-muted-foreground/70 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                >
-                  <Copy className="size-3" />
-                </button>
-              </div>
-              <CommentBody text={c.body} />
-            </li>
-          ))}
+              <li key={c.id} className="group flex flex-col gap-1">
+                <div className="flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
+                  <span className="font-medium text-foreground/80">{resolveActor(c.author)}</span>
+                  {c.anchor !== "general" && (
+                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">{c.anchor}</span>
+                  )}
+                  <span className="ml-auto tabular-nums">{relativeTime(c.createdAt)}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyText(c.body)}
+                    title="Copy message"
+                    aria-label="Copy message"
+                    className="grid size-5 place-items-center rounded text-muted-foreground/70 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                  >
+                    <Copy className="size-3" />
+                  </button>
+                </div>
+                {/* Bubble */}
+                <div className="rounded-lg rounded-tl-sm border border-border/60 bg-card px-3 py-2 shadow-card">
+                  <CommentBody text={c.body} />
+                </div>
+              </li>
+            ))}
           </ul>
-        </div>
-      )}
-      <div className="space-y-2">
-        <Textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Comment to steer the agent — it reads new comments on its next wake…"
-          rows={2}
-          className="text-[13px]"
-        />
-        <div className="flex justify-end">
-          <Button size="sm" disabled={busy || !body.trim()} onClick={post} className="gap-1.5" aria-label="Send">
-            <SendHorizontal className="size-4" /> Send
+        )}
+      </div>
+
+      {/* Composer — input + send as one component, pinned at the foot. Enter sends, Shift+Enter newlines. */}
+      <div className="shrink-0 border-t border-border/60 p-3">
+        <div className="flex items-end gap-1.5 rounded-lg border border-border/60 bg-card px-2 py-1.5 focus-within:ring-2 focus-within:ring-ring/40">
+          <Textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void post();
+              }
+            }}
+            placeholder="Message the agent…"
+            rows={1}
+            className="max-h-32 min-h-[34px] flex-1 resize-none border-0 bg-transparent p-1 text-[13px] shadow-none focus-visible:ring-0"
+          />
+          <Button size="icon" disabled={busy || !body.trim()} onClick={post} aria-label="Send" className="size-8 shrink-0">
+            <SendHorizontal className="size-4" />
           </Button>
         </div>
       </div>
