@@ -119,7 +119,7 @@ function modeForWake(wake, task) {
   if (task.type === 'query') return 'chat';
   if (wake.reason === 'pick_up_now') {
     if (task.status === 'plan_review') return 'revise';
-    if (['ready_to_work', 'in_progress', 'needs_input'].includes(task.status)) return 'execute';
+    if (['ready_to_work', 'in_progress', 'needs_input', 'verifying'].includes(task.status)) return 'execute';
     return 'plan';
   }
   return REASON_MODE[wake.reason] || 'plan';

@@ -264,8 +264,9 @@ const ROUTES = [
     const task = getTask(db, params.id);
     if (!task) throw new Error('NO_TASK');
     const comment = addComment(db, params.id, { author: user.id, body: body.body, anchor: body.anchor });
-    // A comment while the agent is engaged steers it: revise the plan under review, else pick it up.
-    if (['plan_review', 'researching', 'in_progress', 'needs_input'].includes(task.status)) {
+    // A comment wakes the agent to address it — in every active state (revise the plan under review,
+    // otherwise pick it up). Only genuinely-closed states (backlog awaiting hand-off, done/terminal) skip.
+    if (['plan_review', 'researching', 'ready_to_work', 'in_progress', 'needs_input', 'verifying'].includes(task.status)) {
       enqueueWake(db, params.id, task.status === 'plan_review' ? 'revise' : 'pick_up_now', { comment: body.body });
     }
     send(res, 200, { comment });
