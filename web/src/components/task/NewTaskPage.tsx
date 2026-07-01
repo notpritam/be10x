@@ -118,7 +118,7 @@ export function NewTaskPage({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-x-10 gap-y-6 rounded-xl border border-border/60 bg-card p-7 shadow-card lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-x-12 gap-y-7 lg:grid-cols-2">
           {/* Left — what the task is */}
           <div className="flex flex-col gap-5">
             <div className="flex flex-col gap-1.5">
