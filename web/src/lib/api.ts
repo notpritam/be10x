@@ -106,6 +106,31 @@ export interface CreateTaskInput {
   handOff?: boolean;
 }
 
+/** What the bearer of a share link may do: comment/review only, or also run the agent. */
+export type SharePermission = "comment_only" | "run_agent";
+
+/** A verdict a shared reviewer can leave — Approve / Request changes / Reject. */
+export type ShareVerdict = "approved" | "changes_requested" | "rejected";
+
+/** A minted share link, as returned by the backend (raw row — snake_case). The token IS the credential. */
+export interface ShareLink {
+  id: string;
+  task_id: string;
+  token: string;
+  permission: SharePermission;
+  created_by: string | null;
+  created_at: number;
+  /** Non-null once revoked — the token then reads as gone. */
+  revoked_at: number | null;
+}
+
+/** The public, token-scoped view behind a valid link: the task header, its plan, and the discussion. */
+export interface ShareView {
+  task: { id: string; humanId: string; title: string; status: Status; type: TaskType };
+  plan: unknown;
+  comments: Comment[];
+}
+
 export const api = {
   // Auth
   me: () => request<{ user: User }>("/api/me"),
@@ -190,6 +215,22 @@ export const api = {
     }),
   answerInput: (reqId: string, answer: string) =>
     post<{ ok: true }>(`/api/input/${reqId}/answer`, { answer }),
+
+  // Shareable, permissioned review links.
+  // Owner-only (session): mint / list / revoke a task's links.
+  createShareLink: (taskId: string, permission: SharePermission) =>
+    post<{ share: ShareLink }>(`/api/tasks/${taskId}/share`, { permission }),
+  listShares: (taskId: string) => request<{ shares: ShareLink[] }>(`/api/tasks/${taskId}/shares`),
+  revokeShare: (token: string) => del<{ ok: true }>(`/api/share/${encodeURIComponent(token)}`),
+  // Public (no session — the token is the credential): view, comment, review, and (if permitted) run the agent.
+  getShare: (token: string) => request<ShareView>(`/api/share/${encodeURIComponent(token)}`),
+  shareComment: (token: string, author: string, body: string) =>
+    post<{ comment: Comment }>(`/api/share/${encodeURIComponent(token)}/comment`, { author, body }),
+  shareReview: (token: string, verdict: ShareVerdict, comment: string, author: string) =>
+    post<{ ok: true }>(`/api/share/${encodeURIComponent(token)}/review`, { verdict, comment, author }),
+  /** Ask the owner's agent to pick the task up now. 403 FORBIDDEN when the link is comment-only. */
+  shareRunAgent: (token: string, message: string, author: string) =>
+    post<{ ok: true; wake: unknown }>(`/api/share/${encodeURIComponent(token)}/run-agent`, { message, author }),
 };
 
 export function errorMessage(err: unknown): string {
@@ -213,6 +254,8 @@ export function errorMessage(err: unknown): string {
         return "That person is already on the team.";
       case "FORBIDDEN":
         return "You don't have permission to do that.";
+      case "NO_SUCH_SHARE":
+        return "This link is no longer active — it may have been revoked.";
       case "NETWORK":
         return "Network error. Check your connection.";
       case "NO_SESSION":
