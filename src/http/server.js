@@ -16,6 +16,8 @@ import { createTask, getTask, listTasks, setResearch, setPlan, updateContent, tr
 import { listEvents } from '../tasks/events.js';
 import { requestReview, submitReview } from '../reviews/reviews.js';
 import { requestInput, answerInput, getOpenInputRequest } from '../tasks/input_requests.js';
+import { addComment, listComments } from '../tasks/comments.js';
+import { enqueueWake } from '../executor/wake.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(here, '..', '..', 'public');
@@ -145,18 +147,57 @@ const ROUTES = [
     send(res, 200, { task: t });
   }],
   ['GET', '/api/tasks/:id/events', true, async ({ db, res, params }) => send(res, 200, { events: listEvents(db, params.id) })],
-  ['POST', '/api/tasks/:id/transition', true, async ({ db, res, params, body, user }) => send(res, 200, { task: transition(db, params.id, body.to, user.id) })],
+  ['POST', '/api/tasks/:id/transition', true, async ({ db, res, params, body, user }) => {
+    const task = transition(db, params.id, body.to, user.id);
+    // A drag that hands the task to the agent (→researching) or approves it (→ready_to_work) wakes it.
+    if (body.to === 'researching') enqueueWake(db, params.id, 'plan');
+    else if (body.to === 'ready_to_work') enqueueWake(db, params.id, 'execute');
+    send(res, 200, { task });
+  }],
   ['POST', '/api/tasks/:id/plan', true, async ({ db, res, params, body, user }) => send(res, 200, { task: setPlan(db, params.id, body.plan, user.id) })],
   ['POST', '/api/tasks/:id/research', true, async ({ db, res, params, body, user }) => send(res, 200, { task: setResearch(db, params.id, body.research, user.id) })],
   ['POST', '/api/tasks/:id/content', true, async ({ db, res, params, body, user }) => send(res, 200, { task: updateContent(db, params.id, body.patch || {}, user.id) })],
   ['POST', '/api/tasks/:id/rate', true, async ({ db, res, params, body, user }) => send(res, 200, { task: rateTask(db, params.id, body.rating, user.id) })],
   ['POST', '/api/tasks/:id/retry', true, async ({ db, res, params, user }) => send(res, 200, { task: retryTask(db, params.id, user.id) })],
   ['POST', '/api/tasks/:id/review/request', true, async ({ db, res, params, body, user }) => send(res, 200, { task: requestReview(db, params.id, body.reviewerId, user.id) })],
-  ['POST', '/api/tasks/:id/review/submit', true, async ({ db, res, params, body, user }) => send(res, 200, { review: submitReview(db, params.id, user.id, body.verdict, body.comment || '') })],
+  ['POST', '/api/tasks/:id/review/submit', true, async ({ db, res, params, body, user }) => {
+    const review = submitReview(db, params.id, user.id, body.verdict, body.comment || '');
+    // Approval wakes the agent to implement; requested changes wake it to revise the plan.
+    if (review.verdict === 'approved') enqueueWake(db, params.id, 'execute', { review: 'approved' });
+    else enqueueWake(db, params.id, 'revise', { verdict: 'changes_requested', comment: body.comment || '' });
+    send(res, 200, { review });
+  }],
   ['GET', '/api/reviews/pending', true, async ({ db, res, user }) => send(res, 200, { tasks: listTasks(db, { status: 'plan_review' }).filter((t) => t.reviewerId === user.id) })],
+  ['POST', '/api/tasks/:id/hand-to-agent', true, async ({ db, res, params, user }) => {
+    const t = getTask(db, params.id);
+    if (!t) throw new Error('NO_TASK');
+    if (t.status === 'backlog') transition(db, params.id, 'researching', user.id, { handOff: true });
+    enqueueWake(db, params.id, 'plan');
+    send(res, 200, { task: getTask(db, params.id) });
+  }],
+  ['POST', '/api/tasks/:id/pick-up-now', true, async ({ db, res, params }) => {
+    if (!getTask(db, params.id)) throw new Error('NO_TASK');
+    send(res, 200, { ok: true, wake: enqueueWake(db, params.id, 'pick_up_now') });
+  }],
+  ['GET', '/api/tasks/:id/comments', true, async ({ db, res, params }) => send(res, 200, { comments: listComments(db, params.id) })],
+  ['POST', '/api/tasks/:id/comments', true, async ({ db, res, params, body, user }) => {
+    const task = getTask(db, params.id);
+    if (!task) throw new Error('NO_TASK');
+    const comment = addComment(db, params.id, { author: user.id, body: body.body, anchor: body.anchor });
+    // A comment while the agent is engaged steers it: revise the plan under review, else pick it up.
+    if (['plan_review', 'researching', 'in_progress', 'needs_input'].includes(task.status)) {
+      enqueueWake(db, params.id, task.status === 'plan_review' ? 'revise' : 'pick_up_now', { comment: body.body });
+    }
+    send(res, 200, { comment });
+  }],
   ['POST', '/api/tasks/:id/input/request', true, async ({ db, res, params, body, user }) => send(res, 200, { inputRequest: requestInput(db, params.id, body.question, { choices: body.choices || null, allowCustom: body.allowCustom !== false }, user.id) })],
   ['GET', '/api/tasks/:id/input', true, async ({ db, res, params }) => send(res, 200, { inputRequest: getOpenInputRequest(db, params.id) })],
-  ['POST', '/api/input/:reqId/answer', true, async ({ db, res, params, body, user }) => { answerInput(db, params.reqId, body.answer, user.id); send(res, 200, { ok: true }); }],
+  ['POST', '/api/input/:reqId/answer', true, async ({ db, res, params, body, user }) => {
+    const row = db.prepare('SELECT task_id AS taskId FROM input_requests WHERE id = ?').get(params.reqId);
+    answerInput(db, params.reqId, body.answer, user.id);
+    if (row) enqueueWake(db, row.taskId, 'input_answer', { answer: body.answer }); // resume the paused agent
+    send(res, 200, { ok: true });
+  }],
   ['POST', '/api/tokens', true, async ({ db, res, body, user }) => send(res, 200, { token: createToken(db, user.id, body.name || 'agent') })],
   ['GET', '/api/tokens', true, async ({ db, res, user }) => send(res, 200, { tokens: listTokens(db, user.id) })],
   ['DELETE', '/api/tokens/:id', true, async ({ db, res, params, user }) => {
