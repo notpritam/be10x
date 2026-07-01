@@ -3,11 +3,11 @@
 // shared detail controller + parts so it stays in lockstep with the slide-over. Collapse (or Escape)
 // returns to the slide-over; close returns to the board.
 import { useEffect } from "react";
-import { Minimize2, X } from "lucide-react";
+import { Minimize2, Share2, X } from "lucide-react";
+import { toast } from "sonner";
 import type { Status } from "@/lib/types";
 import { useApp } from "@/state/app-store";
-import { relativeTime } from "@/lib/utils";
-import { PriorityPill, TypeTag, UserAvatar } from "@/components/common/bits";
+import { PriorityPill, TypeTag } from "@/components/common/bits";
 import { LifecycleStrip } from "./LifecycleStrip";
 import { PlanView } from "./PlanView";
 import { WorkSection } from "./WorkSection";
@@ -24,7 +24,6 @@ import {
   DataValue,
   HeaderIconButton,
   MoveButtons,
-  ownerName,
   PanelLoading,
   RefreshingHint,
   Section,
@@ -45,13 +44,22 @@ export function DeepDivePanel({
   onCollapse: () => void;
   ctrl: ReturnType<typeof useTaskDetail>;
 }) {
-  const { user, resolveActor } = useApp();
+  const { resolveActor } = useApp();
   const { detail, loading, refresh, onMove } = ctrl;
   const task = detail?.task;
   const isStale = task && taskId !== task.id;
 
   function move(to: Status) {
     void onMove(to);
+  }
+
+  // Share this exact page — copies the deep-link (/t/<id>/full). Grows into the permissioned share
+  // dialog (keyed link, run-agent vs comment-only) once that lands.
+  function sharePage() {
+    navigator.clipboard
+      .writeText(window.location.href)
+      .then(() => toast.success("Page link copied — anyone you share it with lands here."))
+      .catch(() => toast.error("Couldn't copy the link."));
   }
 
   // Escape steps back to the slide-over (this is a page, not a modal, so wire the key ourselves).
@@ -72,53 +80,33 @@ export function DeepDivePanel({
         <PanelLoading />
       ) : (
         <div className="flex h-full min-h-0 flex-col">
-            {/* Header — spans both columns */}
-            <header className="shrink-0 border-b border-border/70 bg-card/40 px-8 pt-6 pb-5">
-              <div className="flex items-start gap-4">
-                <div className="min-w-0 flex-1">
-                  <div className="mb-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-                    <span className="font-mono text-[11.5px] font-medium tracking-wide text-muted-foreground">
-                      {task.humanId}
-                    </span>
-                    <span className="text-border">·</span>
-                    <TypeTag type={task.type} />
-                    <span className="text-border">·</span>
-                    <PriorityPill severity={task.severity} />
-                    <StatusBadge status={task.status} />
-                  </div>
-                  <h1 className="max-w-4xl text-[27px] font-bold leading-[1.12] tracking-[-0.02em] text-foreground">
-                    {task.title}
-                  </h1>
-                  <div className="mt-3.5 flex flex-wrap items-center gap-x-5 gap-y-1.5">
-                    <span className="inline-flex items-center gap-2 text-[12.5px] text-muted-foreground">
-                      <UserAvatar
-                        name={ownerName(task, user.id, user.displayName, resolveActor)}
-                        seed={task.assigneeId ?? task.ownerId}
-                        size={22}
-                        ring={false}
-                      />
-                      <span className="font-medium text-foreground/80">
-                        {ownerName(task, user.id, user.displayName, resolveActor)}
-                      </span>
-                    </span>
-                    <span className="text-[12.5px] text-muted-foreground/80">
-                      Updated {relativeTime(task.updatedAt)}
-                    </span>
-                    {loading && <RefreshingHint />}
-                  </div>
-                  <div className="mt-3">
-                    <AgentLiveStatus task={task} runs={detail.runs} />
-                  </div>
-                </div>
+            {/* Header — one compact row: chips → title → live status → controls. Kept to a single line
+                so the page starts at the content, not a tall banner. */}
+            <header className="shrink-0 border-b border-border/60 bg-card/40 px-5 py-2.5">
+              <div className="flex items-center gap-2.5">
+                <span className="shrink-0 font-mono text-[11.5px] font-medium tracking-wide text-muted-foreground">
+                  {task.humanId}
+                </span>
+                <TypeTag type={task.type} />
+                <PriorityPill severity={task.severity} />
+                <StatusBadge status={task.status} />
+                <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
+                  {task.title}
+                </h1>
+                <AgentLiveStatus task={task} runs={detail.runs} compact />
+                {loading && <RefreshingHint />}
 
-                {/* Controls — debug, collapse back to the slide-over, or close to the board. */}
-                <div className="flex shrink-0 items-center gap-0.5">
+                {/* Controls — right-aligned, easy to grab: share · debug · collapse · close */}
+                <div className="ml-auto flex shrink-0 items-center gap-0.5">
+                  <HeaderIconButton label="Share this page" onClick={sharePage}>
+                    <Share2 className="size-[16px]" />
+                  </HeaderIconButton>
                   <DebugControl taskId={task.id} />
                   <HeaderIconButton label="Collapse to side panel" onClick={onCollapse}>
-                    <Minimize2 className="size-[17px]" />
+                    <Minimize2 className="size-[16px]" />
                   </HeaderIconButton>
                   <HeaderIconButton label="Close" onClick={onClose}>
-                    <X className="size-[18px]" />
+                    <X className="size-[17px]" />
                   </HeaderIconButton>
                 </div>
               </div>

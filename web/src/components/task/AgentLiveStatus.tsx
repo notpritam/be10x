@@ -35,7 +35,16 @@ const TEXT: Record<Tone, string> = {
   idle: "text-muted-foreground",
 };
 
-export function AgentLiveStatus({ task, runs }: { task: Task; runs: Run[] }) {
+export function AgentLiveStatus({
+  task,
+  runs,
+  compact = false,
+}: {
+  task: Task;
+  runs: Run[];
+  /** Header mode: render just the pill on one line (no activity subline). */
+  compact?: boolean;
+}) {
   const [now, setNow] = useState(() => Date.now());
   const run = runs.length ? runs[runs.length - 1] : null;
   const active = run?.status === "running" || run?.status === "starting";
@@ -69,32 +78,40 @@ export function AgentLiveStatus({ task, runs }: { task: Task; runs: Run[] }) {
 
   const message = typeof agent?.message === "string" ? agent.message : "";
 
+  const pill = (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-semibold",
+        tone === "live" && "border-emerald-500/25 bg-emerald-500/10",
+        tone === "quiet" && "border-amber-500/25 bg-amber-500/10",
+        tone === "failed" && "border-red-500/25 bg-red-500/10",
+        tone === "idle" && "border-border/70 bg-card",
+        TEXT[tone],
+      )}
+      title={compact && message ? message : undefined}
+    >
+      <span className="relative flex size-2">
+        {active && (
+          <span className={cn("absolute inline-flex size-full animate-ping rounded-full opacity-75", DOT[tone])} />
+        )}
+        <span className={cn("relative inline-flex size-2 rounded-full", DOT[tone])} />
+      </span>
+      {label}
+      {run?.model && (
+        <span className="rounded bg-background/60 px-1.5 py-px font-mono text-[10px] font-medium opacity-80">
+          {run.model}
+        </span>
+      )}
+      {updatedAt && <span className="font-normal opacity-70">· {ago(staleMs)}</span>}
+    </span>
+  );
+
+  // Header mode: just the pill, one line. (The full activity line lives in the body's Agent section.)
+  if (compact) return pill;
+
   return (
     <div className="inline-flex max-w-full flex-col gap-1">
-      <span
-        className={cn(
-          "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[12px] font-semibold",
-          tone === "live" && "border-emerald-500/25 bg-emerald-500/10",
-          tone === "quiet" && "border-amber-500/25 bg-amber-500/10",
-          tone === "failed" && "border-red-500/25 bg-red-500/10",
-          tone === "idle" && "border-border/70 bg-card",
-          TEXT[tone],
-        )}
-      >
-        <span className="relative flex size-2">
-          {active && (
-            <span className={cn("absolute inline-flex size-full animate-ping rounded-full opacity-75", DOT[tone])} />
-          )}
-          <span className={cn("relative inline-flex size-2 rounded-full", DOT[tone])} />
-        </span>
-        {label}
-        {run?.model && (
-          <span className="rounded bg-background/60 px-1.5 py-px font-mono text-[10px] font-medium opacity-80">
-            {run.model}
-          </span>
-        )}
-        {updatedAt && <span className="font-normal opacity-70">· {ago(staleMs)}</span>}
-      </span>
+      {pill}
       {active && message && (
         <span className="max-w-[42ch] truncate pl-1 text-[11.5px] text-muted-foreground" title={message}>
           {agent?.step ? `${agent.step}: ` : ""}

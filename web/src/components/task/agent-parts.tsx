@@ -1,7 +1,7 @@
 // ABOUTME: Shared agent-interaction blocks used by both the slide-over and the deep-dive: the hand-off /
 // pick-up-now action row, and the comment thread the agent reads on its next wake.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Copy } from "lucide-react";
 import { toast } from "sonner";
 import type { Comment, Task } from "@/lib/types";
 import { api } from "@/lib/api";
@@ -13,6 +13,13 @@ import { Textarea } from "@/components/ui/textarea";
 // rest. Keeps long agent replies and pasted context from flooding the thread while staying one click away.
 const COMMENT_MAX_PX = 160;
 
+function copyText(text: string) {
+  navigator.clipboard
+    .writeText(text)
+    .then(() => toast.success("Copied."))
+    .catch(() => toast.error("Copy failed."));
+}
+
 function CommentBody({ text }: { text: string }) {
   const ref = useRef<HTMLParagraphElement>(null);
   const [overflows, setOverflows] = useState(false);
@@ -23,8 +30,9 @@ function CommentBody({ text }: { text: string }) {
     if (el) setOverflows(el.scrollHeight > COMMENT_MAX_PX + 4);
   }, [text]);
 
+  // Double-click anywhere on an expandable message toggles it — a quick way to close one you opened.
   return (
-    <div>
+    <div onDoubleClick={() => overflows && setExpanded((v) => !v)}>
       <div className="relative">
         <p
           ref={ref}
@@ -36,14 +44,14 @@ function CommentBody({ text }: { text: string }) {
           {text}
         </p>
         {overflows && !expanded && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-muted/70 to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-card to-transparent" />
         )}
       </div>
       {overflows && (
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="mt-1 inline-flex items-center gap-1 text-[11.5px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none"
+          className="mt-0.5 inline-flex items-center gap-1 text-[11.5px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none"
         >
           <ChevronDown className={cn("size-3.5 transition-transform", expanded && "rotate-180")} />
           {expanded ? "Show less" : "Show more"}
@@ -147,13 +155,22 @@ export function CommentThread({
       {comments.length > 0 && (
         <ul className="space-y-2.5">
           {comments.map((c) => (
-            <li key={c.id} className="rounded-lg border border-border/50 bg-muted/40 px-3 py-2">
-              <div className="mb-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+            <li key={c.id} className="group rounded-lg border border-border/60 bg-card px-3 py-1.5 shadow-card">
+              <div className="mb-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
                 <span className="font-medium text-foreground/80">{resolveActor(c.author)}</span>
                 {c.anchor !== "general" && (
                   <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">{c.anchor}</span>
                 )}
-                <span className="ml-auto">{relativeTime(c.createdAt)}</span>
+                <span className="ml-auto tabular-nums">{relativeTime(c.createdAt)}</span>
+                <button
+                  type="button"
+                  onClick={() => copyText(c.body)}
+                  title="Copy message"
+                  aria-label="Copy message"
+                  className="grid size-5 place-items-center rounded text-muted-foreground/70 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                >
+                  <Copy className="size-3" />
+                </button>
               </div>
               <CommentBody text={c.body} />
             </li>
