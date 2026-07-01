@@ -1,0 +1,9 @@
+{
+  "name": "git-for-agents",
+  "version": "0.0.1",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=18" },
+  "dependencies": { "better-sqlite3": "^11.8.0" },
+  "scripts": { "test": "node --test" }
+}
