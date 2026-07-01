@@ -3,13 +3,14 @@
 // shared detail controller + parts so it stays in lockstep with the slide-over. Collapse (or Escape)
 // returns to the slide-over; close returns to the board.
 import { useEffect, useState, type ReactNode } from "react";
-import { Activity, Bug, Copy, Info, Maximize2, MessageSquare, Share2, X } from "lucide-react";
+import { Activity, Bug, Copy, History, Info, Maximize2, MessageSquare, Share2, X } from "lucide-react";
 import { toast } from "sonner";
 import type { Status } from "@/lib/types";
 import { useApp } from "@/state/app-store";
 import { cn } from "@/lib/utils";
 import { LifecycleStrip } from "./LifecycleStrip";
 import { PlanView } from "./PlanView";
+import { PlanVersions } from "./PlanVersions";
 import { WorkSection } from "./WorkSection";
 import { InfoPanel } from "./InfoPanel";
 import { AgentLiveStatus } from "./AgentLiveStatus";
@@ -53,6 +54,7 @@ export function DeepDivePanel({
   const [rightPanel, setRightPanel] = useState<"discussion" | "activity" | "info" | "debug" | null>("discussion");
   const [shareOpen, setShareOpen] = useState(false);
   const [planExpanded, setPlanExpanded] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   function move(to: Status) {
     void onMove(to);
@@ -118,6 +120,18 @@ export function DeepDivePanel({
                       <div className="ml-auto flex items-center gap-0.5">
                         <button
                           type="button"
+                          onClick={() => setShowHistory((v) => !v)}
+                          title="Version history"
+                          aria-label="Version history"
+                          className={cn(
+                            "grid size-7 place-items-center rounded-md transition-colors hover:bg-accent hover:text-foreground",
+                            showHistory ? "bg-accent text-foreground" : "text-muted-foreground",
+                          )}
+                        >
+                          <History className="size-4" />
+                        </button>
+                        <button
+                          type="button"
                           onClick={copyPlan}
                           title="Copy plan"
                           aria-label="Copy plan"
@@ -136,6 +150,7 @@ export function DeepDivePanel({
                         </button>
                       </div>
                     </div>
+                    {showHistory && <PlanVersions taskId={task.id} onRestored={refresh} />}
                     <PlanView plan={task.plan} />
                   </section>
                 )}

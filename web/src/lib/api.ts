@@ -131,6 +131,14 @@ export interface ShareView {
   comments: Comment[];
 }
 
+/** One saved snapshot of a task's plan — powers the version history / restore UI. */
+export interface PlanVersion {
+  id: string;
+  plan: unknown;
+  createdBy: string | null;
+  createdAt: number;
+}
+
 export const api = {
   // Auth
   me: () => request<{ user: User }>("/api/me"),
@@ -177,6 +185,10 @@ export const api = {
   transition: (id: string, to: Status) =>
     post<{ task: Task }>(`/api/tasks/${id}/transition`, { to }),
   setPlan: (id: string, plan: unknown) => post<{ task: Task }>(`/api/tasks/${id}/plan`, { plan }),
+  /** Plan version history + restore (snapshots taken on every setPlan). */
+  listPlanVersions: (id: string) => request<{ versions: PlanVersion[] }>(`/api/tasks/${id}/plan-versions`),
+  restorePlanVersion: (id: string, versionId: string) =>
+    post<{ task: Task }>(`/api/tasks/${id}/plan-versions/${versionId}/restore`),
   setResearch: (id: string, research: unknown) =>
     post<{ task: Task }>(`/api/tasks/${id}/research`, { research }),
   patchContent: (id: string, patch: Record<string, unknown>) =>
