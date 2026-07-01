@@ -9,6 +9,8 @@ import { createUser, getUserByEmail, getUserById } from '../auth/users.js';
 import { verifyPassword } from '../auth/passwords.js';
 import { createSession, getSession, deleteSession } from '../auth/sessions.js';
 import { createTeam } from '../teams/teams.js';
+import { listMembers, addMember } from '../teams/memberships.js';
+import { assertCan } from '../authz/authz.js';
 import { createTask, getTask, listTasks, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
 import { listEvents } from '../tasks/events.js';
 import { requestReview, submitReview } from '../reviews/reviews.js';
@@ -25,9 +27,10 @@ function send(res, status, obj) {
 }
 
 function statusFor(code) {
+  if (code === 'FORBIDDEN') return 403;
   if (code === 'BAD_CREDENTIALS' || code === 'NO_SESSION') return 401;
   if (code === 'EMAIL_TAKEN' || code === 'SLUG_TAKEN' || code === 'ILLEGAL_TRANSITION' || code === 'ALREADY_ANSWERED' || code === 'ALREADY_MEMBER') return 409;
-  if (code === 'NO_TASK' || code === 'NO_REQUEST' || code === 'NOT_FOUND') return 404;
+  if (code === 'NO_TASK' || code === 'NO_REQUEST' || code === 'NOT_FOUND' || code === 'USER_NOT_FOUND') return 404;
   return 400; // MISSING_FIELD:*, UNKNOWN_TYPE, INVALID_*, etc.
 }
 
@@ -107,6 +110,21 @@ const ROUTES = [
   ['GET', '/api/me', true, async ({ res, user }) => send(res, 200, { user })],
   ['GET', '/api/teams', true, async ({ db, res, user }) => send(res, 200, { teams: teamsForUser(db, user.id) })],
   ['POST', '/api/teams', true, async ({ db, res, body, user }) => send(res, 200, { team: createTeam(db, { name: body.name, createdBy: user.id }) })],
+  ['GET', '/api/teams/:id/members', true, async ({ db, res, params, user }) => {
+    assertCan(db, user.id, 'team.read', { teamId: params.id });
+    const members = listMembers(db, params.id).map((m) => {
+      const u = getUserById(db, m.userId);
+      return { userId: m.userId, displayName: u ? u.displayName : null, email: u ? u.email : null, role: m.role };
+    });
+    send(res, 200, { members });
+  }],
+  ['POST', '/api/teams/:id/members', true, async ({ db, res, params, body, user }) => {
+    assertCan(db, user.id, 'members.manage', { teamId: params.id });
+    const invitee = getUserByEmail(db, body.email || '');
+    if (!invitee) throw new Error('USER_NOT_FOUND');
+    const m = addMember(db, { teamId: params.id, userId: invitee.id, role: body.role });
+    send(res, 200, { member: { userId: m.userId, role: m.role } });
+  }],
   ['GET', '/api/tasks', true, async ({ db, req, res }) => {
     const q = new URL(req.url, 'http://x').searchParams;
     send(res, 200, { tasks: listTasks(db, { scope: q.get('scope') || undefined, teamId: q.get('teamId') || undefined, status: q.get('status') || undefined }) });
@@ -128,6 +146,7 @@ const ROUTES = [
   ['POST', '/api/tasks/:id/retry', true, async ({ db, res, params, user }) => send(res, 200, { task: retryTask(db, params.id, user.id) })],
   ['POST', '/api/tasks/:id/review/request', true, async ({ db, res, params, body, user }) => send(res, 200, { task: requestReview(db, params.id, body.reviewerId, user.id) })],
   ['POST', '/api/tasks/:id/review/submit', true, async ({ db, res, params, body, user }) => send(res, 200, { review: submitReview(db, params.id, user.id, body.verdict, body.comment || '') })],
+  ['GET', '/api/reviews/pending', true, async ({ db, res, user }) => send(res, 200, { tasks: listTasks(db, { status: 'plan_review' }).filter((t) => t.reviewerId === user.id) })],
   ['POST', '/api/tasks/:id/input/request', true, async ({ db, res, params, body, user }) => send(res, 200, { inputRequest: requestInput(db, params.id, body.question, { choices: body.choices || null, allowCustom: body.allowCustom !== false }, user.id) })],
   ['GET', '/api/tasks/:id/input', true, async ({ db, res, params }) => send(res, 200, { inputRequest: getOpenInputRequest(db, params.id) })],
   ['POST', '/api/input/:reqId/answer', true, async ({ db, res, params, body, user }) => { answerInput(db, params.reqId, body.answer, user.id); send(res, 200, { ok: true }); }],
