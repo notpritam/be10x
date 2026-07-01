@@ -41,14 +41,15 @@ export function listPendingWakes(db, taskId) {
     .map(hydrate);
 }
 
-// Atomically claim the oldest pending wake whose task belongs to `projectId`. The conditional UPDATE
-// (WHERE claimed_at IS NULL) makes the claim safe against concurrent schedulers — a loser gets the next
-// row or null. Returns the claimed (hydrated) wake, or null if the queue is empty for this project.
+// Atomically claim the oldest pending wake for this runner: a wake whose task is in `projectId`, OR a
+// project-less (personal) task — so a task created on the board with no project is still worked by
+// whatever runner is up. The conditional UPDATE (WHERE claimed_at IS NULL) makes the claim safe against
+// concurrent schedulers — a loser gets the next row or null. Returns the claimed wake, or null if empty.
 export function claimNextWake(db, { projectId, workerId = 'runner' } = {}) {
   const rows = db
     .prepare(
       `SELECT w.id FROM wake_queue w JOIN tasks t ON t.id = w.task_id
-       WHERE w.claimed_at IS NULL AND t.project_id = ?
+       WHERE w.claimed_at IS NULL AND (t.project_id = ? OR t.project_id IS NULL)
        ORDER BY w.enqueued_at, w.rowid`
     )
     .all(projectId);

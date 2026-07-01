@@ -50,6 +50,16 @@ test('claimNextWake is project-scoped and FIFO', () => {
   assert.equal(claimNextWake(db, { projectId: 'p1' }), null); // drained
 });
 
+test('a project-less (personal) task wake is claimable by any runner', () => {
+  const db = seed();
+  db.prepare(
+    'INSERT INTO tasks (id,human_id,type,scope,project_id,owner_id,title,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)'
+  ).run('t3', 't3', 'general', 'personal', null, 'u1', 'T', 'researching', Date.now(), Date.now());
+  enqueueWake(db, 't3', 'plan');
+  const claimed = claimNextWake(db, { projectId: 'p-whatever', workerId: 'r' });
+  assert.equal(claimed.taskId, 't3');
+});
+
 test('a claimed wake is not re-claimable (optimistic lock holds)', () => {
   const db = seed();
   const w = enqueueWake(db, 't1', 'plan');
