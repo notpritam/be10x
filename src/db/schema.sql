@@ -94,3 +94,15 @@ CREATE TABLE IF NOT EXISTS input_requests (
   created_at   INTEGER NOT NULL,
   answered_at  INTEGER
 );
+
+-- A registered repository. Tasks carry a project_id (see tasks.project_id); this table gives that id a
+-- stable identity: `key` is derived from the git remote (or a local: slug) so the same repo maps to the
+-- same project across machines. Standalone (no FKs) so it can be created independently of the task graph.
+CREATE TABLE IF NOT EXISTS projects (
+  id             TEXT PRIMARY KEY,
+  key            TEXT NOT NULL UNIQUE,
+  name           TEXT NOT NULL,
+  default_branch TEXT,
+  root_path      TEXT,
+  created_at     INTEGER NOT NULL
+);
