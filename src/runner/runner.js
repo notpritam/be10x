@@ -193,12 +193,31 @@ export async function runAnyWakeOnce(db, { workerId = 'runner', makeExecutor } =
   return driveWake(db, { wake, task, workerId, execute: makeExecutor(project) });
 }
 
-// Boot-time orphan recovery: a run left 'starting'/'running' means the process died mid-flight — mark it
-// failed so it can't wedge the task. Returns how many were reaped.
+// Is a pid still a live process? `kill(pid, 0)` sends no signal — it just probes existence. ESRCH means
+// gone; EPERM means it exists but isn't ours (still alive). A null pid never ran far enough to record one.
+function pidAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+}
+
+// Boot-time orphan recovery: a run left 'starting'/'running' usually means the process died mid-flight —
+// mark it failed so it can't wedge the task. But an agent spawned by a previous server can OUTLIVE a
+// restart; reaping it would falsely fail live work. So only reap runs whose recorded pid is actually
+// dead — a genuinely-live agent is left to finish. Returns how many were reaped.
 export function recoverOrphans(db) {
-  const rows = db.prepare("SELECT id FROM runs WHERE status IN ('starting','running')").all();
-  for (const r of rows) finishRun(db, r.id, { status: 'failed', error: 'orphaned: process gone before completion' });
-  return rows.length;
+  const rows = db.prepare("SELECT id, pid FROM runs WHERE status IN ('starting','running')").all();
+  let reaped = 0;
+  for (const r of rows) {
+    if (pidAlive(r.pid)) continue; // survived the restart — leave it running
+    finishRun(db, r.id, { status: 'failed', error: 'orphaned: process gone before completion' });
+    reaped++;
+  }
+  return reaped;
 }
 
 // Poll runWakeOnce on an interval (recovering orphans once at start). Same stoppable handle as workLoop.

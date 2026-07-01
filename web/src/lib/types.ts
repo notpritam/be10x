@@ -89,7 +89,36 @@ export interface AgentStatus {
   state?: string;
   model?: string;
   note?: string;
-  [key: string]: unknown;
+  /** The current step label (e.g. "agent", "revise", "woken"). */
+  step?: string;
+  /** The latest human-readable progress line — "what it's doing right now". */
+  message?: string;
+  todos?: string[];
+  changes?: unknown;
+  /** Epoch ms of the last progress write — the "last update Xs ago" signal. */
+  updatedAt?: number;
+}
+
+/** One wake in the queue — why a task is (or isn't) moving. `pending` means unclaimed by the runner. */
+export interface WakeEntry {
+  id: string;
+  reason: string;
+  context: unknown;
+  enqueuedAt: number;
+  claimedAt: number | null;
+  claimedBy: string | null;
+  pending: boolean;
+}
+
+/** The consolidated debug snapshot (GET /api/tasks/:id/debug) — everything the board knows about a task. */
+export interface TaskDebug {
+  now: number;
+  task: Task;
+  agent: AgentStatus | null;
+  runs: Run[];
+  wakes: WakeEntry[];
+  events: TaskEvent[];
+  input: InputRequest | null;
 }
 
 export interface Task {
@@ -148,6 +177,7 @@ export interface Run {
   branch: string | null;
   baseRef: string | null;
   status: "starting" | "running" | "done" | "failed";
+  pid: number | null;
   result: unknown | null;
   error: string | null;
   createdAt: number;

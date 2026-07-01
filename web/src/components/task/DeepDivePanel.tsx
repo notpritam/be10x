@@ -11,6 +11,8 @@ import { PriorityPill, TypeTag, UserAvatar } from "@/components/common/bits";
 import { LifecycleStrip } from "./LifecycleStrip";
 import { PlanView } from "./PlanView";
 import { WorkSection } from "./WorkSection";
+import { AgentLiveStatus } from "./AgentLiveStatus";
+import { DebugControl } from "./DebugControl";
 import { AgentActions, CommentThread } from "./agent-parts";
 import { ReviewActions } from "./ReviewActions";
 import { RequestReviewControl } from "./RequestReviewControl";
@@ -104,10 +106,14 @@ export function DeepDivePanel({
                     </span>
                     {loading && <RefreshingHint />}
                   </div>
+                  <div className="mt-3">
+                    <AgentLiveStatus task={task} runs={detail.runs} />
+                  </div>
                 </div>
 
-                {/* Controls — collapse back to the slide-over, or close to the board. */}
+                {/* Controls — debug, collapse back to the slide-over, or close to the board. */}
                 <div className="flex shrink-0 items-center gap-0.5">
+                  <DebugControl taskId={task.id} />
                   <HeaderIconButton label="Collapse to side panel" onClick={onCollapse}>
                     <Minimize2 className="size-[17px]" />
                   </HeaderIconButton>

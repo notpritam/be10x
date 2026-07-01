@@ -14,6 +14,7 @@ import type {
   Severity,
   Status,
   Task,
+  TaskDebug,
   TaskEvent,
   TaskType,
   Team,
@@ -144,6 +145,8 @@ export const api = {
   events: (id: string) => request<{ events: TaskEvent[] }>(`/api/tasks/${id}/events`),
   /** The agent's execution history for a task — branch, model, session, status, timing. */
   listRuns: (id: string) => request<{ runs: Run[] }>(`/api/tasks/${id}/runs`),
+  /** Consolidated raw state for the debug view — agent, runs, wake queue, events, server clock. */
+  taskDebug: (id: string) => request<TaskDebug>(`/api/tasks/${id}/debug`),
 
   // Task actions
   transition: (id: string, to: Status) =>

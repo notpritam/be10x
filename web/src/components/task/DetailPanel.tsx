@@ -11,6 +11,8 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { LifecycleStrip } from "./LifecycleStrip";
 import { PlanView } from "./PlanView";
 import { WorkSection } from "./WorkSection";
+import { AgentLiveStatus } from "./AgentLiveStatus";
+import { DebugControl } from "./DebugControl";
 import { ReviewActions } from "./ReviewActions";
 import { RequestReviewControl } from "./RequestReviewControl";
 import { InputRequestPanel } from "./InputRequestPanel";
@@ -85,8 +87,9 @@ function QuickView({
         className="w-full gap-0 p-0 sm:max-w-[600px]"
         aria-describedby={undefined}
       >
-        {/* Header controls — maximize into the deep-dive, then close. */}
+        {/* Header controls — debug, maximize into the deep-dive, then close. */}
         <div className="absolute right-3 top-3.5 z-10 flex items-center gap-0.5">
+          {task && !isStale && <DebugControl taskId={task.id} />}
           <HeaderIconButton label="Open full screen" onClick={onExpand}>
             <Maximize2 className="size-[17px]" />
           </HeaderIconButton>
@@ -100,7 +103,7 @@ function QuickView({
         ) : (
           <div className="flex h-full flex-col">
             {/* Header */}
-            <div className="shrink-0 border-b border-border/70 px-5 pb-4 pt-5 pr-[92px]">
+            <div className="shrink-0 border-b border-border/70 px-5 pb-4 pt-5 pr-[128px]">
               <div className="mb-2 flex items-center gap-2.5">
                 <span className="font-mono text-[11px] font-medium tracking-wide text-muted-foreground">
                   {task.humanId}
@@ -129,6 +132,9 @@ function QuickView({
                   Updated {relativeTime(task.updatedAt)}
                 </span>
                 {loading && <RefreshingHint />}
+              </div>
+              <div className="mt-2.5">
+                <AgentLiveStatus task={task} runs={detail.runs} />
               </div>
             </div>
 

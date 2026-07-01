@@ -11,7 +11,7 @@ import { createToken } from '../src/auth/tokens.js';
 import { listTasks } from '../src/tasks/tasks.js';
 import { makeClaudeExecutor } from '../src/executor/executor.js';
 import { detectProjectKey, registerProject, getProjectByKey, listProjects } from '../src/projects/projects.js';
-import { wakeLoop } from '../src/runner/runner.js';
+import { wakeLoop, wakeLoopAll } from '../src/runner/runner.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SIGNUP_HINT = 'Sign up on the board first: be10x serve → http://localhost:4610';
@@ -61,7 +61,13 @@ function resolveUserId(db, email) {
 // serve [--port N] — boot the HTTP board. Dynamic import so the http stack only loads for this command.
 async function cmdServe(args) {
   const { startServer } = await import('../src/http/server.js');
-  startServer({ port: args.port ? Number(args.port) : 4610 });
+  const db = openDb(dbPathAbs());
+  startServer({ db, port: args.port ? Number(args.port) : 4610, host: args.host && args.host !== true ? args.host : undefined });
+  // Board-wide runner baked into serve: works tasks across every linked repo, spawning the agent in each
+  // task's own repo — so the user never needs a separate `be10x work` terminal.
+  const makeExecutor = (project) => makeClaudeExecutor(db, project, { model: process.env.GFA_MODEL, workerId: 'runner' });
+  wakeLoopAll(db, { workerId: 'runner', makeExecutor });
+  console.log('be10x runner working all linked repos on board wakes.');
 }
 
 // link [--name X] [--email you@x] — register the cwd as a project, mint a cli token, and write + print a

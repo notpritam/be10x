@@ -20,6 +20,7 @@ import { requestInput, answerInput, getOpenInputRequest } from '../tasks/input_r
 import { addComment, listComments } from '../tasks/comments.js';
 import { enqueueWake } from '../executor/wake.js';
 import { listRunsForTask } from '../executor/runs.js';
+import { taskDebug } from '../tasks/debug.js';
 import { listProjects, registerProject, detectProjectKey } from '../projects/projects.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -210,6 +211,12 @@ const ROUTES = [
   }],
   ['GET', '/api/tasks/:id/events', true, async ({ db, res, params }) => send(res, 200, { events: listEvents(db, params.id) })],
   ['GET', '/api/tasks/:id/runs', true, async ({ db, res, params }) => send(res, 200, { runs: listRunsForTask(db, params.id) })],
+  // A consolidated raw snapshot behind the debug button: live agent status, runs, wake queue, events.
+  ['GET', '/api/tasks/:id/debug', true, async ({ db, res, params }) => {
+    const dbg = taskDebug(db, params.id);
+    if (!dbg) return send(res, 404, { error: 'NO_SUCH_TASK' });
+    send(res, 200, dbg);
+  }],
   ['POST', '/api/tasks/:id/transition', true, async ({ db, res, params, body, user }) => {
     const task = transition(db, params.id, body.to, user.id);
     // A drag that hands the task to the agent (→researching) or approves it (→ready_to_work) wakes it.
