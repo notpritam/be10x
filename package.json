@@ -4,6 +4,9 @@
   "type": "module",
   "private": true,
   "engines": { "node": ">=18" },
-  "dependencies": { "better-sqlite3": "^11.8.0" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "better-sqlite3": "^11.8.0"
+  },
   "scripts": { "test": "node --test" }
 }
