@@ -1,291 +1,307 @@
 <!doctype html>
-<!-- ABOUTME: The Git for Agents web board — buildless Kanban + detail panel over the HTTP API. -->
-<!-- ABOUTME: Session-cookie auth; talks to /api/*. Design language inherited from the plan overview. -->
+<!-- ABOUTME: be10x web board — Notion-style shell + governed drag-and-drop Kanban over the HTTP API. -->
+<!-- ABOUTME: Buildless. SortableJS (DnD) + GSAP (motion) via CDN. Dragging a card = a lifecycle transition; illegal moves snap back. -->
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Git for Agents</title>
+<title>be10x</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
 <style>
   :root{
-    --bg:#0c0d11;--bg2:#101117;--panel:#15161d;--panel2:#191b23;--line:#24262f;--line2:#2e3140;
+    --bg:#0c0d11;--bg2:#0f1015;--panel:#15161d;--panel2:#191b23;--line:#22242c;--line2:#2e3140;
     --ink:#e7e8ec;--mut:#9a9ca6;--dim:#6c6e79;--iris:#8b7dff;--iris-dim:#3a3560;--emerald:#34d399;
     --coral:#fb7185;--amber:#fbbf24;--sky:#56b6ff;
     --disp:'Space Grotesk',system-ui,sans-serif;--body:'IBM Plex Sans',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:14px}
-  a,button{font-family:inherit}
-  .mono{font-family:var(--mono)}
-  header{display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
-  header .brand{font-family:var(--disp);font-weight:700;font-size:17px;letter-spacing:-.01em}
-  header .brand span{color:var(--iris)}
-  header .sp{flex:1}
-  header .who{color:var(--mut);font-size:13px}
-  button{cursor:pointer;border:1px solid var(--line2);background:var(--panel2);color:var(--ink);border-radius:8px;padding:7px 12px;font-size:13px}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:14px;height:100vh;overflow:hidden}
+  button{cursor:pointer;font-family:inherit;border:1px solid var(--line2);background:var(--panel2);color:var(--ink);border-radius:8px;padding:7px 12px;font-size:13px}
   button:hover{border-color:var(--iris-dim)}
   button.pri{border-color:var(--iris-dim);background:linear-gradient(180deg,#241f45,#1a1730);color:#cdc6ff}
   input,select,textarea{font-family:inherit;font-size:13px;background:var(--bg2);border:1px solid var(--line2);border-radius:8px;color:var(--ink);padding:8px 10px}
   input::placeholder,textarea::placeholder{color:var(--dim)}
-  /* auth */
+  .mono{font-family:var(--mono)}
+  svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
   .auth{max-width:360px;margin:12vh auto;padding:26px;background:var(--panel);border:1px solid var(--line);border-radius:16px}
   .auth h1{font-family:var(--disp);font-size:22px;margin:0 0 4px}
   .auth p{color:var(--mut);margin:0 0 18px;font-size:13px}
-  .auth .row{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
-  .auth .tabs{display:flex;gap:6px;margin-bottom:14px}
-  .auth .tabs button{flex:1}
-  .auth .tabs button.on{border-color:var(--iris);color:#cdc6ff}
+  .auth .row{margin-bottom:10px;display:flex;flex-direction:column}
+  .auth .tabs{display:flex;gap:6px;margin-bottom:14px}.auth .tabs button{flex:1}.auth .tabs button.on{border-color:var(--iris);color:#cdc6ff}
   .err{color:var(--coral);font-size:12.5px;min-height:16px;margin-top:4px}
-  /* new task bar */
-  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--bg)}
-  .bar input,.bar select{min-width:0}
-  .bar .title{flex:1;min-width:160px}
-  /* board */
-  .board{display:flex;gap:12px;overflow-x:auto;padding:16px 20px 30px;align-items:flex-start}
-  .lane{flex:0 0 230px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:10px}
-  .lane h2{font-family:var(--disp);font-size:12px;text-transform:uppercase;letter-spacing:.08em;margin:2px 4px 10px;display:flex;justify-content:space-between}
-  .lane h2 .n{color:var(--dim)}
-  .card{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:10px 11px;margin-bottom:8px;cursor:pointer}
-  .card:hover{border-color:var(--iris-dim)}
-  .card .id{font-family:var(--mono);font-size:11px;color:var(--dim)}
-  .card .t{font-weight:600;font-size:13.5px;margin:3px 0 6px;line-height:1.3}
-  .card .meta{display:flex;gap:6px;flex-wrap:wrap}
+
+  .shell{display:flex;height:100vh}
+  .side{width:252px;flex:none;background:var(--bg2);border-right:1px solid var(--line);display:flex;flex-direction:column;transition:width .14s ease}
+  body.collapsed .side{width:58px}
+  .side .top{display:flex;align-items:center;gap:9px;padding:12px}
+  .wbadge{width:26px;height:26px;flex:none;border-radius:7px;background:linear-gradient(135deg,#8b7dff,#5b4bd6);display:grid;place-items:center;font-family:var(--disp);font-weight:700;font-size:13px;color:#fff}
+  .wname{font-family:var(--disp);font-weight:700;font-size:15px;letter-spacing:-.01em;white-space:nowrap;overflow:hidden}.wname b{color:var(--iris)}
+  .collapse{margin-left:auto;background:none;border:none;color:var(--dim);padding:4px;border-radius:6px}.collapse:hover{background:var(--panel2);color:var(--ink)}
+  .side .nav{flex:1;overflow-y:auto;padding:6px 8px}
+  .navsec{margin-top:12px}
+  .navsec .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);padding:6px 8px 3px;display:flex;justify-content:space-between;align-items:center;white-space:nowrap}
+  .navsec .lbl button{background:none;border:none;color:var(--dim);padding:2px;font-size:15px;line-height:1}.navsec .lbl button:hover{color:var(--ink)}
+  .navitem{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:7px;color:var(--mut);cursor:pointer;white-space:nowrap;overflow:hidden}
+  .navitem:hover{background:var(--panel2)}.navitem.on{background:var(--panel2);color:var(--ink)}
+  .navitem .ico{flex:none;width:18px;height:18px;display:grid;place-items:center;color:var(--dim)}.navitem.on .ico{color:var(--iris)}
+  .navitem .txt{flex:1;overflow:hidden;text-overflow:ellipsis;font-size:13.5px}
+  .navitem .badge{font-family:var(--mono);font-size:10.5px;background:var(--panel);border:1px solid var(--line2);border-radius:20px;padding:1px 7px;color:var(--mut)}
+  .navitem .badge.amber{border-color:#5c4a1e;color:var(--amber)}
+  .letter{width:18px;height:18px;border-radius:5px;background:var(--iris-dim);color:#cdc6ff;display:grid;place-items:center;font-size:10px;font-weight:700;font-family:var(--disp)}
+  .side .foot{border-top:1px solid var(--line);padding:9px 10px;display:flex;align-items:center;gap:9px}
+  .avatar{width:24px;height:24px;flex:none;border-radius:50%;background:linear-gradient(135deg,#34d399,#0ea5a3);display:grid;place-items:center;font-size:11px;font-weight:700;color:#052}
+  .foot .who{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:12.5px;color:var(--mut)}
+  .foot .lo{background:none;border:none;color:var(--dim);padding:4px}.foot .lo:hover{color:var(--coral)}
+  body.collapsed .wname,body.collapsed .navsec .lbl,body.collapsed .navitem .txt,body.collapsed .navitem .badge,body.collapsed .foot .who{display:none}
+  body.collapsed .side .top{justify-content:center}body.collapsed .collapse{display:none}
+  body.collapsed .navitem{justify-content:center;padding:7px}body.collapsed .foot{justify-content:center}
+
+  main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+  .mhead{padding:14px 22px 0;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  .mhead h1{font-family:var(--disp);font-size:18px;margin:0 0 12px;display:flex;align-items:center;gap:9px}
+  .tabs2{display:flex;gap:2px;margin-left:4px}
+  .tab{background:none;border:none;border-bottom:2px solid transparent;border-radius:0;color:var(--mut);padding:6px 10px 12px;font-size:13.5px}
+  .tab:hover{color:var(--ink)}.tab.on{color:var(--ink);border-bottom-color:var(--iris)}
+  .newbar{margin:0 0 10px auto;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+  .newbar .title{width:150px}
+  .board{flex:1;display:flex;gap:14px;overflow-x:auto;padding:16px 20px 26px;align-items:flex-start}
+  .lane{flex:0 0 236px;display:flex;flex-direction:column;max-height:100%}
+  .lane h2{font-family:var(--disp);font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;margin:0 2px 8px;display:flex;align-items:center;gap:7px;color:var(--mut)}
+  .lane h2 .ldot{width:8px;height:8px;border-radius:50%}
+  .lane h2 .n{margin-left:auto;color:var(--dim);font-family:var(--mono);font-size:11px}
+  .lane-body{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:8px;min-height:60px;display:flex;flex-direction:column;gap:8px;overflow-y:auto}
+  .card{background:var(--panel);border:1px solid var(--line2);border-left:3px solid var(--line2);border-radius:10px;padding:10px 11px;cursor:grab}
+  .card:hover{border-color:var(--iris-dim);transform:translateY(-1px)}
+  .card:active{cursor:grabbing}
+  .crow{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+  .card .id{font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+  .card .t{font-weight:600;font-size:13.5px;line-height:1.32;margin-bottom:9px}
+  .crow2{display:flex;align-items:center;gap:6px}
   .chip{font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:5px;border:1px solid var(--line2);color:var(--mut)}
-  .chip.sev-high{border-color:#5b2530;color:var(--coral)}
   .chip.type{color:#b9a8ff;border-color:var(--iris-dim)}
-  .dot{width:7px;height:7px;border-radius:50%;display:inline-block}
-  /* drawer */
-  .scrim{position:fixed;inset:0;background:#0009;display:none}
-  .scrim.on{display:block}
-  .drawer{position:fixed;top:0;right:0;height:100%;width:min(680px,96vw);background:var(--panel);border-left:1px solid var(--line);transform:translateX(100%);transition:transform .18s;overflow-y:auto;z-index:20}
+  .sev{font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;padding:2px 6px;border-radius:20px;border:1px solid var(--line2);color:var(--mut)}
+  .sev.high{color:var(--coral);border-color:#5b2530;background:#2a151a}
+  .sev.low{color:var(--dim)}
+  .meta-r{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .date{font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .av-sm{width:19px;height:19px;border-radius:50%;background:linear-gradient(135deg,#34d399,#0ea5a3);display:grid;place-items:center;font-size:9.5px;font-weight:700;color:#052}
+  .av-sm.other{background:var(--line2);color:var(--mut)}
+  .ni-badge{display:inline-flex;align-items:center;gap:5px;margin-top:9px;font-size:10.5px;color:var(--amber);background:#231b0e;border:1px solid #5c4a1e;border-radius:6px;padding:2px 7px}
+  .ni-badge .pd{width:6px;height:6px;border-radius:50%;background:var(--amber);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 #fbbf2466}70%{box-shadow:0 0 0 7px #fbbf2400}100%{box-shadow:0 0 0 0 #fbbf2400}}
+  @media(prefers-reduced-motion:reduce){.pd{animation:none}}
+  .add-row{margin-top:8px;color:var(--dim);font-size:12.5px;padding:7px 8px;border:1px dashed var(--line2);border-radius:9px;cursor:pointer;text-align:center}
+  .add-row:hover{color:var(--ink);border-color:var(--iris-dim)}
+  .drag-ghost{opacity:.35}
+  .drag-chosen{box-shadow:0 12px 30px -12px #000a;border-color:var(--iris)!important}
+  .lane-body.drop-ok{outline:2px dashed #34d39955;outline-offset:2px}
+  /* list view */
+  .list{flex:1;overflow-y:auto;padding:14px 22px 26px}
+  .lrow{display:flex;align-items:center;gap:12px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:6px;background:var(--panel);cursor:pointer}
+  .lrow:hover{border-color:var(--iris-dim)}
+  .lrow .id{font-family:var(--mono);font-size:11px;color:var(--dim);width:64px;flex:none}
+  .lrow .lt{flex:1;font-weight:600;font-size:13.5px}
+  .lrow .st{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:20px;border:1px solid var(--line2)}
+  .empty{color:var(--dim);font-size:13px;padding:40px;margin:auto}
+
+  .scrim{position:fixed;inset:0;background:#0009;display:none}.scrim.on{display:block}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:min(660px,96vw);background:var(--panel);border-left:1px solid var(--line);transform:translateX(100%);transition:transform .18s;overflow-y:auto;z-index:20}
   .drawer.on{transform:none}
   .drawer .dh{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:10px}
-  .drawer .dh .x{margin-left:auto}
-  .drawer h3{font-family:var(--disp);font-size:18px;margin:2px 0 6px}
+  .drawer h3{font-family:var(--disp);font-size:18px;margin:2px 0 6px}.drawer .dh .x{margin-left:auto;background:none;border:none;color:var(--mut)}
   .sec{padding:16px 22px;border-bottom:1px solid var(--line)}
   .sec .k{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin-bottom:8px}
-  .kv{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;font-size:13px}
-  .kv .kk{color:var(--dim);font-family:var(--mono);font-size:11px;padding-top:2px}
+  .kv{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;font-size:13px}.kv .kk{color:var(--dim);font-family:var(--mono);font-size:11px;padding-top:2px}
   .btns{display:flex;flex-wrap:wrap;gap:7px}
   .feed{display:flex;flex-direction:column;gap:7px;max-height:230px;overflow-y:auto}
-  .ev{font-size:12.5px;color:var(--mut);border-left:2px solid var(--line2);padding:2px 0 2px 10px}
-  .ev b{color:var(--ink);font-weight:600}
+  .ev{font-size:12.5px;color:var(--mut);border-left:2px solid var(--line2);padding:2px 0 2px 10px}.ev b{color:var(--ink);font-weight:600}
   .im{border:1px solid var(--amber);border-radius:12px;padding:14px;background:#1c1810}
   .im .q{font-size:14px;color:#e7e3d6;margin-bottom:10px}
   .im .choices{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px}
-  .qc{border:1px solid var(--line2);background:var(--panel)}
-  .qc.sel{border-color:var(--amber);color:#ffe08a;background:#2a2412}
-  .im .custom{display:flex;gap:7px}
-  .im .custom input{flex:1}
+  .qc{border:1px solid var(--line2);background:var(--panel)}.qc.sel{border-color:var(--amber);color:#ffe08a;background:#2a2412}
+  .im .custom{display:flex;gap:7px}.im .custom input{flex:1}
   .status-pill{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:6px;border:1px solid var(--line2)}
-  .hide{display:none}
+  #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:10px 16px;font-size:13px;opacity:0;transition:.2s;z-index:40;pointer-events:none;box-shadow:0 12px 30px -12px #000a}
+  #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast.bad{border-color:#5b2530;color:#ffb3bd}
 </style>
 </head>
 <body>
 <div id="app"></div>
-
 <div class="scrim" id="scrim" onclick="closeDrawer()"></div>
 <aside class="drawer" id="drawer"></aside>
+<div id="toast"></div>
 
 <script>
-const LANES = ['backlog','researching','plan_review','ready_to_work','in_progress','needs_input','verifying','done'];
-const LANE_LABEL = {backlog:'Backlog',researching:'Researching',plan_review:'Plan review',ready_to_work:'Ready to work',in_progress:'In progress',needs_input:'Needs input',verifying:'Verifying',done:'Done'};
-const NEXT = {
-  backlog:['researching','ready_to_work','not_a_bug','wont_fix','blocked'],
-  researching:['plan_review','blocked'],
-  plan_review:['researching','ready_to_work','not_a_bug','wont_fix','blocked'],
-  ready_to_work:['in_progress','plan_review','blocked'],
-  in_progress:['needs_input','verifying','plan_review','blocked'],
-  needs_input:['in_progress','blocked'],
-  verifying:['done','in_progress','plan_review'],
-  blocked:['backlog','researching','plan_review','ready_to_work','in_progress'],
-  done:[],not_a_bug:[],wont_fix:[],
-};
-const DOT = {backlog:'#6c6e79',researching:'#8b7dff',plan_review:'#fbbf24',ready_to_work:'#34d399',in_progress:'#8b7dff',needs_input:'#fbbf24',verifying:'#56b6ff',done:'#34d399'};
-let ME=null, TASKS=[], OPENID=null;
+const LANES=['backlog','researching','plan_review','ready_to_work','in_progress','needs_input','verifying','done'];
+const LANE_LABEL={backlog:'Backlog',researching:'Researching',plan_review:'Plan review',ready_to_work:'Ready to work',in_progress:'In progress',needs_input:'Needs input',verifying:'Verifying',done:'Done'};
+const NEXT={backlog:['researching','ready_to_work','not_a_bug','wont_fix','blocked'],researching:['plan_review','blocked'],plan_review:['researching','ready_to_work','not_a_bug','wont_fix','blocked'],ready_to_work:['in_progress','plan_review','blocked'],in_progress:['needs_input','verifying','plan_review','blocked'],needs_input:['in_progress','blocked'],verifying:['done','in_progress','plan_review'],blocked:['backlog','researching','plan_review','ready_to_work','in_progress'],done:[],not_a_bug:[],wont_fix:[]};
+const DOT={backlog:'#6c6e79',researching:'#8b7dff',plan_review:'#fbbf24',ready_to_work:'#34d399',in_progress:'#8b7dff',needs_input:'#fbbf24',verifying:'#56b6ff',done:'#34d399'};
+const ICONS={all:'<path d="M4 6h16M4 12h16M4 18h16"/>',user:'<circle cx="12" cy="8" r="3.2"/><path d="M5 20a7 7 0 0 1 14 0"/>',bell:'<path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 0 0 4 0"/>',chev:'<path d="M15 6l-6 6 6 6"/>'};
+const ic=n=>`<svg viewBox="0 0 24 24">${ICONS[n]||''}</svg>`;
+const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
+let ME=null,TASKS=[],TEAMS=[],OPENID=null,VIEW={type:'all'},TAB='board';
 
-async function api(method, path, body){
-  const r = await fetch(path,{method,headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
-  const j = await r.json().catch(()=>({}));
-  if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
-  return j;
-}
-const esc = s => String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(m,p,b){const r=await fetch(p,{method:m,headers:{'Content-Type':'application/json'},body:b===undefined?undefined:JSON.stringify(b)});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j;}
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function rel(ms){const s=(Date.now()-ms)/1000;if(s<60)return'now';if(s<3600)return Math.floor(s/60)+'m';if(s<86400)return Math.floor(s/3600)+'h';return Math.floor(s/86400)+'d';}
+let toastT;function toast(msg,bad){const t=document.getElementById('toast');t.textContent=msg;t.className='on'+(bad?' bad':'');clearTimeout(toastT);toastT=setTimeout(()=>t.className='',2600);}
 
-async function boot(){
-  try{ const me=await api('GET','/api/me'); ME=me.user; renderApp(); loadBoard(); }
-  catch{ renderAuth(); }
-}
+async function boot(){try{ME=(await api('GET','/api/me')).user;await renderShell();}catch{renderAuth();}}
 
 function renderAuth(){
-  let mode='login';
-  const el=document.getElementById('app');
-  const draw=()=>{ el.innerHTML=`
-    <div class="auth">
-      <h1>Git for Agents</h1>
-      <p>Sign in to your board.</p>
-      <div class="tabs">
-        <button id="t-login" class="${mode==='login'?'on':''}">Log in</button>
-        <button id="t-signup" class="${mode==='signup'?'on':''}">Sign up</button>
-      </div>
-      ${mode==='signup'?'<div class="row"><input id="dn" placeholder="Display name"/></div>':''}
-      <div class="row"><input id="em" placeholder="Email" autocomplete="username"/></div>
-      <div class="row"><input id="pw" type="password" placeholder="Password" autocomplete="current-password"/></div>
-      <button class="pri" id="go" style="width:100%">${mode==='login'?'Log in':'Create account'}</button>
-      <div class="err" id="err"></div>
-    </div>`;
-    document.getElementById('t-login').onclick=()=>{mode='login';draw()};
-    document.getElementById('t-signup').onclick=()=>{mode='signup';draw()};
-    document.getElementById('go').onclick=submit;
-    el.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>{if(e.key==='Enter')submit()}));
-  };
-  async function submit(){
-    const email=document.getElementById('em').value.trim();
-    const password=document.getElementById('pw').value;
-    const displayName=(document.getElementById('dn')||{}).value;
-    try{
-      if(mode==='signup') await api('POST','/api/auth/signup',{email,displayName,password});
-      else await api('POST','/api/auth/login',{email,password});
-      boot();
-    }catch(e){ document.getElementById('err').textContent = e.message==='BAD_CREDENTIALS'?'Wrong email or password.':e.message==='EMAIL_TAKEN'?'That email is taken.':e.message; }
-  }
+  let mode='login';const el=document.getElementById('app');
+  const draw=()=>{el.innerHTML=`<div class="auth"><h1>be10x</h1><p>Sign in to your board.</p>
+    <div class="tabs"><button id="t-login" class="${mode==='login'?'on':''}">Log in</button><button id="t-signup" class="${mode==='signup'?'on':''}">Sign up</button></div>
+    ${mode==='signup'?'<div class="row"><input id="dn" placeholder="Display name"/></div>':''}
+    <div class="row"><input id="em" placeholder="Email"/></div><div class="row"><input id="pw" type="password" placeholder="Password"/></div>
+    <button class="pri" id="go" style="width:100%">${mode==='login'?'Log in':'Create account'}</button><div class="err" id="err"></div></div>`;
+    document.getElementById('t-login').onclick=()=>{mode='login';draw()};document.getElementById('t-signup').onclick=()=>{mode='signup';draw()};
+    document.getElementById('go').onclick=submit;el.querySelectorAll('input').forEach(i=>i.onkeydown=e=>{if(e.key==='Enter')submit()});};
+  async function submit(){const email=document.getElementById('em').value.trim(),password=document.getElementById('pw').value,displayName=(document.getElementById('dn')||{}).value;
+    try{if(mode==='signup')await api('POST','/api/auth/signup',{email,displayName,password});else await api('POST','/api/auth/login',{email,password});boot();}
+    catch(e){document.getElementById('err').textContent=e.message==='BAD_CREDENTIALS'?'Wrong email or password.':e.message==='EMAIL_TAKEN'?'That email is taken.':e.message;}}
   draw();
 }
 
-function renderApp(){
-  document.getElementById('app').innerHTML=`
-    <header>
-      <div class="brand">Git for <span>Agents</span></div>
-      <div class="sp"></div>
-      <div class="who">${esc(ME.displayName)} · ${esc(ME.email)}</div>
-      <button id="logout">Log out</button>
-    </header>
-    <div class="bar">
-      <select id="nt-type"><option value="general">general</option><option value="code-issue">code-issue</option></select>
-      <select id="nt-scope"><option value="personal">personal</option><option value="team">team</option><option value="project">project</option></select>
-      <input class="title" id="nt-title" placeholder="New task title…"/>
-      <input class="title" id="nt-detail" placeholder="Summary / symptom…"/>
-      <button class="pri" id="nt-add">Add task</button>
-    </div>
-    <div class="board" id="board"></div>`;
-  document.getElementById('logout').onclick=async()=>{await api('POST','/api/auth/logout');location.reload()};
+async function renderShell(){
+  TEAMS=(await api('GET','/api/teams')).teams;
+  document.body.classList.toggle('collapsed',localStorage.getItem('be10x_collapsed')==='1');
+  document.getElementById('app').innerHTML=`<div class="shell">
+    <nav class="side">
+      <div class="top"><div class="wbadge">b</div><div class="wname">be<b>10x</b></div><button class="collapse" id="collapse" title="Collapse">${ic('chev')}</button></div>
+      <div class="nav" id="nav"></div>
+      <div class="foot"><div class="avatar">${esc((ME.displayName||'?')[0]).toUpperCase()}</div><div class="who">${esc(ME.displayName)}</div><button class="lo" id="logout" title="Log out">⎋</button></div>
+    </nav>
+    <main><div class="mhead" id="mhead"></div><div id="content"></div></main></div>`;
+  document.getElementById('collapse').onclick=()=>{const c=!document.body.classList.contains('collapsed');document.body.classList.toggle('collapsed',c);localStorage.setItem('be10x_collapsed',c?'1':'0');};
+  document.getElementById('logout').onclick=async()=>{await api('POST','/api/auth/logout');location.reload();};
+  renderNav();await loadBoard();
+}
+
+function renderNav(){
+  const needs=TASKS.filter(t=>t.status==='needs_input').length;
+  const item=(v,icon,label,badge)=>{const on=JSON.stringify(VIEW)===JSON.stringify(v);return `<div class="navitem ${on?'on':''}" data-v='${esc(JSON.stringify(v))}' title="${esc(label)}"><span class="ico">${icon}</span><span class="txt">${esc(label)}</span>${badge!==undefined?`<span class="badge ${label==='Needs you'?'amber':''}">${badge}</span>`:''}</div>`;};
+  const teamItems=TEAMS.map(t=>{const v={type:'team',teamId:t.id};const on=JSON.stringify(VIEW)===JSON.stringify(v);return `<div class="navitem ${on?'on':''}" data-v='${esc(JSON.stringify(v))}' title="${esc(t.name)}"><span class="ico"><span class="letter">${esc(t.name[0]||'T').toUpperCase()}</span></span><span class="txt">${esc(t.name)}</span></div>`;}).join('');
+  document.getElementById('nav').innerHTML=`
+    <div class="navsec"><div class="lbl"><span>Views</span></div>
+      ${item({type:'all'},ic('all'),'All tasks',TASKS.length)}
+      ${item({type:'personal'},ic('user'),'Personal',TASKS.filter(t=>t.scope==='personal').length)}
+      ${item({type:'needs'},ic('bell'),'Needs you',needs)}</div>
+    <div class="navsec"><div class="lbl"><span>Teams</span><button id="newteam" title="New team">+</button></div>
+      ${teamItems||'<div class="navitem" style="color:var(--dim);cursor:default"><span class="ico"><span class="letter" style="background:var(--line2);color:var(--dim)">·</span></span><span class="txt">No teams yet</span></div>'}</div>`;
+  document.querySelectorAll('#nav .navitem[data-v]').forEach(n=>n.onclick=()=>{VIEW=JSON.parse(n.dataset.v);renderNav();renderMain();});
+  const nt=document.getElementById('newteam');if(nt)nt.onclick=async()=>{const name=prompt('Team name');if(!name)return;try{await api('POST','/api/teams',{name});await renderShell();}catch(e){toast(e.message,1);}};
+}
+
+function viewTasks(){if(VIEW.type==='personal')return TASKS.filter(t=>t.scope==='personal');if(VIEW.type==='needs')return TASKS.filter(t=>t.status==='needs_input');if(VIEW.type==='team')return TASKS.filter(t=>t.teamId===VIEW.teamId);return TASKS;}
+function viewTitle(){if(VIEW.type==='personal')return['Personal',ic('user')];if(VIEW.type==='needs')return['Needs you',ic('bell')];if(VIEW.type==='team'){const t=TEAMS.find(x=>x.id===VIEW.teamId);return[t?t.name:'Team',`<span class="letter">${esc((t?.name||'T')[0]).toUpperCase()}</span>`];}return['All tasks',ic('all')];}
+
+async function loadBoard(){TASKS=(await api('GET','/api/tasks')).tasks;renderNav();renderMain();if(OPENID)openDrawer(OPENID);}
+
+function renderMain(){
+  const[title,icon]=viewTitle();
+  document.getElementById('mhead').innerHTML=`<h1><span class="ico" style="color:var(--iris)">${icon}</span>${esc(title)}</h1>
+    <div class="tabs2"><button class="tab ${TAB==='board'?'on':''}" data-tab="board">Board</button><button class="tab ${TAB==='list'?'on':''}" data-tab="list">List</button></div>
+    <div class="newbar"><select id="nt-type"><option value="general">general</option><option value="code-issue">code-issue</option></select>
+      <input class="title" id="nt-title" placeholder="New task…"/><input class="title" id="nt-detail" placeholder="Summary / symptom…"/><button class="pri" id="nt-add">Add</button></div>`;
+  document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{TAB=b.dataset.tab;renderMain();});
   document.getElementById('nt-add').onclick=addTask;
+  const tasks=viewTasks();
+  const content=document.getElementById('content');
+  if(TAB==='list'){renderList(content,tasks);return;}
+  const byLane=Object.fromEntries(LANES.map(l=>[l,[]]));for(const t of tasks)(byLane[t.status]||(byLane[t.status]=[])).push(t);
+  content.innerHTML=`<div class="board">${LANES.map(l=>`
+    <div class="lane"><h2><span class="ldot" style="background:${DOT[l]}"></span>${LANE_LABEL[l]}<span class="n">${(byLane[l]||[]).length}</span></h2>
+      <div class="lane-body" data-status="${l}">${(byLane[l]||[]).map(cardHTML).join('')}</div>
+      ${l==='backlog'?'<div class="add-row" id="addrow">+ Add task</div>':''}</div>`).join('')}</div>`;
+  document.querySelectorAll('.card').forEach(c=>c.onclick=e=>{if(!c.dataset.dragging)openDrawer(c.dataset.id)});
+  const ar=document.getElementById('addrow');if(ar)ar.onclick=()=>document.getElementById('nt-title').focus();
+  initSort();
+  if(!RM&&window.gsap)gsap.from('.card',{y:8,opacity:0,duration:.24,stagger:.02,ease:'power2.out'});
+}
+
+function cardHTML(t){
+  const mine=t.ownerId===ME.id;
+  return `<div class="card" data-id="${t.id}" style="border-left-color:${DOT[t.status]}">
+    <div class="crow"><span class="id">${esc(t.humanId)}</span><span class="sev ${t.severity==='high'?'high':t.severity==='low'?'low':''}">${esc(t.severity)}</span></div>
+    <div class="t">${esc(t.title)}</div>
+    <div class="crow2"><span class="chip type">${esc(t.type)}</span>
+      <span class="meta-r"><span class="date">${rel(t.createdAt)}</span><span class="av-sm ${mine?'':'other'}">${mine?esc((ME.displayName||'?')[0]).toUpperCase():'·'}</span></span></div>
+    ${t.status==='needs_input'?'<div class="ni-badge"><span class="pd"></span>needs input</div>':''}</div>`;
+}
+
+function renderList(content,tasks){
+  if(!tasks.length){content.innerHTML='<div class="board"><div class="empty">No tasks in this view yet — add one above.</div></div>';return;}
+  const order=Object.fromEntries(LANES.map((l,i)=>[l,i]));
+  const sorted=tasks.slice().sort((a,b)=>(order[a.status]??9)-(order[b.status]??9));
+  content.innerHTML=`<div class="list">${sorted.map(t=>`<div class="lrow" data-id="${t.id}">
+    <span class="id">${esc(t.humanId)}</span><span class="lt">${esc(t.title)}</span>
+    <span class="chip type">${esc(t.type)}</span>
+    <span class="st" style="border-color:${DOT[t.status]}55;color:${DOT[t.status]}">${esc(t.status)}</span></div>`).join('')}</div>`;
+  document.querySelectorAll('.lrow').forEach(r=>r.onclick=()=>openDrawer(r.dataset.id));
+}
+
+function initSort(){
+  document.querySelectorAll('.lane-body').forEach(el=>{
+    new Sortable(el,{group:'board',animation:150,ghostClass:'drag-ghost',chosenClass:'drag-chosen',
+      onStart:e=>{e.item.dataset.dragging='1';},
+      onEnd:async e=>{
+        const id=e.item.dataset.id,to=e.to.dataset.status,from=e.from.dataset.status;
+        setTimeout(()=>{delete e.item.dataset.dragging;},50);
+        if(to===from)return;
+        if(!(NEXT[from]||[]).includes(to)){toast(`Can’t move ${from.replace(/_/g,' ')} → ${to.replace(/_/g,' ')}`,1);return loadBoard();}
+        try{await api('POST','/api/tasks/'+id+'/transition',{to});toast(`Moved to ${to.replace(/_/g,' ')}`);loadBoard();}
+        catch(err){toast(err.message,1);loadBoard();}
+      }});
+  });
 }
 
 async function addTask(){
-  const type=document.getElementById('nt-type').value;
-  const scope=document.getElementById('nt-scope').value;
-  const title=document.getElementById('nt-title').value.trim();
-  const detail=document.getElementById('nt-detail').value.trim();
-  if(!title||!detail) return;
-  const content = type==='code-issue'?{symptom:detail}:{summary:detail};
-  try{ await api('POST','/api/tasks',{type,scope,title,content}); document.getElementById('nt-title').value='';document.getElementById('nt-detail').value=''; loadBoard(); }
-  catch(e){ alert(e.message); }
-}
-
-async function loadBoard(){
-  const {tasks}=await api('GET','/api/tasks');
-  TASKS=tasks; renderBoard();
-  if(OPENID) openDrawer(OPENID);
-}
-
-function renderBoard(){
-  const byLane=Object.fromEntries(LANES.map(l=>[l,[]]));
-  for(const t of TASKS){ (byLane[t.status]||(byLane[t.status]=[])).push(t); }
-  document.getElementById('board').innerHTML = LANES.map(l=>`
-    <div class="lane">
-      <h2>${LANE_LABEL[l]} <span class="n">${(byLane[l]||[]).length}</span></h2>
-      ${(byLane[l]||[]).map(cardHTML).join('')}
-    </div>`).join('');
-  document.querySelectorAll('.card').forEach(c=>c.onclick=()=>openDrawer(c.dataset.id));
-}
-function cardHTML(t){
-  return `<div class="card" data-id="${t.id}">
-    <div class="id">${esc(t.humanId)}</div>
-    <div class="t">${esc(t.title)}</div>
-    <div class="meta">
-      <span class="chip type">${esc(t.type)}</span>
-      <span class="chip ${t.severity==='high'?'sev-high':''}">${esc(t.severity)}</span>
-      <span class="dot" style="background:${DOT[t.status]||'#6c6e79'}"></span>
-    </div></div>`;
+  const type=document.getElementById('nt-type').value,title=document.getElementById('nt-title').value.trim(),detail=document.getElementById('nt-detail').value.trim();
+  if(!title||!detail)return;
+  const body={type,scope:VIEW.type==='team'?'team':'personal',title,content:type==='code-issue'?{symptom:detail}:{summary:detail}};
+  if(VIEW.type==='team')body.teamId=VIEW.teamId;
+  try{await api('POST','/api/tasks',body);loadBoard();}catch(e){toast(e.message,1);}
 }
 
 async function openDrawer(id){
-  OPENID=id;
-  const {task}=await api('GET','/api/tasks/'+id);
-  const {events}=await api('GET','/api/tasks/'+id+'/events');
-  let input=null;
-  if(task.status==='needs_input'){ input=(await api('GET','/api/tasks/'+id+'/input')).inputRequest; }
-  const d=document.getElementById('drawer');
-  d.innerHTML=drawerHTML(task,events,input);
-  d.classList.add('on'); document.getElementById('scrim').classList.add('on');
+  OPENID=id;const{task}=await api('GET','/api/tasks/'+id);const{events}=await api('GET','/api/tasks/'+id+'/events');
+  let input=null;if(task.status==='needs_input')input=(await api('GET','/api/tasks/'+id+'/input')).inputRequest;
+  const d=document.getElementById('drawer');d.innerHTML=drawerHTML(task,events,input);d.classList.add('on');document.getElementById('scrim').classList.add('on');
+  if(!RM&&window.gsap)gsap.from('.drawer .sec',{x:14,opacity:0,duration:.22,stagger:.03,ease:'power2.out'});
   wireDrawer(task,input);
 }
-function closeDrawer(){ OPENID=null; document.getElementById('drawer').classList.remove('on'); document.getElementById('scrim').classList.remove('on'); }
-
+function closeDrawer(){OPENID=null;document.getElementById('drawer').classList.remove('on');document.getElementById('scrim').classList.remove('on');}
 function drawerHTML(t,events,input){
   const content=Object.entries(t.content||{}).map(([k,v])=>`<div class="kk">${esc(k)}</div><div>${esc(typeof v==='object'?JSON.stringify(v):v)}</div>`).join('');
-  const nexts=(NEXT[t.status]||[]);
-  return `
-    <div class="dh">
-      <div>
-        <div class="mono" style="color:var(--dim);font-size:12px">${esc(t.humanId)} · ${esc(t.type)}</div>
-        <h3>${esc(t.title)}</h3>
-        <span class="status-pill" style="border-color:${DOT[t.status]}55;color:${DOT[t.status]}">${esc(t.status)}</span>
-      </div>
-      <button class="x" onclick="closeDrawer()">✕</button>
-    </div>
-    ${input?`<div class="sec"><div class="k">⏸ Needs your input</div>
-      <div class="im">
-        <div class="q">${esc(input.question)}</div>
-        ${input.choices?`<div class="choices">${input.choices.map(c=>`<button class="qc" data-choice="${esc(c)}">${esc(c)}</button>`).join('')}</div>`:''}
-        ${input.allowCustom?`<div class="custom"><input id="im-custom" placeholder="Custom answer…"/><button class="pri" id="im-send">Send &amp; continue</button></div>`:''}
-      </div></div>`:''}
+  const nexts=NEXT[t.status]||[];
+  return `<div class="dh"><div><div class="mono" style="color:var(--dim);font-size:12px">${esc(t.humanId)} · ${esc(t.type)}</div><h3>${esc(t.title)}</h3>
+    <span class="status-pill" style="border-color:${DOT[t.status]}55;color:${DOT[t.status]}">${esc(t.status)}</span></div><button class="x" onclick="closeDrawer()">✕</button></div>
+    ${input?`<div class="sec"><div class="k">⏸ Needs your input</div><div class="im"><div class="q">${esc(input.question)}</div>
+      ${input.choices?`<div class="choices">${input.choices.map(c=>`<button class="qc" data-choice="${esc(c)}">${esc(c)}</button>`).join('')}</div>`:''}
+      ${input.allowCustom?`<div class="custom"><input id="im-custom" placeholder="Custom answer…"/><button class="pri" id="im-send">Send &amp; continue</button></div>`:''}</div></div>`:''}
     <div class="sec"><div class="k">Content</div><div class="kv">${content||'<div style="color:var(--dim)">—</div>'}</div></div>
     ${t.plan?`<div class="sec"><div class="k">Plan</div><div class="mono" style="font-size:12px;white-space:pre-wrap;color:#cdd">${esc(JSON.stringify(t.plan,null,2))}</div></div>`:''}
     ${t.agent?`<div class="sec"><div class="k">Agent</div><div style="font-size:13px"><b>${esc(t.agent.step||'')}</b><br><span style="color:var(--mut)">${esc(t.agent.message||'')}</span></div></div>`:''}
-    <div class="sec"><div class="k">Move</div><div class="btns" id="moves">
-      ${nexts.map(s=>`<button data-to="${s}">${s.replace(/_/g,' ')}</button>`).join('')||'<span style="color:var(--dim)">terminal</span>'}
-    </div></div>
-    ${t.status==='plan_review'?`<div class="sec"><div class="k">Review</div><div class="btns">
-      <button class="pri" id="rv-approve">Approve → ready</button>
-      <button id="rv-changes">Request changes</button></div></div>`:''}
+    <div class="sec"><div class="k">Move</div><div class="btns" id="moves">${nexts.map(s=>`<button data-to="${s}">${s.replace(/_/g,' ')}</button>`).join('')||'<span style="color:var(--dim)">terminal</span>'}</div></div>
+    ${t.status==='plan_review'?`<div class="sec"><div class="k">Review</div><div class="btns"><button class="pri" id="rv-approve">Approve → ready</button><button id="rv-changes">Request changes</button></div></div>`:''}
     <div class="sec"><div class="k">Activity</div><div class="feed">${events.slice().reverse().map(evHTML).join('')||'<span style="color:var(--dim)">—</span>'}</div></div>`;
 }
-function evHTML(e){
-  let d='';
-  if(e.kind==='status') d=`<b>${e.payload.from}</b> → <b>${e.payload.to}</b>`;
-  else if(e.kind==='review') d=`review: <b>${e.payload.verdict}</b>`;
-  else if(e.kind==='input_request') d=`asked: ${esc(e.payload.question||'')}`;
-  else if(e.kind==='input_answer') d=`answered: ${esc(e.payload.answer||'')}`;
-  else d=e.kind;
-  return `<div class="ev"><b>${esc(e.actor).slice(0,8)}</b> · ${d}</div>`;
-}
-
+function evHTML(e){let d;if(e.kind==='status')d=`<b>${e.payload.from}</b> → <b>${e.payload.to}</b>`;else if(e.kind==='review')d=`review: <b>${e.payload.verdict}</b>`;else if(e.kind==='input_request')d=`asked: ${esc(e.payload.question||'')}`;else if(e.kind==='input_answer')d=`answered: ${esc(e.payload.answer||'')}`;else d=e.kind;return `<div class="ev"><b>${esc(String(e.actor)).slice(0,8)}</b> · ${d}</div>`;}
 function wireDrawer(t,input){
-  document.querySelectorAll('#moves button').forEach(b=>b.onclick=async()=>{
-    try{ await api('POST','/api/tasks/'+t.id+'/transition',{to:b.dataset.to}); loadBoard(); }catch(e){ alert(e.message); }
-  });
-  const ap=document.getElementById('rv-approve'); if(ap) ap.onclick=()=>submitReview(t.id,'approved');
-  const ch=document.getElementById('rv-changes'); if(ch) ch.onclick=()=>submitReview(t.id,'changes_requested');
-  if(input){
-    let chosen=null;
-    document.querySelectorAll('.qc').forEach(q=>q.onclick=()=>{ chosen=q.dataset.choice; document.querySelectorAll('.qc').forEach(x=>x.classList.remove('sel')); q.classList.add('sel'); });
-    const send=document.getElementById('im-send');
-    if(send) send.onclick=async()=>{
-      const custom=(document.getElementById('im-custom')||{}).value;
-      const answer=custom||chosen; if(!answer) return;
-      try{ await api('POST','/api/input/'+input.id+'/answer',{answer}); loadBoard(); }catch(e){ alert(e.message); }
-    };
-  }
+  document.querySelectorAll('#moves button').forEach(b=>b.onclick=async()=>{try{await api('POST','/api/tasks/'+t.id+'/transition',{to:b.dataset.to});loadBoard();}catch(e){toast(e.message,1);}});
+  const ap=document.getElementById('rv-approve');if(ap)ap.onclick=()=>submitReview(t.id,'approved');
+  const ch=document.getElementById('rv-changes');if(ch)ch.onclick=()=>submitReview(t.id,'changes_requested');
+  if(input){let chosen=null;document.querySelectorAll('.qc').forEach(q=>q.onclick=()=>{chosen=q.dataset.choice;document.querySelectorAll('.qc').forEach(x=>x.classList.remove('sel'));q.classList.add('sel');});
+    const send=document.getElementById('im-send');if(send)send.onclick=async()=>{const custom=(document.getElementById('im-custom')||{}).value;const answer=custom||chosen;if(!answer)return;try{await api('POST','/api/input/'+input.id+'/answer',{answer});loadBoard();}catch(e){toast(e.message,1);}};}
 }
-async function submitReview(id,verdict){
-  try{ await api('POST','/api/tasks/'+id+'/review/submit',{verdict,comment:''}); loadBoard(); }catch(e){ alert(e.message); }
-}
-
+async function submitReview(id,verdict){try{await api('POST','/api/tasks/'+id+'/review/submit',{verdict,comment:''});loadBoard();}catch(e){toast(e.message,1);}}
 boot();
 </script>
 </body>

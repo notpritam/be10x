@@ -88,6 +88,6 @@ test('serves the static board at /', async () => {
     const res = await fetch(base + '/');
     assert.equal(res.status, 200);
     const html = await res.text();
-    assert.match(html, /Git for Agents/);
+    assert.match(html, /be10x/);
   });
 });
