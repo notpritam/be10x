@@ -221,7 +221,14 @@ export function DeepDivePanel({
                   </div>
                   {/* Discussion fills the panel as a chat (input pinned at the foot); the others scroll. */}
                   {rightPanel === "discussion" ? (
-                    <CommentThread taskId={task.id} events={detail.events} resolveActor={resolveActor} onPosted={refresh} />
+                    <CommentThread
+                      taskId={task.id}
+                      events={detail.events}
+                      task={task}
+                      runs={detail.runs}
+                      resolveActor={resolveActor}
+                      onPosted={refresh}
+                    />
                   ) : rightPanel === "debug" ? (
                     <DebugPanelContent taskId={task.id} />
                   ) : (

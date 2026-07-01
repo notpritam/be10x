@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Copy, SendHorizontal } from "lucide-react";
 import { toast } from "sonner";
-import type { Comment, Task, TaskEvent } from "@/lib/types";
+import type { Comment, Run, Task, TaskEvent } from "@/lib/types";
 import { api } from "@/lib/api";
 import { cn, relativeTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { describe } from "./ActivityFeed";
+import { AgentLiveStatus } from "./AgentLiveStatus";
 
 // A discussion message collapses to a precise 160px; if it's taller, a Show more/less toggle reveals the
 // rest. Keeps long agent replies and pasted context from flooding the thread while staying one click away.
@@ -128,18 +129,27 @@ export function AgentActions({ task, onDone }: { task: Task; onDone: () => void 
 export function CommentThread({
   taskId,
   events = [],
+  task,
+  runs,
   resolveActor,
   onPosted,
 }: {
   taskId: string;
   /** Task activity events, interleaved with the comments to form one interaction timeline. */
   events?: TaskEvent[];
+  task: Task;
+  runs: Run[];
   resolveActor: (id: string) => string;
   onPosted: () => void;
 }) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickRef = useRef(true); // stick to the bottom unless the user scrolled up
+
+  const run = runs.length ? runs[runs.length - 1] : null;
+  const agentActive = run?.status === "running" || run?.status === "starting";
 
   const load = useCallback(async () => {
     try {
@@ -150,13 +160,22 @@ export function CommentThread({
     }
   }, [taskId]);
 
+  // Poll so the agent's replies appear live (events already stream in via props).
   useEffect(() => {
     void load();
+    const t = setInterval(() => void load(), 3000);
+    return () => clearInterval(t);
   }, [load]);
+
+  function onScroll() {
+    const el = scrollRef.current;
+    if (el) stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+  }
 
   async function post() {
     const text = body.trim();
     if (!text || busy) return;
+    stickRef.current = true; // sending always jumps you to the newest message
     setBusy(true);
     try {
       await api.addComment(taskId, text);
@@ -185,10 +204,21 @@ export function CommentThread({
     return merged;
   }, [comments, events]);
 
+  // Keep the view pinned to the newest message/activity while the user is at the bottom.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+  }, [items, agentActive]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Messages — fill the panel and scroll (no list height cap); each message still collapses at 160px. */}
-      <div className="min-h-0 flex-1 overflow-y-auto scroll-thin px-4 py-4" style={{ minHeight: 200 }}>
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="min-h-0 flex-1 overflow-y-auto scroll-thin px-4 py-4"
+        style={{ minHeight: 200 }}
+      >
         {items.length === 0 ? (
           <p className="grid h-full place-items-center px-4 text-center text-[12.5px] text-muted-foreground">
             No interaction yet — say something to steer the agent.
@@ -223,6 +253,13 @@ export function CommentThread({
               ),
             )}
           </ul>
+        )}
+        {/* Live "agent is running" pulse at the foot of the timeline, so you know it's working even
+            between event updates. */}
+        {agentActive && (
+          <div className="mt-3 px-1">
+            <AgentLiveStatus task={task} runs={runs} />
+          </div>
         )}
       </div>
 
