@@ -52,7 +52,14 @@ export function AppShell() {
       />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <TabBar onNavigate={leaveOverlays} tab={tab} onTab={setTab} onNewTask={startCompose} />
+        <TabBar
+          onNavigate={leaveOverlays}
+          tab={tab}
+          onTab={setTab}
+          onNewTask={startCompose}
+          composing={composing}
+          onCloseCompose={() => setComposing(false)}
+        />
         {showProfile ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex shrink-0 items-center border-b border-border/60 px-4 py-2">

@@ -30,14 +30,18 @@ export function TabBar({
   tab,
   onTab,
   onNewTask,
+  composing = false,
+  onCloseCompose,
 }: {
   onNavigate?: () => void;
   tab: BoardTab;
   onTab: (tab: BoardTab) => void;
   onNewTask: () => void;
+  composing?: boolean;
+  onCloseCompose?: () => void;
 }) {
   const { view, openTabs, selectedTaskId, selectTask, closeTab, allTasks } = useApp();
-  const onBoard = selectedTaskId === null;
+  const onBoard = selectedTaskId === null && !composing;
 
   function go(id: string | null) {
     onNavigate?.();
@@ -65,7 +69,7 @@ export function TabBar({
       {/* Open task tabs */}
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scroll-thin">
         {openTabs.map((t) => {
-          const active = t.id === selectedTaskId;
+          const active = t.id === selectedTaskId && !composing;
           const status = allTasks.find((x) => x.id === t.id)?.status;
           const dot = status ? STATUS_META[status].color : undefined;
           return (
@@ -100,6 +104,21 @@ export function TabBar({
             </div>
           );
         })}
+        {composing && (
+          <div className="group flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-card pl-2.5 pr-1.5 text-[12.5px] text-foreground shadow-card">
+            <span className="size-1.5 shrink-0 rounded-full bg-primary" />
+            <span className="font-medium">New task</span>
+            <button
+              type="button"
+              onClick={onCloseCompose}
+              aria-label="Close new task"
+              title="Close"
+              className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground/60 transition hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Board controls live on the tab line (no separate header). Only on the board. */}
