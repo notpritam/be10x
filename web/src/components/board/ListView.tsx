@@ -36,7 +36,7 @@ export function ListView() {
 
   return (
     <div className="h-full overflow-y-auto scroll-thin px-5 pb-12 pt-4">
-      <div className="mx-auto max-w-5xl overflow-hidden rounded-xl border border-border/70 bg-card shadow-card">
+      <div className="w-full overflow-hidden rounded-xl border border-border/70 bg-card shadow-card">
         <div className="divide-y divide-border/70">
           {sorted.map((task, i) => {
             const personId = task.assigneeId ?? task.ownerId;

@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useApp } from "@/state/app-store";
 import { Sidebar } from "./Sidebar";
+import { TabBar } from "./TabBar";
 import { Topbar, type BoardTab } from "./Topbar";
 import { BoardView } from "@/components/board/BoardView";
 import { ListView } from "@/components/board/ListView";
@@ -35,6 +36,7 @@ export function AppShell() {
       />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <TabBar onNavigate={() => setComposing(false)} />
         {composing ? (
           <NewTaskPage
             onCancel={() => setComposing(false)}

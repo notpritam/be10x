@@ -111,10 +111,6 @@ export function DeepDivePanel({
 
                 {/* Controls — right-aligned, easy to grab: share · debug · collapse · close */}
                 <div className="ml-auto flex shrink-0 items-center gap-0.5">
-                  <HeaderIconButton label="Share this page" onClick={sharePage}>
-                    <Share2 className="size-[16px]" />
-                  </HeaderIconButton>
-                  <DebugControl taskId={task.id} />
                   {onCollapse && (
                     <HeaderIconButton label="Collapse to side panel" onClick={onCollapse}>
                       <Minimize2 className="size-[16px]" />
@@ -235,6 +231,20 @@ export function DeepDivePanel({
                 >
                   <Info className="size-[18px]" />
                 </RailIcon>
+
+                {/* Actions moved off the header to keep it clean — share + debug live at the rail's foot. */}
+                <div className="mt-auto flex flex-col items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={sharePage}
+                    aria-label="Share this page"
+                    title="Share this page"
+                    className="grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  >
+                    <Share2 className="size-[18px]" />
+                  </button>
+                  <DebugControl taskId={task.id} />
+                </div>
               </nav>
             </div>
           </div>

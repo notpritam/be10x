@@ -1,6 +1,6 @@
-// ABOUTME: Create a task as a full PAGE (not a modal) — it opens in the main area. Type, scope (from the
-// current view), title, the type's required content field, priority, repo + isolation, and start-now.
-// On create it calls onCreated(task) so the shell can open the new task; Cancel returns to the board.
+// ABOUTME: Create a task as a full PAGE (not a modal) — fills the main area at full width in a two-column
+// layout (details on the left, agent settings on the right). Type, scope (from the current view), title,
+// the type's required content field, priority, repo + isolation, start-now. onCreated opens the new task.
 import { useEffect, useState, type ReactNode } from "react";
 import { Check, Code2, FolderPlus, GitBranch, Lightbulb, Loader2, MessagesSquare, TreePine, X } from "lucide-react";
 import { toast } from "sonner";
@@ -98,7 +98,7 @@ export function NewTaskPage({
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto scroll-thin bg-background">
-      <div className="mx-auto w-full max-w-[620px] px-6 py-8">
+      <div className="w-full px-8 py-8">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-[22px] font-bold tracking-[-0.02em] text-foreground">New task</h1>
@@ -118,100 +118,106 @@ export function NewTaskPage({
           </button>
         </div>
 
-        <div className="flex flex-col gap-5 rounded-xl border border-border/60 bg-card p-6 shadow-card">
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-[12.5px] text-foreground/80">Type</Label>
-            <div className="grid grid-cols-3 gap-2">
-              <TypeButton active={type === "general"} onClick={() => setType("general")} icon={<Lightbulb className="size-4" />} title="General" hint="Idea or research" />
-              <TypeButton active={type === "code-issue"} onClick={() => setType("code-issue")} icon={<Code2 className="size-4" />} title="Code issue" hint="Bug or defect" />
-              <TypeButton active={type === "query"} onClick={() => setType("query")} icon={<MessagesSquare className="size-4" />} title="Query" hint="Chat with the agent" />
+        <div className="grid grid-cols-1 gap-x-10 gap-y-6 rounded-xl border border-border/60 bg-card p-7 shadow-card lg:grid-cols-2">
+          {/* Left — what the task is */}
+          <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-[12.5px] text-foreground/80">Type</Label>
+              <div className="grid grid-cols-3 gap-2">
+                <TypeButton active={type === "general"} onClick={() => setType("general")} icon={<Lightbulb className="size-4" />} title="General" hint="Idea or research" />
+                <TypeButton active={type === "code-issue"} onClick={() => setType("code-issue")} icon={<Code2 className="size-4" />} title="Code issue" hint="Bug or defect" />
+                <TypeButton active={type === "query"} onClick={() => setType("query")} icon={<MessagesSquare className="size-4" />} title="Query" hint="Chat with the agent" />
+              </div>
             </div>
-          </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="nt-title" className="text-[12.5px] text-foreground/80">Title</Label>
-            <Input id="nt-title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Short, specific name" className="h-10 bg-background text-[13.5px]" />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="nt-detail" className="text-[12.5px] text-foreground/80">{detailLabel}</Label>
-            <Textarea id="nt-detail" value={detail} onChange={(e) => setDetail(e.target.value)} placeholder={detailPlaceholder} rows={3} className="resize-none bg-background text-[13.5px]" />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-[12.5px] text-foreground/80">Priority</Label>
-            <div className="inline-flex gap-1.5">
-              {SEVERITIES.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setSeverity(s)}
-                  className={cn(
-                    "h-8 rounded-lg border px-3 text-[12.5px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-                    severity === s ? "border-primary/40 bg-primary/10 text-primary" : "border-border bg-background text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {SEV_LABEL[s]}
-                </button>
-              ))}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="nt-title" className="text-[12.5px] text-foreground/80">Title</Label>
+              <Input id="nt-title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Short, specific name" className="h-10 bg-background text-[13.5px]" />
             </div>
-          </div>
 
-          <div className="h-px bg-border/70" />
-          <p className="-mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">Agent</p>
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label htmlFor="nt-detail" className="text-[12.5px] text-foreground/80">{detailLabel}</Label>
+              <Textarea id="nt-detail" value={detail} onChange={(e) => setDetail(e.target.value)} placeholder={detailPlaceholder} rows={6} className="min-h-[120px] flex-1 resize-none bg-background text-[13.5px]" />
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-[12.5px] text-foreground/80">Repository</Label>
-            <Select value={projectId || "none"} onValueChange={(v) => setProjectId(v === "none" ? "" : v)}>
-              <SelectTrigger className="h-10 bg-background text-[13px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Personal — any running agent</SelectItem>
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.name} · {p.key}</SelectItem>
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-[12.5px] text-foreground/80">Priority</Label>
+              <div className="inline-flex gap-1.5">
+                {SEVERITIES.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setSeverity(s)}
+                    className={cn(
+                      "h-8 rounded-lg border px-3 text-[12.5px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                      severity === s ? "border-primary/40 bg-primary/10 text-primary" : "border-border bg-background text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {SEV_LABEL[s]}
+                  </button>
                 ))}
-              </SelectContent>
-            </Select>
-            <div>
-              <Button type="button" size="sm" variant="outline" onClick={() => setPickerOpen(true)}>
-                <FolderPlus className="size-3.5" /> Add a repository…
-              </Button>
-            </div>
-            <p className="text-[11.5px] text-muted-foreground">
-              Browse to any git repo on your machine — no terminal, no path typing. The agent works this task there.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-[12.5px] text-foreground/80">Isolation</Label>
-            <div className="grid grid-cols-2 gap-2">
-              <TypeButton active={isolation === "worktree"} onClick={() => setIsolation("worktree")} icon={<TreePine className="size-4" />} title="Worktree" hint="Isolated checkout" />
-              <TypeButton active={isolation === "branch"} onClick={() => setIsolation("branch")} icon={<GitBranch className="size-4" />} title="In place" hint="Work in the repo" />
+              </div>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setStartNow((v) => !v)}
-            className={cn(
-              "flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-              startNow ? "border-primary/40 bg-primary/[0.06]" : "border-border bg-background hover:bg-accent/40",
-            )}
-          >
-            <span className="min-w-0">
-              <span className="block text-[13px] font-semibold text-foreground">Start the agent now</span>
-              <span className="block text-[11.5px] text-muted-foreground">Hand straight to the agent to start planning</span>
-            </span>
-            <span
+          {/* Right — how the agent runs it */}
+          <div className="flex flex-col gap-5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">Agent</p>
+
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-[12.5px] text-foreground/80">Repository</Label>
+              <Select value={projectId || "none"} onValueChange={(v) => setProjectId(v === "none" ? "" : v)}>
+                <SelectTrigger className="h-10 bg-background text-[13px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Personal — any running agent</SelectItem>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name} · {p.key}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div>
+                <Button type="button" size="sm" variant="outline" onClick={() => setPickerOpen(true)}>
+                  <FolderPlus className="size-3.5" /> Add a repository…
+                </Button>
+              </div>
+              <p className="text-[11.5px] text-muted-foreground">
+                Browse to any git repo on your machine — no terminal, no path typing. The agent works this task there.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-[12.5px] text-foreground/80">Isolation</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <TypeButton active={isolation === "worktree"} onClick={() => setIsolation("worktree")} icon={<TreePine className="size-4" />} title="Worktree" hint="Isolated checkout" />
+                <TypeButton active={isolation === "branch"} onClick={() => setIsolation("branch")} icon={<GitBranch className="size-4" />} title="In place" hint="Work in the repo" />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setStartNow((v) => !v)}
               className={cn(
-                "ml-3 grid size-5 shrink-0 place-items-center rounded-md border transition-colors",
-                startNow ? "border-primary bg-primary text-primary-foreground" : "border-border",
+                "flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                startNow ? "border-primary/40 bg-primary/[0.06]" : "border-border bg-background hover:bg-accent/40",
               )}
             >
-              {startNow ? <Check className="size-3.5" /> : null}
-            </span>
-          </button>
+              <span className="min-w-0">
+                <span className="block text-[13px] font-semibold text-foreground">Start the agent now</span>
+                <span className="block text-[11.5px] text-muted-foreground">Hand straight to the agent to start planning</span>
+              </span>
+              <span
+                className={cn(
+                  "ml-3 grid size-5 shrink-0 place-items-center rounded-md border transition-colors",
+                  startNow ? "border-primary bg-primary text-primary-foreground" : "border-border",
+                )}
+              >
+                {startNow ? <Check className="size-3.5" /> : null}
+              </span>
+            </button>
+          </div>
 
-          <div className="mt-1 flex items-center justify-end gap-2">
+          {/* Footer spans both columns */}
+          <div className="flex items-center justify-end gap-2 border-t border-border/60 pt-5 lg:col-span-2">
             <Button variant="ghost" onClick={onCancel}>Cancel</Button>
             <Button onClick={() => void submit()} disabled={!canSubmit}>
               {busy ? <Loader2 className="size-4 animate-spin" /> : "Create task"}

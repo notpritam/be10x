@@ -10,10 +10,9 @@ import {
   Plug,
   Plus,
   UserRound,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useApp, viewKey, type TabRef, type View } from "@/state/app-store";
+import { useApp, viewKey, type View } from "@/state/app-store";
 import { errorMessage } from "@/lib/api";
 import { cn, initials } from "@/lib/utils";
 import { BrandTile, Wordmark } from "@/components/common/Brandmark";
@@ -42,7 +41,7 @@ export function Sidebar({
   onConnectAgent: () => void;
   onNewTask: () => void;
 }) {
-  const { user, teams, view, setView, counts, logout, openTabs, selectedTaskId, selectTask, closeTab } = useApp();
+  const { user, teams, view, setView, counts, logout } = useApp();
   const activeKey = viewKey(view);
 
   return (
@@ -157,24 +156,6 @@ export function Sidebar({
         {collapsed && (
           <NewTeamButton collapsed onCreated={(v) => setView(v)} />
         )}
-
-        {/* Open — tasks you've opened as tabs; click to switch, × to close. */}
-        {openTabs.length > 0 && !collapsed && (
-          <>
-            <div className="mt-4">
-              <Section label="Open" collapsed={collapsed} />
-            </div>
-            {openTabs.map((t) => (
-              <OpenTabRow
-                key={t.id}
-                tab={t}
-                active={t.id === selectedTaskId}
-                onOpen={() => selectTask(t.id)}
-                onClose={() => closeTab(t.id)}
-              />
-            ))}
-          </>
-        )}
       </nav>
 
       {/* User footer */}
@@ -244,48 +225,6 @@ function Section({
     >
       {label}
     </p>
-  );
-}
-
-// An open-task row in the sidebar — the workspace's "tabs" live here (Notion-style), not in a top bar.
-function OpenTabRow({
-  tab,
-  active,
-  onOpen,
-  onClose,
-}: {
-  tab: TabRef;
-  active: boolean;
-  onOpen: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      className={cn(
-        "group relative flex h-9 w-full items-center gap-2 rounded-lg pl-2 pr-1 text-[12.5px] transition-colors",
-        active ? "bg-sidebar-accent text-foreground" : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-      )}
-    >
-      {active && <span className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />}
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none"
-        title={tab.title}
-      >
-        <span className="shrink-0 font-mono text-[10px] opacity-70">{tab.humanId}</span>
-        <span className="min-w-0 truncate font-medium">{tab.title}</span>
-      </button>
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="Close tab"
-        title="Close"
-        className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground/60 opacity-0 transition hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-      >
-        <X className="size-3.5" />
-      </button>
-    </div>
   );
 }
 
