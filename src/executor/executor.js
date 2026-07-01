@@ -199,20 +199,27 @@ export function makeClaudeExecutor(db, project, opts = {}) {
 
       // Fold one complete stream-json line into state: persist the session id the first time it appears
       // (and flip the run to running), and surface each assistant message as a board progress note.
+      // Every side-effect here is best-effort telemetry off a live stream handler — a DB hiccup (a
+      // schema drift, a transient lock) must NEVER escape and kill the server+runner process, so the
+      // whole body is guarded. The run still finalizes on `close` regardless.
       const consume = (line) => {
-        const ev = acc.push(line);
-        if (!ev) return;
-        if (acc.sessionId && !sessionPersisted) {
-          sessionPersisted = true;
-          setRunSession(db, run.id, acc.sessionId);
-          markRunning(db, run.id);
-        }
-        if (acc.model && !modelPersisted) {
-          modelPersisted = true;
-          setRunModel(db, run.id, acc.model);
-        }
-        if (ev.text) {
-          recordProgress(db, task.id, { state: 'working', step: 'agent', message: truncate(ev.text) }, workerId);
+        try {
+          const ev = acc.push(line);
+          if (!ev) return;
+          if (acc.sessionId && !sessionPersisted) {
+            sessionPersisted = true;
+            setRunSession(db, run.id, acc.sessionId);
+            markRunning(db, run.id);
+          }
+          if (acc.model && !modelPersisted) {
+            modelPersisted = true;
+            setRunModel(db, run.id, acc.model);
+          }
+          if (ev.text) {
+            recordProgress(db, task.id, { state: 'working', step: 'agent', message: truncate(ev.text) }, workerId);
+          }
+        } catch {
+          // best-effort telemetry — never let a stream-side write crash the process
         }
       };
 
