@@ -1,9 +1,10 @@
 // ABOUTME: Zero-dependency HTTP front door — REST over the core + serves the buildless web board.
 // ABOUTME: Session-cookie auth for humans. createApp(db) returns an http.Server; startServer runs it.
 import http from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, normalize, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, join, normalize, resolve, basename } from 'node:path';
 import { openDb } from '../db/db.js';
 import { createUser, getUserByEmail, getUserById } from '../auth/users.js';
 import { verifyPassword } from '../auth/passwords.js';
@@ -19,7 +20,7 @@ import { requestInput, answerInput, getOpenInputRequest } from '../tasks/input_r
 import { addComment, listComments } from '../tasks/comments.js';
 import { enqueueWake } from '../executor/wake.js';
 import { listRunsForTask } from '../executor/runs.js';
-import { listProjects } from '../projects/projects.js';
+import { listProjects, registerProject, detectProjectKey } from '../projects/projects.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(here, '..', '..', 'public');
@@ -141,6 +142,26 @@ const ROUTES = [
     send(res, 200, { tasks: listTasks(db, { scope: q.get('scope') || undefined, teamId: q.get('teamId') || undefined, status: q.get('status') || undefined }) });
   }],
   ['GET', '/api/projects', true, async ({ db, res }) => send(res, 200, { projects: listProjects(db) })],
+  ['POST', '/api/projects', true, async ({ db, res, body, user }) => {
+    // Register a git repo on this machine from the dashboard (the board's answer to `be10x link`):
+    // validate the path, register it, and write its .be10x/mcp.json so the spawned agent gets gfa_* tools.
+    let p = String(body.path || '').trim();
+    if (!p) throw new Error('MISSING_FIELD:path');
+    if (p.startsWith('~')) p = homedir() + p.slice(1);
+    const abs = resolve(p);
+    if (!existsSync(abs)) throw new Error('NO_SUCH_PATH');
+    if (!existsSync(join(abs, '.git'))) throw new Error('NOT_A_GIT_REPO');
+    const { key, rootPath, defaultBranch } = detectProjectKey(abs);
+    const project = registerProject(db, { key, name: body.name || basename(rootPath), rootPath, defaultBranch });
+    const { token } = createToken(db, user.id, 'ui:' + key);
+    const dir = join(rootPath, '.be10x');
+    mkdirSync(dir, { recursive: true });
+    const cfg = {
+      mcpServers: { be10x: { command: 'node', args: [MCP_SERVER_PATH], env: { GFA_TOKEN: token, GFA_DB_PATH: resolve(process.env.GFA_DB_PATH || './gfa.db') } } },
+    };
+    writeFileSync(join(dir, 'mcp.json'), JSON.stringify(cfg, null, 2) + '\n');
+    send(res, 200, { project });
+  }],
   ['POST', '/api/tasks', true, async ({ db, res, body, user }) => {
     // Orchestration inputs: which repo (projectId), isolation (worktree|branch, stored on content so the
     // executor can honor it), and whether to start the agent planning immediately (handOff).
@@ -247,10 +268,12 @@ export function createApp(db) {
   });
 }
 
-export function startServer({ dbPath, port } = {}) {
-  const db = openDb(process.env.GFA_DB_PATH || dbPath || './gfa.db');
+export function startServer({ db, dbPath, port, host } = {}) {
+  db = db || openDb(process.env.GFA_DB_PATH || dbPath || './gfa.db');
   const app = createApp(db);
   const p = Number(port || process.env.PORT || 4600);
+  // Bind host: 127.0.0.1 (default, local only) or 0.0.0.0 (GFA_HOST / --host) to share on the network.
+  const h = host || process.env.GFA_HOST || '127.0.0.1';
   // Fail with a clear, actionable message instead of an unhandled EADDRINUSE stack trace.
   app.on('error', (err) => {
     if (err && err.code === 'EADDRINUSE') {
@@ -264,6 +287,9 @@ export function startServer({ dbPath, port } = {}) {
     }
     process.exit(1);
   });
-  app.listen(p, '127.0.0.1', () => console.log('HTTP_URL=http://localhost:' + p + '/'));
+  app.listen(p, h, () => {
+    console.log('HTTP_URL=http://' + (h === '0.0.0.0' ? 'localhost' : h) + ':' + p + '/');
+    if (h === '0.0.0.0') console.log('  (shared: teammates reach it at http://<this-machine-ip>:' + p + '/)');
+  });
   return app;
 }

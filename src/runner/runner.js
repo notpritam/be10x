@@ -4,9 +4,10 @@ import { getType } from '../tasks/types.js';
 import { getTask, transition } from '../tasks/tasks.js';
 import { appendEvent } from '../tasks/events.js';
 import { recordProgress } from '../worker/worker.js';
-import { claimNextWake } from '../executor/wake.js';
+import { claimNextWake, claimNextWakeAny } from '../executor/wake.js';
 import { unseenComments, markCommentsSeen } from '../tasks/comments.js';
 import { finishRun } from '../executor/runs.js';
+import { getProject } from '../projects/projects.js';
 
 // Claim the oldest ready_to_work task in `projectId` whose type is agent-executable. The conditional
 // UPDATE (WHERE ... AND status='ready_to_work') makes the claim atomic, so two runners polling the same
@@ -131,15 +132,10 @@ function safeTransition(db, taskId, to, actor, meta) {
   }
 }
 
-// Claim one wake for the project and drive the agent. The scheduler owns only the lifecycle *claims*
-// (hand-off, checkout, verify hand-back); the agent owns plan/progress/review via the gfa_* tools.
-// A failing run records a blocked note and returns { wake, error } — one bad wake never kills the loop.
-export async function runWakeOnce(db, { projectId, workerId = 'runner', execute } = {}) {
-  const wake = claimNextWake(db, { projectId, workerId });
-  if (!wake) return null;
-  const task = getTask(db, wake.taskId);
-  if (!task) return { wake, skipped: 'no-task' };
-
+// Drive an already-claimed wake with a resolved executor. The scheduler owns only the lifecycle *claims*
+// (hand-off, checkout, verify hand-back); the agent owns plan/progress/review via the gfa_* tools. A
+// failing run records a blocked note and returns { wake, error } — one bad wake never kills the loop.
+async function driveWake(db, { wake, task, workerId, execute }) {
   const mode = modeForWake(wake, task);
 
   // Scheduler-owned lifecycle claims (optimistic; guarded by current status):
@@ -151,10 +147,9 @@ export async function runWakeOnce(db, { projectId, workerId = 'runner', execute 
   const comments = unseenComments(db, task.id);
   recordProgress(db, task.id, { state: 'working', step: 'woken', message: `woken to ${mode} (${wake.reason})` }, workerId);
 
-  const run = execute || ((t, o) => defaultExecute(db, t, workerId, o));
   let summary;
   try {
-    summary = await run(staged, { mode, wakeContext: wake.context, comments, resume: mode !== 'plan' });
+    summary = await execute(staged, { mode, wakeContext: wake.context, comments, resume: mode !== 'plan' });
   } catch (error) {
     recordProgress(db, task.id, { state: 'blocked', step: 'error', message: String(error?.message ?? error) }, workerId);
     return { wake, task: staged, error };
@@ -168,6 +163,32 @@ export async function runWakeOnce(db, { projectId, workerId = 'runner', execute 
     safeTransition(db, task.id, 'verifying', workerId, { wake: wake.reason });
   }
   return { wake, task: getTask(db, task.id), summary };
+}
+
+// Claim one wake for a single project and drive it (used by `be10x work` inside one repo).
+export async function runWakeOnce(db, { projectId, workerId = 'runner', execute } = {}) {
+  const wake = claimNextWake(db, { projectId, workerId });
+  if (!wake) return null;
+  const task = getTask(db, wake.taskId);
+  if (!task) return { wake, skipped: 'no-task' };
+  const run = execute || ((t, o) => defaultExecute(db, t, workerId, o));
+  return driveWake(db, { wake, task, workerId, execute: run });
+}
+
+// Board-wide: claim the oldest wake for ANY project and drive it in that project's own repo. Used by the
+// runner baked into `be10x serve`, so the user never runs a per-repo terminal. `makeExecutor(project)`
+// builds the executor for the resolved project.
+export async function runAnyWakeOnce(db, { workerId = 'runner', makeExecutor } = {}) {
+  const wake = claimNextWakeAny(db, workerId);
+  if (!wake) return null;
+  const task = getTask(db, wake.taskId);
+  if (!task) return { wake, skipped: 'no-task' };
+  const project = getProject(db, task.projectId);
+  if (!project) {
+    recordProgress(db, task.id, { state: 'blocked', step: 'no-project', message: 'task has no linked repo to work in' }, workerId);
+    return { wake, task, skipped: 'no-project' };
+  }
+  return driveWake(db, { wake, task, workerId, execute: makeExecutor(project) });
 }
 
 // Boot-time orphan recovery: a run left 'starting'/'running' means the process died mid-flight — mark it
@@ -189,6 +210,39 @@ export function wakeLoop(db, { projectId, workerId = 'runner', intervalMs = 3000
     do {
       if (stopped) break;
       lastResult = await runWakeOnce(db, { projectId, workerId, execute });
+      if (once || stopped) break;
+      await new Promise((res) => {
+        timer = setTimeout(res, intervalMs);
+      });
+    } while (!stopped);
+    return lastResult;
+  }
+
+  const done = loop();
+  return {
+    stop() {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    },
+    get stopped() {
+      return stopped;
+    },
+    done,
+  };
+}
+
+// Board-wide poll: drain wakes across ALL linked repos, spawning the agent in each task's own repo. This
+// is the runner baked into `be10x serve` so a user never runs a per-repo terminal.
+export function wakeLoopAll(db, { workerId = 'runner', intervalMs = 3000, makeExecutor, once = false } = {}) {
+  recoverOrphans(db);
+  let stopped = false;
+  let timer = null;
+  let lastResult = null;
+
+  async function loop() {
+    do {
+      if (stopped) break;
+      lastResult = await runAnyWakeOnce(db, { workerId, makeExecutor });
       if (once || stopped) break;
       await new Promise((res) => {
         timer = setTimeout(res, intervalMs);

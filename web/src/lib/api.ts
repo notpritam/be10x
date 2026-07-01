@@ -129,6 +129,8 @@ export const api = {
 
   // Projects (linked repos)
   listProjects: () => request<{ projects: Project[] }>("/api/projects"),
+  /** Register a git repo on the server by absolute path (writes its .be10x/mcp.json). */
+  addProject: (path: string) => post<{ project: Project }>("/api/projects", { path }),
 
   // Tasks
   listTasks: (filter?: TaskFilter) =>
@@ -196,6 +198,10 @@ export function errorMessage(err: unknown): string {
         return "This question was already answered.";
       case "USER_NOT_FOUND":
         return "No account found with that email.";
+      case "NO_SUCH_PATH":
+        return "That folder doesn't exist on the server.";
+      case "NOT_A_GIT_REPO":
+        return "That folder isn't a git repo — run `git init` there first.";
       case "ALREADY_MEMBER":
         return "That person is already on the team.";
       case "FORBIDDEN":

@@ -5,7 +5,8 @@ import { getTask } from '../src/tasks/tasks.js';
 import { addComment, unseenComments } from '../src/tasks/comments.js';
 import { enqueueWake } from '../src/executor/wake.js';
 import { createRun, getRun, markRunning } from '../src/executor/runs.js';
-import { runWakeOnce, recoverOrphans } from '../src/runner/runner.js';
+import { registerProject } from '../src/projects/projects.js';
+import { runWakeOnce, runAnyWakeOnce, recoverOrphans } from '../src/runner/runner.js';
 
 function seed() {
   const db = openDb(':memory:');
@@ -96,6 +97,31 @@ test('a failing run records blocked and never throws', async () => {
   const r = await runWakeOnce(db, { projectId: 'p1', execute: boom });
   assert.match(String(r.error), /kaboom/);
   assert.equal(getTask(db, 't1').agent.state, 'blocked');
+});
+
+test('runAnyWakeOnce claims across the board and runs in the task\'s own project', async () => {
+  const db = openDb(':memory:');
+  const now = Date.now();
+  db.prepare('INSERT INTO users (id,email,display_name,password_hash,created_at) VALUES (?,?,?,?,?)').run(
+    'u1', 'a@b.dev', 'A', 'x', now
+  );
+  const project = registerProject(db, { key: 'local:x', name: 'x', rootPath: '/repo/x', defaultBranch: 'main' });
+  db.prepare(
+    'INSERT INTO tasks (id,human_id,type,scope,project_id,owner_id,title,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)'
+  ).run('t1', 't1', 'code-issue', 'project', project.id, 'u1', 'T', 'backlog', now, now);
+  enqueueWake(db, 't1', 'plan');
+
+  const calls = [];
+  const makeExecutor = (proj) => async (task, opts) => {
+    calls.push({ proj, task, opts });
+    return { done: true };
+  };
+  await runAnyWakeOnce(db, { makeExecutor });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].proj.id, project.id);
+  assert.equal(calls[0].proj.rootPath, '/repo/x'); // ran in the task's own repo
+  assert.equal(getTask(db, 't1').status, 'researching');
 });
 
 test('recoverOrphans fails runs left running at restart; empty queue returns null', async () => {

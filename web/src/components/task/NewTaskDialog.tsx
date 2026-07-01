@@ -44,9 +44,28 @@ export function NewTaskDialog({
   const [severity, setSeverity] = useState<Severity>("medium");
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<string>("");
+  const [repoPath, setRepoPath] = useState("");
+  const [addingRepo, setAddingRepo] = useState(false);
   const [isolation, setIsolation] = useState<Isolation>("worktree");
   const [startNow, setStartNow] = useState(true);
   const [busy, setBusy] = useState(false);
+
+  async function addRepo() {
+    const path = repoPath.trim();
+    if (!path || addingRepo) return;
+    setAddingRepo(true);
+    try {
+      const { project } = await api.addProject(path);
+      setProjects((prev) => [...prev.filter((p) => p.id !== project.id), project]);
+      setProjectId(project.id);
+      setRepoPath("");
+      toast.success(`Added ${project.name}.`);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setAddingRepo(false);
+    }
+  }
 
   const scope =
     view.kind === "team"
@@ -209,10 +228,31 @@ export function NewTaskDialog({
                 ))}
               </SelectContent>
             </Select>
+            <div className="flex items-center gap-2">
+              <Input
+                value={repoPath}
+                onChange={(e) => setRepoPath(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void addRepo();
+                  }
+                }}
+                placeholder="/path/to/a/git/repo — add any repo"
+                className="h-9 bg-background font-mono text-[12px]"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={addingRepo || !repoPath.trim()}
+                onClick={() => void addRepo()}
+              >
+                {addingRepo ? "Adding…" : "Add"}
+              </Button>
+            </div>
             <p className="text-[11.5px] text-muted-foreground">
-              {projects.length === 0
-                ? "No repos linked yet — run be10x link in a repo. Until then the agent uses whichever runner is up."
-                : "The repo the agent works this task in."}
+              Point at any git repo on the server to add it — no terminal needed. The agent works this task there.
             </p>
           </div>
 
