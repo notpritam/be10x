@@ -1,44 +1,31 @@
-// ABOUTME: Create a task — type, scope (derived from the current view), title, and the summary/symptom
-// that satisfies the type's required content field. New tasks land in backlog (backend rule).
+// ABOUTME: Create a task as a full PAGE (not a modal) — it opens in the main area. Type, scope (from the
+// current view), title, the type's required content field, priority, repo + isolation, and start-now.
+// On create it calls onCreated(task) so the shell can open the new task; Cancel returns to the board.
 import { useEffect, useState, type ReactNode } from "react";
-import { Check, Code2, FolderPlus, GitBranch, Lightbulb, Loader2, MessagesSquare, TreePine } from "lucide-react";
+import { Check, Code2, FolderPlus, GitBranch, Lightbulb, Loader2, MessagesSquare, TreePine, X } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "@/state/app-store";
 import { api, errorMessage } from "@/lib/api";
-import type { Isolation, Project, Severity, TaskType } from "@/lib/types";
+import type { Isolation, Project, Severity, Task, TaskType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const SEVERITIES: Severity[] = ["low", "medium", "high"];
 const SEV_LABEL: Record<Severity, string> = { low: "Low", medium: "Medium", high: "High" };
 
-export function NewTaskDialog({
-  open,
-  onOpenChange,
+export function NewTaskPage({
+  onCancel,
+  onCreated,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  onCancel: () => void;
+  onCreated: (task: Task) => void;
 }) {
-  const { view, createTask, selectTask } = useApp();
+  const { view, createTask } = useApp();
   const [type, setType] = useState<TaskType>("general");
   const [title, setTitle] = useState("");
   const [detail, setDetail] = useState("");
@@ -61,13 +48,6 @@ export function NewTaskDialog({
       : { scope: "personal", teamId: null as string | null, label: "Personal" };
 
   useEffect(() => {
-    if (!open) return;
-    setType("general");
-    setTitle("");
-    setDetail("");
-    setSeverity("medium");
-    setIsolation("worktree");
-    setStartNow(true);
     api
       .listProjects()
       .then((r) => {
@@ -75,7 +55,7 @@ export function NewTaskDialog({
         setProjectId(r.projects[0]?.id ?? "");
       })
       .catch(() => setProjects([]));
-  }, [open]);
+  }, []);
 
   const detailLabel = type === "code-issue" ? "Symptom" : type === "query" ? "Question" : "Summary";
   const detailPlaceholder =
@@ -108,8 +88,7 @@ export function NewTaskDialog({
         handOff: startNow,
       });
       toast.success(startNow ? `${task.humanId} created — handed to the agent.` : `${task.humanId} created.`);
-      onOpenChange(false);
-      selectTask(task.id);
+      onCreated(task);
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -118,77 +97,47 @@ export function NewTaskDialog({
   }
 
   return (
-    <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
-        <DialogHeader>
-          <DialogTitle className="text-[16px]">New task</DialogTitle>
-          <DialogDescription>
-            Lands in <span className="font-medium text-foreground">Backlog</span> ·{" "}
-            <span className="font-medium text-foreground">{scope.label}</span>
-          </DialogDescription>
-        </DialogHeader>
+    <div className="min-h-0 flex-1 overflow-y-auto scroll-thin bg-background">
+      <div className="mx-auto w-full max-w-[620px] px-6 py-8">
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-[22px] font-bold tracking-[-0.02em] text-foreground">New task</h1>
+            <p className="mt-1 text-[13px] text-muted-foreground">
+              Lands in <span className="font-medium text-foreground">Backlog</span> ·{" "}
+              <span className="font-medium text-foreground">{scope.label}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Cancel"
+            title="Cancel"
+            className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <X className="size-[18px]" />
+          </button>
+        </div>
 
-        <div className="flex flex-col gap-4 py-1">
-          {/* Type */}
+        <div className="flex flex-col gap-5 rounded-xl border border-border/60 bg-card p-6 shadow-card">
           <div className="flex flex-col gap-1.5">
             <Label className="text-[12.5px] text-foreground/80">Type</Label>
             <div className="grid grid-cols-3 gap-2">
-              <TypeButton
-                active={type === "general"}
-                onClick={() => setType("general")}
-                icon={<Lightbulb className="size-4" />}
-                title="General"
-                hint="Idea or research"
-              />
-              <TypeButton
-                active={type === "code-issue"}
-                onClick={() => setType("code-issue")}
-                icon={<Code2 className="size-4" />}
-                title="Code issue"
-                hint="Bug or defect"
-              />
-              <TypeButton
-                active={type === "query"}
-                onClick={() => setType("query")}
-                icon={<MessagesSquare className="size-4" />}
-                title="Query"
-                hint="Chat with the agent"
-              />
+              <TypeButton active={type === "general"} onClick={() => setType("general")} icon={<Lightbulb className="size-4" />} title="General" hint="Idea or research" />
+              <TypeButton active={type === "code-issue"} onClick={() => setType("code-issue")} icon={<Code2 className="size-4" />} title="Code issue" hint="Bug or defect" />
+              <TypeButton active={type === "query"} onClick={() => setType("query")} icon={<MessagesSquare className="size-4" />} title="Query" hint="Chat with the agent" />
             </div>
           </div>
 
-          {/* Title */}
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="nt-title" className="text-[12.5px] text-foreground/80">
-              Title
-            </Label>
-            <Input
-              id="nt-title"
-              autoFocus
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Short, specific name"
-              className="h-10 bg-background text-[13.5px]"
-            />
+            <Label htmlFor="nt-title" className="text-[12.5px] text-foreground/80">Title</Label>
+            <Input id="nt-title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Short, specific name" className="h-10 bg-background text-[13.5px]" />
           </div>
 
-          {/* Summary / symptom */}
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="nt-detail" className="text-[12.5px] text-foreground/80">
-              {detailLabel}
-            </Label>
-            <Textarea
-              id="nt-detail"
-              value={detail}
-              onChange={(e) => setDetail(e.target.value)}
-              placeholder={detailPlaceholder}
-              rows={3}
-              className="resize-none bg-background text-[13.5px]"
-            />
+            <Label htmlFor="nt-detail" className="text-[12.5px] text-foreground/80">{detailLabel}</Label>
+            <Textarea id="nt-detail" value={detail} onChange={(e) => setDetail(e.target.value)} placeholder={detailPlaceholder} rows={3} className="resize-none bg-background text-[13.5px]" />
           </div>
 
-          {/* Severity */}
           <div className="flex flex-col gap-1.5">
             <Label className="text-[12.5px] text-foreground/80">Priority</Label>
             <div className="inline-flex gap-1.5">
@@ -199,9 +148,7 @@ export function NewTaskDialog({
                   onClick={() => setSeverity(s)}
                   className={cn(
                     "h-8 rounded-lg border px-3 text-[12.5px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-                    severity === s
-                      ? "border-primary/40 bg-primary/10 text-primary"
-                      : "border-border bg-background text-muted-foreground hover:text-foreground",
+                    severity === s ? "border-primary/40 bg-primary/10 text-primary" : "border-border bg-background text-muted-foreground hover:text-foreground",
                   )}
                 >
                   {SEV_LABEL[s]}
@@ -211,23 +158,16 @@ export function NewTaskDialog({
           </div>
 
           <div className="h-px bg-border/70" />
-          <p className="-mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
-            Agent
-          </p>
+          <p className="-mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">Agent</p>
 
-          {/* Repository — which linked repo the agent works this task in */}
           <div className="flex flex-col gap-1.5">
             <Label className="text-[12.5px] text-foreground/80">Repository</Label>
             <Select value={projectId || "none"} onValueChange={(v) => setProjectId(v === "none" ? "" : v)}>
-              <SelectTrigger className="h-10 bg-background text-[13px]">
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger className="h-10 bg-background text-[13px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Personal — any running agent</SelectItem>
                 {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name} · {p.key}
-                  </SelectItem>
+                  <SelectItem key={p.id} value={p.id}>{p.name} · {p.key}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -241,28 +181,14 @@ export function NewTaskDialog({
             </p>
           </div>
 
-          {/* Isolation — a fresh worktree, or the repo in place */}
           <div className="flex flex-col gap-1.5">
             <Label className="text-[12.5px] text-foreground/80">Isolation</Label>
             <div className="grid grid-cols-2 gap-2">
-              <TypeButton
-                active={isolation === "worktree"}
-                onClick={() => setIsolation("worktree")}
-                icon={<TreePine className="size-4" />}
-                title="Worktree"
-                hint="Isolated checkout"
-              />
-              <TypeButton
-                active={isolation === "branch"}
-                onClick={() => setIsolation("branch")}
-                icon={<GitBranch className="size-4" />}
-                title="In place"
-                hint="Work in the repo"
-              />
+              <TypeButton active={isolation === "worktree"} onClick={() => setIsolation("worktree")} icon={<TreePine className="size-4" />} title="Worktree" hint="Isolated checkout" />
+              <TypeButton active={isolation === "branch"} onClick={() => setIsolation("branch")} icon={<GitBranch className="size-4" />} title="In place" hint="Work in the repo" />
             </div>
           </div>
 
-          {/* Start the agent immediately (hand-off on create) */}
           <button
             type="button"
             onClick={() => setStartNow((v) => !v)}
@@ -273,9 +199,7 @@ export function NewTaskDialog({
           >
             <span className="min-w-0">
               <span className="block text-[13px] font-semibold text-foreground">Start the agent now</span>
-              <span className="block text-[11.5px] text-muted-foreground">
-                Hand straight to the agent to start planning
-              </span>
+              <span className="block text-[11.5px] text-muted-foreground">Hand straight to the agent to start planning</span>
             </span>
             <span
               className={cn(
@@ -286,20 +210,17 @@ export function NewTaskDialog({
               {startNow ? <Check className="size-3.5" /> : null}
             </span>
           </button>
-        </div>
 
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={() => void submit()} disabled={!canSubmit}>
-            {busy ? <Loader2 className="size-4 animate-spin" /> : "Create task"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-    <DirectoryPicker open={pickerOpen} onOpenChange={setPickerOpen} onAdded={onRepoAdded} />
-    </>
+          <div className="mt-1 flex items-center justify-end gap-2">
+            <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+            <Button onClick={() => void submit()} disabled={!canSubmit}>
+              {busy ? <Loader2 className="size-4 animate-spin" /> : "Create task"}
+            </Button>
+          </div>
+        </div>
+      </div>
+      <DirectoryPicker open={pickerOpen} onOpenChange={setPickerOpen} onAdded={onRepoAdded} />
+    </div>
   );
 }
 
@@ -322,17 +243,10 @@ function TypeButton({
       onClick={onClick}
       className={cn(
         "flex items-start gap-2.5 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-        active
-          ? "border-primary/40 bg-primary/[0.06]"
-          : "border-border bg-background hover:border-border hover:bg-accent/40",
+        active ? "border-primary/40 bg-primary/[0.06]" : "border-border bg-background hover:border-border hover:bg-accent/40",
       )}
     >
-      <span
-        className={cn(
-          "mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg",
-          active ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
-        )}
-      >
+      <span className={cn("mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg", active ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground")}>
         {icon}
       </span>
       <span className="min-w-0">
