@@ -3,7 +3,7 @@
 // shared detail controller + parts so it stays in lockstep with the slide-over. Collapse (or Escape)
 // returns to the slide-over; close returns to the board.
 import { useEffect, useState, type ReactNode } from "react";
-import { Bug, Copy, History, Info, Maximize2, MessageSquare, Share2, X } from "lucide-react";
+import { Bug, ChevronUp, Copy, History, Info, Maximize2, MessageSquare, Share2, X } from "lucide-react";
 import { toast } from "sonner";
 import type { Status } from "@/lib/types";
 import { useApp } from "@/state/app-store";
@@ -55,6 +55,7 @@ export function DeepDivePanel({
   const [shareOpen, setShareOpen] = useState(false);
   const [planExpanded, setPlanExpanded] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [interactionBarOpen, setInteractionBarOpen] = useState(true);
 
   function move(to: Status) {
     void onMove(to);
@@ -97,14 +98,10 @@ export function DeepDivePanel({
             {/* No page header — the task's identity + status live in the Info panel (right rail). The
                 body is the plan/details/work + the collapsible right icon-sidebar. */}
             <div className="flex min-h-0 flex-1">
-              {/* Main */}
+              {/* Main column — scroll content + a sticky interaction bar pinned at the foot. */}
+              <div className="flex min-h-0 flex-1 flex-col">
               <div className="min-h-0 flex-1 space-y-6 overflow-y-auto scroll-thin px-8 py-7">
                 <LifecycleStrip status={task.status} />
-
-                {/* An open question the agent asked — answerable anytime, not only in needs_input. */}
-                {detail.input && <InputRequestPanel request={detail.input} onAnswered={refresh} />}
-
-                {task.status === "plan_review" && <ReviewActions taskId={task.id} onDone={refresh} />}
 
                 <RequestReviewControl task={task} onDone={refresh} />
 
@@ -172,6 +169,38 @@ export function DeepDivePanel({
                 <Section title="Agent">
                   <AgentStatusBlock task={task} />
                 </Section>
+              </div>
+
+              {/* Input / interaction needed — floats at the foot, collapsible, never covers the page. */}
+              {(detail.input || task.status === "plan_review") && (
+                <div className="shrink-0 border-t border-border/60 bg-card/90 backdrop-blur-sm">
+                  <button
+                    type="button"
+                    onClick={() => setInteractionBarOpen((v) => !v)}
+                    className="flex w-full items-center gap-2 px-6 py-2 text-left"
+                  >
+                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11.5px] font-semibold text-amber-600">
+                      <span className="size-1.5 rounded-full bg-amber-500" />
+                      {detail.input ? "Input needed" : "Plan review"}
+                    </span>
+                    <span className="truncate text-[12px] text-muted-foreground">
+                      {detail.input ? "The agent asked you a question." : "Approve or request changes to continue."}
+                    </span>
+                    <ChevronUp
+                      className={cn(
+                        "ml-auto size-4 shrink-0 text-muted-foreground transition-transform",
+                        !interactionBarOpen && "rotate-180",
+                      )}
+                    />
+                  </button>
+                  {interactionBarOpen && (
+                    <div className="max-h-[45vh] space-y-4 overflow-y-auto scroll-thin px-6 pb-4">
+                      {detail.input && <InputRequestPanel request={detail.input} onAnswered={refresh} />}
+                      {task.status === "plan_review" && <ReviewActions taskId={task.id} onDone={refresh} />}
+                    </div>
+                  )}
+                </div>
+              )}
               </div>
 
               {/* Right panel — the active section; collapses to just the icon strip. */}
