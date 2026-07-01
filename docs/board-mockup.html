@@ -1,0 +1,166 @@
+<!doctype html>
+<!-- ABOUTME: Mockup — how be10x's agent would run "this conversation" on the board: generated plan + flow diagram + one-question-at-a-time + review thread, instead of text walls. -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>be10x — the agent asks on the board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#f6f6f3;--surface:#fff;--surface2:#fbfbf9;--line:#eceae5;--line2:#e2e0da;
+    --ink:#1b1a17;--mut:#6b6a64;--dim:#9c9a92;--acc:#e8620d;--acc-hi:#c9540b;--acc-soft:#fdf0e5;
+    --agent:#0d9488;--agent-soft:#e6f5f3;--human:#2563eb;--human-soft:#eaf0fe;
+    --disp:'Plus Jakarta Sans',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--disp);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:900px;margin:0 auto;padding:38px 24px 70px}
+  .mono{font-family:var(--mono);font-size:.88em}
+  h1{font-size:29px;font-weight:800;letter-spacing:-.03em;margin:0 0 6px}
+  .sub{color:var(--mut);margin:0 0 4px;font-size:15.5px;max-width:64ch}
+  .sub b{color:var(--ink)}
+  .k{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin:34px 0 12px;font-weight:600}
+
+  /* the task panel */
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 1px 2px rgba(28,26,22,.04),0 18px 44px -22px rgba(28,26,22,.22);overflow:hidden}
+  .ph{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:11px}
+  .ph .id{font-family:var(--mono);font-size:11px;color:var(--dim)}
+  .ph h2{font-size:17px;font-weight:800;letter-spacing:-.02em;margin:2px 0 0}
+  .pill{margin-left:auto;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;background:var(--agent-soft);color:var(--agent);display:flex;align-items:center;gap:6px}
+  .pill .d{width:7px;height:7px;border-radius:50%;background:var(--agent);animation:p 1.6s infinite}
+  @keyframes p{0%{box-shadow:0 0 0 0 rgba(13,148,136,.4)}70%{box-shadow:0 0 0 7px rgba(13,148,136,0)}100%{box-shadow:0 0 0 0 rgba(13,148,136,0)}}
+  .sec{padding:18px 22px;border-bottom:1px solid var(--line)}
+  .sec:last-child{border-bottom:0}
+  .lbl{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--dim);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .by{font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:20px;background:var(--agent-soft);color:var(--agent);text-transform:none;letter-spacing:0}
+
+  /* generated flow diagram */
+  .flow{display:flex;flex-wrap:wrap;gap:0;align-items:stretch}
+  .fb{flex:1 1 92px;min-width:88px;background:var(--surface2);border:1px solid var(--line2);border-radius:11px;padding:10px;margin:5px;display:flex;flex-direction:column;gap:4px}
+  .fb .ft{font-weight:700;font-size:12.5px;letter-spacing:-.01em}
+  .fb .fd{font-size:10.5px;color:var(--mut);line-height:1.35}
+  .fb.a{border-color:#bfe6e0;background:var(--agent-soft)}.fb.a .ft{color:var(--agent)}
+  .fb.h{border-color:#cdddfb;background:var(--human-soft)}.fb.h .ft{color:var(--human)}
+  .fb.acc{border-color:#f3d9c3;background:var(--acc-soft)}.fb.acc .ft{color:var(--acc-hi)}
+  .far{align-self:center;color:var(--dim);font-family:var(--mono);font-size:15px}
+  .loopline{margin-top:10px;font-size:12px;color:var(--mut);border-left:3px solid var(--acc);padding-left:11px}
+  .loopline b{color:var(--ink)}
+
+  /* one-question-at-a-time component */
+  .q{border:1px solid #f0dca3;border-radius:14px;background:#fefaf0;padding:18px 20px}
+  .q .qtop{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .q .step{font-family:var(--mono);font-size:11px;color:#a1741f;background:#fbf1d6;border-radius:20px;padding:2px 9px;font-weight:600}
+  .q .bar{flex:1;height:5px;border-radius:5px;background:#f4e6c0;overflow:hidden}
+  .q .bar i{display:block;height:100%;width:50%;background:#e0a800;border-radius:5px}
+  .q .qq{font-size:16px;font-weight:700;color:#6b4e12;margin:8px 0 14px}
+  .opts{display:flex;flex-direction:column;gap:8px}
+  .opt{display:flex;align-items:center;gap:11px;border:1px solid #eadfc2;background:#fff;border-radius:11px;padding:11px 13px;cursor:default}
+  .opt.sel{border-color:#e0a800;background:#fdf6e7;box-shadow:0 0 0 2px rgba(224,168,0,.18)}
+  .opt .radio{width:16px;height:16px;border-radius:50%;border:2px solid #d9c48a;flex:none}
+  .opt.sel .radio{border-color:#e0a800;background:radial-gradient(circle,#e0a800 42%,transparent 46%)}
+  .opt .ot{font-weight:600;font-size:13.5px;color:var(--ink)}
+  .opt .od{font-size:11.5px;color:var(--mut);margin-top:1px}
+  .opt .col{display:flex;flex-direction:column}
+  .qfoot{display:flex;align-items:center;gap:10px;margin-top:14px}
+  .btn{font-family:var(--disp);font-weight:700;font-size:13px;border-radius:9px;padding:9px 15px;border:1px solid var(--line2);background:#fff;cursor:default}
+  .btn.pri{background:#e0a800;border-color:#e0a800;color:#fff}
+  .qfoot .hint{font-size:11.5px;color:var(--dim)}
+
+  /* review thread */
+  .thread{display:flex;flex-direction:column;gap:12px}
+  .msg{display:flex;gap:11px}
+  .av{width:28px;height:28px;flex:none;border-radius:9px;display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff}
+  .av.h{background:linear-gradient(140deg,#6aa2f5,#2563eb)}
+  .av.a{background:linear-gradient(140deg,#3ec6b8,#0d9488)}
+  .bubble{background:var(--surface2);border:1px solid var(--line);border-radius:12px;border-top-left-radius:4px;padding:10px 13px;font-size:13.5px;color:var(--ink);flex:1}
+  .bubble .who{font-weight:700;font-size:12px;margin-bottom:2px}
+  .bubble .who span{color:var(--dim);font-weight:500;font-family:var(--mono);font-size:10.5px;margin-left:6px}
+  .bubble.done{border-color:#c8e6d3;background:#f1faf4}
+  .att{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .chip{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--mut);background:var(--surface2);border:1px solid var(--line2);border-radius:8px;padding:5px 9px}
+  .chip b{color:var(--ink)}
+  .ping{margin-left:auto;font-size:11.5px;font-weight:700;color:var(--acc-hi);background:var(--acc-soft);border:1px solid #f3d9c3;border-radius:8px;padding:5px 11px}
+
+  /* contrast */
+  .vs{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+  @media(max-width:640px){.vs{grid-template-columns:1fr}}
+  .vscard{border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--surface)}
+  .vscard h3{margin:0 0 8px;font-size:14px;font-weight:700;display:flex;align-items:center;gap:7px}
+  .vscard.bad h3{color:var(--mut)} .vscard.good h3{color:var(--agent)}
+  .vscard p{margin:0;font-size:13px;color:var(--mut);line-height:1.55}
+  .vscard.bad{background:var(--surface2)}
+  .foot{margin-top:36px;color:var(--dim);font-size:12px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>The agent asks <span style="color:var(--acc)">on the board</span> — not in text</h1>
+  <p class="sub"><b>You just felt it:</b> I ran our whole alignment as paragraphs. Here's the <b>same task</b> the be10x way — the agent generates a plan you can <b>see</b>, and asks its questions <b>one at a time</b> with options. Mockup of one task's detail panel:</p>
+
+  <div class="panel">
+    <div class="ph">
+      <div><div class="id">GFA-014 · orchestration</div><h2>Define the be10x agent-orchestration model</h2></div>
+      <div class="pill"><span class="d"></span>planning</div>
+    </div>
+
+    <div class="sec">
+      <div class="lbl">Plan <span class="by">✦ generated by the agent</span></div>
+      <div class="flow">
+        <div class="fb h"><div class="ft">Create</div><div class="fd">task added</div></div>
+        <span class="far">›</span>
+        <div class="fb a"><div class="ft">Spawn</div><div class="fd">Claude in a worktree</div></div>
+        <span class="far">›</span>
+        <div class="fb a"><div class="ft">Plan + diagram</div><div class="fd">asks if unsure</div></div>
+        <span class="far">›</span>
+        <div class="fb h"><div class="ft">Review</div><div class="fd">comment / change</div></div>
+        <span class="far">›</span>
+        <div class="fb acc"><div class="ft">Approve</div><div class="fd">tag to sign off</div></div>
+        <span class="far">›</span>
+        <div class="fb a"><div class="ft">Execute</div><div class="fd">in the worktree</div></div>
+        <span class="far">›</span>
+        <div class="fb h"><div class="ft">Verify</div><div class="fd">done</div></div>
+      </div>
+      <div class="loopline"><b>Session is disposable, state is permanent</b> — plan · comments · worktree · progress live in be10x. Lose the session → resume from saved state. Idle → close the CLI, zero usage.</div>
+    </div>
+
+    <div class="sec">
+      <div class="lbl">The agent needs a decision <span class="by">✦ generated question · 3 of 6</span></div>
+      <div class="q">
+        <div class="qtop"><span class="step">3 / 6</span><span class="bar"><i></i></span></div>
+        <div class="qq">Isolation per task — how should this one run?</div>
+        <div class="opts">
+          <div class="opt sel"><span class="radio"></span><span class="col"><span class="ot">Own git worktree</span><span class="od">Fully isolated · best for parallel, heavier changes</span></span></div>
+          <div class="opt"><span class="radio"></span><span class="col"><span class="ot">Branch in the main checkout</span><span class="od">Lighter · fine for a small, sequential change</span></span></div>
+          <div class="opt"><span class="radio"></span><span class="col"><span class="ot">Let the agent decide</span><span class="od">It picks based on the task's blast radius</span></span></div>
+        </div>
+        <div class="qfoot"><button class="btn pri">Answer &amp; continue →</button><span class="hint">one question at a time — no walls of text</span></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="lbl">Review &amp; comments</div>
+      <div class="thread">
+        <div class="msg"><div class="av h">P</div><div class="bubble"><div class="who">You <span>on the diagram</span></div>Make the flow show the <b>resume-from-state</b> loop — that's the part I care about.</div></div>
+        <div class="msg"><div class="av a">✦</div><div class="bubble done"><div class="who">Agent <span>updated the plan</span></div>Done ✓ — added the resume loop to the diagram and a note that the session is disposable. Re-open the plan above to see it.</div></div>
+      </div>
+      <div class="att">
+        <span class="chip">📎 <b>reference.md</b> · read</span>
+        <span class="chip">🖼️ <b>wireframe.png</b> · read</span>
+        <span class="ping">⚡ Pick up now</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="k">Why this is the whole point</div>
+  <div class="vs">
+    <div class="vscard bad"><h3>✕ Text (what just happened)</h3><p>Eight numbered paragraphs to read, hold in your head, and reply to in prose. Slow, easy to lose the thread, hard to see the shape.</p></div>
+    <div class="vscard good"><h3>✓ Generated on the board</h3><p>A diagram you glance at, questions one at a time with options, comments pinned to the thing they're about, files the agent already read. You <b>see</b> it — and it improves the flow.</p></div>
+  </div>
+
+  <p class="foot">be10x · the agent generates the interface — diagrams, wireframes, step-by-step questions — instead of text</p>
+</div>
+</body>
+</html>
