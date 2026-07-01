@@ -185,7 +185,7 @@ Each slice gets its own implementation plan (writing-plans) and is built/tested 
 
 ## 16. Deferred (v2+)
 
-Remote & hosting (responsive/phone UI, free Cloudflare Tunnel, host-your-own instance, shared URLs) → **v2**. Deterministic verification (Playwright/Chromium, persistent Chrome profiles, verification recipes feeding self-rating) → **v3**. Ecosystem (more task types, type sharing, external sync) → **v4**. Scale & insight (cross-team analytics, fleet orchestration) → **v5**.
+Remote & hosting (responsive/phone UI, free Cloudflare Tunnel, host-your-own instance, shared URLs) → **v2**. Deterministic verification (Playwright/Chromium, persistent Chrome profiles, verification recipes feeding self-rating) → **v3**. Ecosystem (more task types, type sharing, external sync) → **v4**. Scale & insight (cross-team analytics, fleet orchestration) → **v5**. **Background merge/verification status tracker** — a toggleable (via dashboard settings), cron-driven check the agent runs itself to keep each task's *verified / in-progress / done / merged* status live on the board without manual updates → rides the **v3** verification work. **GitHub PR integration (v2)** — link a task to its pull request (stored in `refs`), pull the PR's review comments and threads into the task's activity, and resolve or reply to them from within be10x with two-way sync back to GitHub, so a reviewer's GitHub comments and the board stay in lockstep. **Agent-driven generative UI (v3/v4)** — instead of a fixed input widget, the agent specifies the interactive component to render for a request (a JSON schema / sandboxed HTML / iframe / buttons / an MCP action), making approvals and inputs open-ended and agent-driven.
 
 ## 17. Open questions
 
