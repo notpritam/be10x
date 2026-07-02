@@ -177,6 +177,13 @@ export function saveConnectConfig(cfg, path = connectConfigPath()) {
   return path;
 }
 
+// Merge a repo into a saved repos list, de-duplicating by key (the newest path wins). Pure helper shared by
+// `be10x link`, so re-linking a moved repo updates its path in place instead of adding a duplicate row.
+export function upsertRepo(repos, repo) {
+  const rest = (Array.isArray(repos) ? repos : []).filter((r) => r.key !== repo.key);
+  return [...rest, { key: repo.key, path: repo.path }];
+}
+
 // Write a repo's .be10x/mcp.json pointing the agent's gfa_* tools at the HOSTED board over HTTP (the
 // http-server.js transport), instead of the local-db stdio server `be10x link` writes. Returns the path.
 export function writeMcpConfig(repoPath, { board, token, httpMcpServerPath }) {

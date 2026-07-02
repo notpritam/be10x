@@ -15,7 +15,7 @@ import { detectProjectKey, registerProject, getProjectByKey, listProjects } from
 import { enqueueWake } from '../src/executor/wake.js';
 import { wakeLoop, wakeLoopAll } from '../src/runner/runner.js';
 import { makeRemoteExecutor } from '../src/connect/remote-executor.js';
-import { makeBoardClient, connectLoop, writeMcpConfig, loadConnectConfig, saveConnectConfig, connectConfigPath, runDeviceLogin } from '../src/connect/connect.js';
+import { makeBoardClient, connectLoop, writeMcpConfig, loadConnectConfig, saveConnectConfig, connectConfigPath, runDeviceLogin, upsertRepo } from '../src/connect/connect.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SIGNUP_HINT = 'Sign up on the board first: be10x serve → http://localhost:4610';
@@ -150,9 +150,45 @@ async function cmdLogin(args) {
   console.log('Next:  cd into a repo, run  be10x link  — then  be10x connect');
 }
 
-// link [--name X] [--email you@x] — register the cwd as a project, mint a cli token, and write + print a
-// Claude-Code MCP config wiring the be10x tools to this repo's board.
+// link [--name X] [--email you@x] — register THIS repo with the board and wire the agent's tools to it.
+// Two modes, auto-detected: if you've run `be10x login` (a hosted board + token are saved), link registers
+// the repo with that HOSTED board over HTTP — no local db, no flags. Otherwise it falls back to the local
+// self-host link (a local SQLite board + a cli token). The hosted path is the common one for teammates.
 async function cmdLink(args) {
+  const cfgPath = connectConfigPath();
+  const saved = loadConnectConfig(cfgPath) || {};
+  if (saved.board && saved.token) return cmdLinkRemote(args, saved, cfgPath);
+  return cmdLinkLocal(args);
+}
+
+// Hosted link: you've signed in with `be10x login`, so register this repo with the hosted board (path-less
+// there — the checkout lives on your machine), write a board-pointing MCP config so the spawned agent's
+// gfa_* tools reach the board over HTTP, and remember the repo so a bare `be10x connect` serves it.
+async function cmdLinkRemote(args, saved, cfgPath) {
+  const { key, rootPath } = detectProjectKey(process.cwd());
+  const name = args.name && args.name !== true ? args.name : basename(rootPath);
+  const client = makeBoardClient({ board: saved.board, token: saved.token });
+  try {
+    await client.registerProject(key, name);
+  } catch (e) {
+    console.error('Could not register this repo with ' + saved.board + ': ' + (e?.message ?? e));
+    console.error('Your login may have expired — re-run:  be10x login ' + saved.board);
+    process.exit(1);
+  }
+  const httpMcpServerPath = resolve(here, '..', 'src', 'mcp', 'http-server.js');
+  writeMcpConfig(rootPath, { board: saved.board, token: saved.token, httpMcpServerPath });
+  saveConnectConfig({ ...saved, repos: upsertRepo(saved.repos, { key, path: rootPath }) }, cfgPath);
+
+  console.log('✓ Linked ' + name + '  (' + key + ')  →  ' + saved.board);
+  console.log('  Serving from ' + rootPath);
+  console.log('');
+  console.log('Start the agent for your linked repos:  be10x connect');
+  console.log('Then create a task for this project on the board and your machine picks it up.');
+}
+
+// Local (self-host) link: no hosted login, so register the cwd against a LOCAL SQLite board, mint a cli
+// token, and write a local-db MCP config. The original single-machine flow, kept for `be10x serve` users.
+async function cmdLinkLocal(args) {
   const dbPath = dbPathAbs();
   const db = await openBoardDb(dbPath);
   const cwd = process.cwd();
@@ -163,6 +199,7 @@ async function cmdLink(args) {
   const userId = resolveUserId(db, args.email);
   if (!userId) {
     console.error(SIGNUP_HINT);
+    console.error('(Connecting to a hosted board instead? Run:  be10x login <board-url>)');
     process.exit(1);
   }
 
@@ -264,8 +301,10 @@ async function cmdConnect(args) {
   const board = args.board && args.board !== true ? args.board : saved.board;
   const token = args.token && args.token !== true ? args.token : saved.token;
   if (!board || !token) {
-    console.error('be10x connect needs --board <url> and --token <gfa_...> the first time.');
-    console.error('Mint a token on the board: Settings → Connect your machine (or `be10x token`).');
+    console.error('Not signed in to a board yet. Sign in first:');
+    console.error('  be10x login <board-url>      e.g. be10x login https://be10x.notpritam.in');
+    console.error('  cd <repo> && be10x link      link each repo you want the agent to work');
+    console.error('(Advanced: be10x connect --board <url> --token <gfa_...> --repos a,b still works.)');
     process.exit(1);
   }
 
