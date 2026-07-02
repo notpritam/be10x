@@ -7,6 +7,15 @@
     <meta name="theme-color" content="#e9e9ec" />
     <title>be10x</title>
     <meta name="description" content="be10x - a human and agent task board." />
+
+    <!-- PWA: installable app with an offline shell (service worker registered in main.tsx). -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="be10x" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   </head>
   <body>
     <div id="root"></div>

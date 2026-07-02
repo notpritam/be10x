@@ -1,0 +1,16 @@
+{
+  "id": "/",
+  "name": "be10x",
+  "short_name": "be10x",
+  "description": "A human + agent task board. Sessions disposable, state durable.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f3f0",
+  "theme_color": "#e9e9ec",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

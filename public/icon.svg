@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="be10x">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#22262e"/>
+      <stop offset="1" stop-color="#14171b"/>
+    </linearGradient>
+  </defs>
+  <!-- Maskable-safe: the tile fills the whole canvas; the mark sits inside the centre safe zone. -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- Three ascending bars — the "10x" growth mark — with an accent cap on the tallest. -->
+  <g fill="#f4f4f3">
+    <rect x="146" y="286" width="66" height="118" rx="20"/>
+    <rect x="223" y="214" width="66" height="190" rx="20"/>
+    <rect x="300" y="150" width="66" height="254" rx="20"/>
+  </g>
+  <circle cx="333" cy="120" r="30" fill="#29a393"/>
+</svg>
