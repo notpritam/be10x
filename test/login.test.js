@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runDeviceLogin } from '../src/connect/connect.js';
+import { openDb } from '../src/db/db.js';
+import { createApp } from '../src/http/server.js';
 
 // `be10x login`'s driver: mint a code, open the approve URL, poll until approved. fetch/open/sleep are
 // injected so we exercise the whole polling state machine deterministically, no server or browser needed.
@@ -77,4 +79,54 @@ test('survives a transient poll error and keeps waiting', async () => {
   const res = await runDeviceLogin({ board: 'b', fetchImpl, sleep: async () => {}, open: () => {} });
   assert.equal(res.token, 'gfa_tok');
   assert.ok(polls >= 2, 'a failed poll did not abort the login');
+});
+
+// Capstone: the real CLI driver against a real board. runDeviceLogin polls the actual /api/device endpoints
+// while a simulated browser (a session-cookie'd fetch) approves — the whole paste-free login, end to end.
+test('e2e: runDeviceLogin against a real board completes when the browser approves', async () => {
+  const db = openDb(':memory:');
+  const app = createApp(db);
+  await new Promise((r) => app.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + app.address().port;
+  try {
+    // A user signs up on the board (session cookie = the logged-in browser).
+    const su = await fetch(base + '/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'dev@team.co', displayName: 'Dev', password: 'pw12345' }),
+    });
+    const cookie = su.headers.get('set-cookie').split(';')[0];
+
+    // The moment the CLI shows its code, the "browser" approves it (as the login() callback surfaces it).
+    let approved = false;
+    const res = await runDeviceLogin({
+      board: base,
+      label: 'pritam-macbook',
+      open: () => {},
+      sleep: () => new Promise((r) => setTimeout(r, 15)),
+      log: (ev) => {
+        if (ev.event === 'code' && !approved) {
+          approved = true;
+          void fetch(base + '/api/device/approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', cookie },
+            body: JSON.stringify({ code: ev.userCode }),
+          });
+        }
+      },
+    });
+
+    assert.match(res.token, /^gfa_[0-9a-f]{48}$/, 'the CLI collected a real token');
+    assert.equal(res.user.email, 'dev@team.co');
+
+    // And that token authenticates the agent transport as the approving user.
+    const rpc = await fetch(base + '/api/agent/rpc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', authorization: 'Bearer ' + res.token },
+      body: JSON.stringify({ tool: 'gfa_list_tasks', args: {} }),
+    });
+    assert.equal(rpc.status, 200, 'device-login token drives the agent API');
+  } finally {
+    await new Promise((r) => app.close(r));
+  }
 });
