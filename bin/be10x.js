@@ -14,6 +14,8 @@ import { makeClaudeExecutor } from '../src/executor/executor.js';
 import { detectProjectKey, registerProject, getProjectByKey, listProjects } from '../src/projects/projects.js';
 import { enqueueWake } from '../src/executor/wake.js';
 import { wakeLoop, wakeLoopAll } from '../src/runner/runner.js';
+import { makeRemoteExecutor } from '../src/connect/remote-executor.js';
+import { makeBoardClient, connectLoop, writeMcpConfig, loadConnectConfig, saveConnectConfig, connectConfigPath } from '../src/connect/connect.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SIGNUP_HINT = 'Sign up on the board first: be10x serve → http://localhost:4610';
@@ -175,6 +177,83 @@ async function cmdWork(args) {
   });
 }
 
+// connect --board <url> --token <gfa_...> [--repos a,b] [--interval S] [--once] [--name label]
+// Link THIS machine to a HOSTED board and run the agent locally: claim wakes for the repos you serve, spawn
+// your OWN claude in each repo's worktree, and report back — the distributed runner. Unlike `be10x serve`
+// (board + agent on one host), the board lives elsewhere and only state crosses the network. Flags are
+// saved to ~/.be10x/connect.json so a bare `be10x connect` afterwards just works.
+async function cmdConnect(args) {
+  const cfgPath = connectConfigPath();
+  const saved = loadConnectConfig(cfgPath) || {};
+  const board = args.board && args.board !== true ? args.board : saved.board;
+  const token = args.token && args.token !== true ? args.token : saved.token;
+  if (!board || !token) {
+    console.error('be10x connect needs --board <url> and --token <gfa_...> the first time.');
+    console.error('Mint a token on the board: Settings → Connect your machine (or `be10x token`).');
+    process.exit(1);
+  }
+
+  // Repos to serve: --repos a,b,c (comma) wins; else the saved set; else the current directory.
+  let repoPaths;
+  if (args.repos && args.repos !== true) repoPaths = String(args.repos).split(',').map((s) => s.trim()).filter(Boolean);
+  else if (Array.isArray(saved.repos) && saved.repos.length) repoPaths = saved.repos.map((r) => r.path);
+  else repoPaths = [process.cwd()];
+
+  const repos = repoPaths.map((p) => {
+    const { key, rootPath, defaultBranch } = detectProjectKey(resolve(process.cwd(), p));
+    return { key, path: rootPath, defaultBranch };
+  });
+
+  // Remember the setup so next time `be10x connect` alone works.
+  saveConnectConfig({ board, token, repos: repos.map((r) => ({ key: r.key, path: r.path })) }, cfgPath);
+
+  // Register each repo with the board + write a board-pointing MCP config so the spawned agent's gfa_* tools
+  // reach the board over HTTP (not a local db).
+  const httpMcpServerPath = resolve(here, '..', 'src', 'mcp', 'http-server.js');
+  const client = makeBoardClient({ board, token });
+  for (const r of repos) {
+    try {
+      await client.registerProject(r.key, basename(r.path));
+    } catch (e) {
+      console.error('warning: could not register ' + r.key + ' with the board: ' + (e?.message ?? e));
+    }
+    writeMcpConfig(r.path, { board, token, httpMcpServerPath });
+  }
+
+  const makeExecutor = (repo) =>
+    makeRemoteExecutor(
+      { rootPath: repo.path, defaultBranch: repo.defaultBranch },
+      { model: process.env.GFA_MODEL, mcpConfigPath: join(repo.path, '.be10x', 'mcp.json') }
+    );
+  const workerId = 'connect:' + (args.name && args.name !== true ? args.name : basename(repos[0]?.path || 'machine'));
+  const intervalMs = (args.interval && args.interval !== true ? Number(args.interval) : 3) * 1000;
+  const once = !!args.once;
+
+  console.log('be10x connect → ' + board + (once ? '  (single pass)' : '  (Ctrl-C to stop)'));
+  for (const r of repos) console.log('  serving ' + r.key + '  [' + r.path + ']');
+
+  const loop = connectLoop({
+    board: client,
+    repos,
+    makeExecutor,
+    workerId,
+    intervalMs,
+    once,
+    onError: (e) => console.error('connect: ' + (e?.message ?? e)),
+  });
+
+  if (once) {
+    const result = await loop.done;
+    if (!result || !result.claim) console.log('nothing ready to work.');
+    process.exit(0);
+  }
+  process.on('SIGINT', () => {
+    loop.stop();
+    console.log('\nstopped.');
+    process.exit(0);
+  });
+}
+
 // list — print registered projects and, for the cwd's project, its tasks grouped by status.
 async function cmdList() {
   const db = openDb(dbPathAbs());
@@ -316,6 +395,7 @@ const COMMANDS = {
   link: cmdLink,
   token: cmdToken,
   work: cmdWork,
+  connect: cmdConnect,
   list: cmdList,
   adopt: cmdAdopt,
   'install-skill': cmdInstallSkill,
@@ -330,6 +410,7 @@ function usage() {
   console.log('  link  [--name X] [--email E]     register this repo + write Claude-Code MCP config');
   console.log('  token [--name X] [--email E]     mint a personal access token (shown once)');
   console.log('  work  [--interval S] [--once]    run the agent runner for this repo');
+  console.log('  connect --board URL --token T    link THIS machine to a hosted board + run the agent locally');
   console.log('  list                             list projects and this repo\'s tasks by status');
   console.log('  adopt --title T [--phase P] ...  move this session\'s work onto the board as a task');
   console.log('  install-skill                    install the /be10x-adopt skill into ~/.claude/skills');

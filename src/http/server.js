@@ -23,7 +23,7 @@ import { enqueueWake, getWake, claimNextWakeForKeys } from '../executor/wake.js'
 import { listRunsForTask, createRun, finishRun, setRunSession, getLatestRunForTask } from '../executor/runs.js';
 import { prepareWake, settleWake } from '../runner/runner.js';
 import { taskDebug } from '../tasks/debug.js';
-import { listProjects, registerProject, detectProjectKey } from '../projects/projects.js';
+import { listProjects, registerProject, detectProjectKey, getProject } from '../projects/projects.js';
 import { createShareLink, listShareLinksForTask, revokeShareLink, getActiveShareLinkByToken, shareView } from '../share/share.js';
 import { listPlanVersions, getPlanVersion } from '../plans/versions.js';
 
@@ -420,9 +420,11 @@ const AGENT_ROUTES = [
     const resumeSessionId = getLatestRunForTask(db, task.id)?.sessionId || null;
     const { mode, staged, comments } = prepareWake(db, { wake, task, workerId });
     const run = createRun(db, { taskId: staged.id, projectId: staged.projectId });
+    const project = getProject(db, staged.projectId);
     send(res, 200, {
-      wake: { id: wake.id, reason: wake.reason },
+      wake: { id: wake.id, reason: wake.reason, context: wake.context },
       runId: run.id,
+      projectKey: project ? project.key : null, // so the connector maps the task to its local checkout
       task: staged, // full task: content + plan travel so the connector builds the prompt without another call
       mode,
       resume: wake.context?.retry ? true : undefined,
