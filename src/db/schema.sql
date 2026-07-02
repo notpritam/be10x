@@ -202,3 +202,21 @@ CREATE TABLE IF NOT EXISTS plan_versions (
   created_by TEXT,
   created_at INTEGER NOT NULL
 );
+
+-- Browser device-authorization for `be10x login`: the CLI inserts a row (public, no auth) and polls with the
+-- unguessable device_code; the user, logged into the board, approves the short user_code shown in both the
+-- terminal and the browser. On approval we mint a personal token and stash it here so the polling CLI can
+-- collect it EXACTLY ONCE (then it's nulled). Rows expire (expires_at) so an abandoned request can't be
+-- approved later. label is the requesting machine's hostname, shown on the approve screen.
+CREATE TABLE IF NOT EXISTS device_codes (
+  id          TEXT PRIMARY KEY,
+  device_code TEXT NOT NULL UNIQUE,
+  user_code   TEXT NOT NULL UNIQUE,
+  label       TEXT,
+  status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','denied')),
+  user_id     TEXT REFERENCES users(id) ON DELETE CASCADE,
+  token       TEXT,
+  created_at  INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL,
+  approved_at INTEGER
+);
