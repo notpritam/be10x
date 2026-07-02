@@ -24,12 +24,15 @@ export function getWake(db, id) {
 }
 
 // Enqueue a wake for a task. `context` is the delta that triggered it (the comment, the answer, the
-// verdict) — stored so the scheduler can build a cheap, delta-only wake prompt.
-export function enqueueWake(db, taskId, reason, context = null) {
+// verdict) — stored so the scheduler can build a cheap, delta-only wake prompt. `delayMs` schedules the
+// wake for the future (enqueued_at = now + delayMs); the claim won't pick it up until then. This is what
+// backs retry backoff — a failed run re-enqueues itself a few seconds out instead of hot-looping.
+export function enqueueWake(db, taskId, reason, context = null, { delayMs = 0 } = {}) {
   const id = randomUUID();
+  const readyAt = Date.now() + Math.max(0, delayMs);
   db.prepare(
     'INSERT INTO wake_queue (id, task_id, reason, context_json, enqueued_at) VALUES (?, ?, ?, ?, ?)'
-  ).run(id, taskId, reason, context == null ? null : JSON.stringify(context), Date.now());
+  ).run(id, taskId, reason, context == null ? null : JSON.stringify(context), readyAt);
   return getWake(db, id);
 }
 
@@ -49,10 +52,10 @@ export function claimNextWake(db, { projectId, workerId = 'runner' } = {}) {
   const rows = db
     .prepare(
       `SELECT w.id FROM wake_queue w JOIN tasks t ON t.id = w.task_id
-       WHERE w.claimed_at IS NULL AND (t.project_id = ? OR t.project_id IS NULL)
+       WHERE w.claimed_at IS NULL AND w.enqueued_at <= ? AND (t.project_id = ? OR t.project_id IS NULL)
        ORDER BY w.enqueued_at, w.rowid`
     )
-    .all(projectId);
+    .all(Date.now(), projectId);
   for (const { id } of rows) {
     const res = db
       .prepare('UPDATE wake_queue SET claimed_at = ?, claimed_by = ? WHERE id = ? AND claimed_at IS NULL')
@@ -69,10 +72,10 @@ export function claimNextWakeAny(db, workerId = 'runner') {
   const rows = db
     .prepare(
       `SELECT w.id FROM wake_queue w JOIN tasks t ON t.id = w.task_id
-       WHERE w.claimed_at IS NULL AND t.project_id IS NOT NULL
+       WHERE w.claimed_at IS NULL AND w.enqueued_at <= ? AND t.project_id IS NOT NULL
        ORDER BY w.enqueued_at, w.rowid`
     )
-    .all();
+    .all(Date.now());
   for (const { id } of rows) {
     const res = db
       .prepare('UPDATE wake_queue SET claimed_at = ?, claimed_by = ? WHERE id = ? AND claimed_at IS NULL')

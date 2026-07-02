@@ -4,10 +4,11 @@ import { getType } from '../tasks/types.js';
 import { getTask, transition } from '../tasks/tasks.js';
 import { appendEvent } from '../tasks/events.js';
 import { recordProgress } from '../worker/worker.js';
-import { claimNextWake, claimNextWakeAny, enqueueWake } from '../executor/wake.js';
+import { claimNextWake, claimNextWakeAny, enqueueWake, listPendingWakes } from '../executor/wake.js';
 import { unseenComments, markCommentsSeen } from '../tasks/comments.js';
 import { finishRun } from '../executor/runs.js';
 import { getProject } from '../projects/projects.js';
+import { classifyFailure, isRetryable, maxAttempts, backoffMs, guidance } from '../executor/failures.js';
 
 // Claim the oldest ready_to_work task in `projectId` whose type is agent-executable. The conditional
 // UPDATE (WHERE ... AND status='ready_to_work') makes the claim atomic, so two runners polling the same
@@ -151,14 +152,60 @@ async function driveWake(db, { wake, task, workerId, execute }) {
 
   let summary;
   try {
-    // Context policy (resume vs fresh) is owned by the executor per mode — don't force it here.
-    summary = await execute(staged, { mode, wakeContext: wake.context, comments });
+    // Context policy (resume vs fresh) is owned by the executor per mode — don't force it here, EXCEPT on a
+    // retry, where we resume the saved session so the agent continues where it died instead of restarting.
+    summary = await execute(staged, {
+      mode,
+      wakeContext: wake.context,
+      comments,
+      resume: wake.context?.retry ? true : undefined,
+    });
   } catch (error) {
     recordProgress(db, task.id, { state: 'blocked', step: 'error', message: String(error?.message ?? error) }, workerId);
     return { wake, task: staged, error };
   }
 
-  // Deltas consumed → mark them seen so the next wake stays delta-only.
+  // A run-level failure (the executor resolves with ok:false rather than throwing): auto-retry an
+  // ENVIRONMENTAL failure (lost auth / network blip / process death) from durable state — the core of
+  // "sessions disposable, state durable". A genuine error (kind 'other') is left for the human.
+  if (summary && summary.ok === false) {
+    const kind = summary.failureKind || classifyFailure(summary.error);
+    const attempt = (Number(wake.context?.attempt) || 0) + 1;
+    if (isRetryable(kind) && attempt <= maxAttempts(kind)) {
+      const delay = backoffMs(kind, attempt);
+      // Do NOT mark the comments seen — the failed run never got to act on them, so the retry must
+      // re-deliver them. Re-enqueue the SAME reason (preserves the mode) a backoff out.
+      enqueueWake(
+        db,
+        task.id,
+        wake.reason,
+        { ...(wake.context || {}), retry: true, attempt, failureKind: kind, lastError: String(summary.error ?? '').slice(0, 300) },
+        { delayMs: delay }
+      );
+      recordProgress(
+        db,
+        task.id,
+        { state: 'working', step: 'retry', message: `run failed (${kind}); auto-retry ${attempt}/${maxAttempts(kind)} in ${Math.round(delay / 1000)}s` },
+        workerId
+      );
+      return { wake, task: getTask(db, task.id), summary, retrying: { kind, attempt, delay } };
+    }
+    // Non-retryable, or retries exhausted → the failure stands (the executor already recorded the real
+    // error). Consume the comments (they WERE delivered) so a later manual pick-up doesn't replay them.
+    markCommentsSeen(db, comments.map((c) => c.id));
+    if (isRetryable(kind) && attempt > maxAttempts(kind)) {
+      const g = guidance(kind);
+      recordProgress(
+        db,
+        task.id,
+        { state: 'blocked', step: 'gave-up', message: `gave up after ${maxAttempts(kind)} auto-retries (${kind})${g ? ' — ' + g : ''}` },
+        workerId
+      );
+    }
+    return { wake, task: getTask(db, task.id), summary, failed: kind };
+  }
+
+  // Success. Deltas consumed → mark them seen so the next wake stays delta-only.
   markCommentsSeen(db, comments.map((c) => c.id));
 
   // A successful implementation pass hands the task to verifying, then wakes a FRESH agent to
@@ -218,8 +265,8 @@ function pidAlive(pid) {
 //   - live periodic sweep (true): a pid-less run is almost certainly one we just created and haven't
 //     spawned yet (createRun sets status before setRunPid) → LEAVE it, or we'd reap our own newborn run.
 // Returns how many were reaped.
-export function recoverOrphans(db, { requirePid = false } = {}) {
-  const rows = db.prepare("SELECT id, pid FROM runs WHERE status IN ('starting','running')").all();
+export function recoverOrphans(db, { requirePid = false, rewake = false } = {}) {
+  const rows = db.prepare("SELECT id, pid, task_id FROM runs WHERE status IN ('starting','running')").all();
   let reaped = 0;
   for (const r of rows) {
     if (r.pid == null) {
@@ -230,20 +277,60 @@ export function recoverOrphans(db, { requirePid = false } = {}) {
     }
     finishRun(db, r.id, { status: 'failed', error: 'orphaned: process gone before completion' });
     reaped++;
+    // Self-heal: a run that died with the process (server restart, laptop sleep) should RESUME, not sit
+    // dead. Opt-in so tests / one-shot callers that just want the reap don't get a surprise wake.
+    if (rewake) tryRewakeOrphan(db, r.task_id);
   }
   return reaped;
+}
+
+// Give up resuming a task after this many orphaned runs — a task that keeps dying with its process means
+// the host itself is unstable (repeated sleep/restart); resuming forever would spin.
+const ORPHAN_MAX = 5;
+
+// Re-enqueue a resume wake for a task whose run died with its process — but only when it makes sense:
+// the task is still actively being worked, there isn't already a pending wake, and we haven't hit the cap.
+function tryRewakeOrphan(db, taskId) {
+  try {
+    const task = getTask(db, taskId);
+    if (!task) return;
+    const ACTIVE = new Set(['researching', 'plan_review', 'ready_to_work', 'in_progress', 'needs_input', 'verifying']);
+    if (!ACTIVE.has(task.status)) return; // backlog / done / terminal — nothing to resume
+    if (listPendingWakes(db, taskId).length > 0) return; // a wake is already queued; don't pile on
+    const orphanCount = db
+      .prepare("SELECT COUNT(*) AS c FROM runs WHERE task_id = ? AND error LIKE 'orphaned%'")
+      .get(taskId).c;
+    if (orphanCount > ORPHAN_MAX) {
+      recordProgress(
+        db,
+        taskId,
+        { state: 'blocked', step: 'gave-up', message: `gave up resuming after ${ORPHAN_MAX} orphaned runs — the host keeps dying (sleep/restart); run be10x on an always-on host` },
+        'runner'
+      );
+      return;
+    }
+    enqueueWake(db, taskId, 'pick_up_now', { orphanRecovery: true, attempt: orphanCount }, { delayMs: 5000 });
+    recordProgress(
+      db,
+      taskId,
+      { state: 'working', step: 'resuming', message: 'process died (restart/sleep) — resuming from saved state' },
+      'runner'
+    );
+  } catch {
+    // best-effort self-heal — never let recovery crash the loop
+  }
 }
 
 // Poll runWakeOnce on an interval (recovering orphans once at start, then sweeping dead-pid runs on a
 // separate timer so an agent that dies AFTER a restart doesn't linger as a false "running"). Same
 // stoppable handle as workLoop.
 export function wakeLoop(db, { projectId, workerId = 'runner', intervalMs = 3000, sweepMs = 15000, execute, once = false } = {}) {
-  recoverOrphans(db);
+  recoverOrphans(db, { rewake: true });
   let stopped = false;
   let timer = null;
   let sweepTimer = null;
   let lastResult = null;
-  if (!once) sweepTimer = setInterval(() => { try { recoverOrphans(db, { requirePid: true }); } catch { /* best-effort */ } }, sweepMs);
+  if (!once) sweepTimer = setInterval(() => { try { recoverOrphans(db, { requirePid: true, rewake: true }); } catch { /* best-effort */ } }, sweepMs);
 
   async function loop() {
     do {
@@ -274,14 +361,14 @@ export function wakeLoop(db, { projectId, workerId = 'runner', intervalMs = 3000
 // Board-wide poll: drain wakes across ALL linked repos, spawning the agent in each task's own repo. This
 // is the runner baked into `be10x serve` so a user never runs a per-repo terminal.
 export function wakeLoopAll(db, { workerId = 'runner', intervalMs = 3000, sweepMs = 15000, makeExecutor, once = false } = {}) {
-  recoverOrphans(db);
+  recoverOrphans(db, { rewake: true });
   let stopped = false;
   let timer = null;
   let sweepTimer = null;
   let lastResult = null;
   // A dedicated timer (not the wake tick, which is busy awaiting a running agent) reaps runs whose pid has
   // died since boot — so a false "Agent running" self-corrects within sweepMs instead of at the next restart.
-  if (!once) sweepTimer = setInterval(() => { try { recoverOrphans(db, { requirePid: true }); } catch { /* best-effort */ } }, sweepMs);
+  if (!once) sweepTimer = setInterval(() => { try { recoverOrphans(db, { requirePid: true, rewake: true }); } catch { /* best-effort */ } }, sweepMs);
 
   async function loop() {
     do {

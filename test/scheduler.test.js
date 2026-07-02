@@ -163,3 +163,75 @@ test('recoverOrphans: live sweep reaps a dead-pid run but spares a mid-spawn (pi
   assert.equal(recoverOrphans(db), 1);
   assert.equal(getRun(db, newborn.id).status, 'failed');
 });
+
+// An executor that reports a run-level failure of a given kind (mirrors the real executor resolving with
+// ok:false rather than throwing).
+function failExec(failureKind) {
+  const calls = [];
+  const fn = async (task, opts) => {
+    calls.push({ task, opts });
+    return { ok: false, done: false, failureKind, error: `simulated ${failureKind} failure` };
+  };
+  fn.calls = calls;
+  return fn;
+}
+
+test('durability: a transient (network) run failure auto-retries with a backoff wake, keeping comments unseen', async () => {
+  const { db, mk } = seed();
+  mk('t1', 'in_progress');
+  addComment(db, 't1', { author: 'u1', body: 'steer me' });
+  enqueueWake(db, 't1', 'execute');
+
+  await runWakeOnce(db, { projectId: 'p1', execute: failExec('network') });
+
+  // A retry wake is queued (same reason, marked retry, attempt 1), scheduled a backoff out.
+  const pending = listPendingWakes(db, 't1');
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].reason, 'execute');
+  assert.equal(pending[0].context.retry, true);
+  assert.equal(pending[0].context.attempt, 1);
+  // The comment stays UNSEEN so the retry re-delivers it (the failed run never acted on it).
+  assert.equal(unseenComments(db, 't1').length, 1);
+});
+
+test('durability: a genuine error (kind other) does NOT auto-retry', async () => {
+  const { db, mk } = seed();
+  mk('t1', 'in_progress');
+  enqueueWake(db, 't1', 'execute');
+
+  await runWakeOnce(db, { projectId: 'p1', execute: failExec('other') });
+  assert.equal(listPendingWakes(db, 't1').length, 0);
+});
+
+test('durability: exhausting retries stops re-queuing and surfaces a clear give-up', async () => {
+  const { db, mk } = seed();
+  mk('t1', 'in_progress');
+  // A network wake already at the cap; failing it once more (attempt 7 > max 6) must NOT enqueue another.
+  enqueueWake(db, 't1', 'execute', { retry: true, attempt: 6 });
+  await runWakeOnce(db, { projectId: 'p1', execute: failExec('network') });
+  assert.equal(listPendingWakes(db, 't1').length, 0);
+  assert.equal(getTask(db, 't1').agent.state, 'blocked');
+});
+
+test('durability: recoverOrphans({ rewake:true }) re-enqueues a resume wake for an active task', () => {
+  const { db, mk } = seed();
+  mk('t1', 'in_progress');
+  const run = createRun(db, { taskId: 't1' });
+  markRunning(db, run.id);
+
+  assert.equal(recoverOrphans(db, { rewake: true }), 1);
+
+  const pending = listPendingWakes(db, 't1');
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].reason, 'pick_up_now');
+  assert.equal(pending[0].context.orphanRecovery, true);
+});
+
+test('durability: recoverOrphans({ rewake:true }) does NOT resume a done/terminal task', () => {
+  const { db, mk } = seed();
+  mk('t1', 'done');
+  const run = createRun(db, { taskId: 't1' });
+  markRunning(db, run.id);
+  assert.equal(recoverOrphans(db, { rewake: true }), 1);
+  assert.equal(listPendingWakes(db, 't1').length, 0);
+});

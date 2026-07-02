@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { buildClaudeCommand, BE10X_SYSTEM_PROMPT, StreamAccumulator } from './claude-adapter.js';
+import { classifyFailure, guidance } from './failures.js';
 import { ensureWorktree as realEnsureWorktree, worktreeBranch, collectGitMeta } from './worktree.js';
 import { createRun, setRunSession, setRunModel, setRunPid, markRunning, finishRun, getLatestRunForTask } from './runs.js';
 import { recordRunStep } from './run-steps.js';
@@ -27,6 +28,30 @@ const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 function truncate(s, n = BOARD_MSG_MAX) {
   const t = String(s ?? '').trim();
   return t.length > n ? t.slice(0, n - 1) + '…' : t;
+}
+
+// Pull the REAL reason a run failed out of the accumulator, instead of a generic "exited without a result".
+// The CLI reports its actual error in the stream-json result payload and/or its last assistant line
+// ("Not logged in · Please run /login", "API Error: Unable to connect…") — both of which the executor used
+// to discard, leaving every failure looking identical in the DB. Order: explicit spawn error → result
+// payload → last assistant text → stderr → exit code.
+function deriveError(acc, stderrBuf, extra) {
+  if (extra.error) return String(extra.error);
+  const r = acc.result;
+  if (r && typeof r === 'object') {
+    const parts = [];
+    if (typeof r.subtype === 'string' && r.subtype && r.subtype !== 'success') parts.push(r.subtype);
+    if (typeof r.error === 'string' && r.error.trim()) parts.push(r.error.trim());
+    else if (r.error && typeof r.error === 'object' && typeof r.error.message === 'string') parts.push(r.error.message);
+    if (r.is_error && typeof r.result === 'string' && r.result.trim()) parts.push(r.result.trim());
+    if (parts.length) return parts.join(': ').slice(0, 800);
+  }
+  const tail = String(acc.text ?? '').trim();
+  if (tail) return tail.slice(-500);
+  const se = stderrBuf.slice(-500).trim();
+  if (se) return se;
+  if (extra.exitCode != null) return `agent exited (code ${extra.exitCode}) without a result`;
+  return 'agent exited without a result';
 }
 
 // Pull a human-readable body out of a task's content, whatever shape it is. Empty/object-only content
@@ -321,6 +346,7 @@ export function makeClaudeExecutor(db, project, opts = {}) {
           // best-effort trace
         }
         if (ok && acc.done) {
+          summary.ok = true;
           finishRun(db, run.id, { status: 'done', result: summary });
           recordProgress(
             db,
@@ -329,9 +355,22 @@ export function makeClaudeExecutor(db, project, opts = {}) {
             workerId
           );
         } else {
-          const error = extra.error || stderrBuf.slice(-500).trim() || 'agent exited without a result';
+          // Capture the REAL reason (not the generic string) and classify it so the runner can decide to
+          // auto-retry an environmental failure (auth/network/crash) vs. surface a genuine error.
+          const error = deriveError(acc, stderrBuf, extra);
+          const failureKind = classifyFailure(error);
+          summary.ok = false;
+          summary.failureKind = failureKind;
+          summary.error = error;
           finishRun(db, run.id, { status: 'failed', result: summary, error });
-          recordProgress(db, task.id, { state: 'blocked', step: 'failed', message: truncate(error) }, workerId);
+          const g = guidance(failureKind);
+          const message = g ? `${truncate(error, 180)} — ${g}` : truncate(error);
+          recordProgress(
+            db,
+            task.id,
+            { state: 'blocked', step: failureKind === 'auth' ? 'auth' : 'failed', message: truncate(message) },
+            workerId
+          );
         }
         resolve(summary);
       };
