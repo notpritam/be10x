@@ -2,6 +2,10 @@
 import { randomUUID } from 'node:crypto';
 
 export function appendEvent(db, taskId, actor, kind, payload = {}) {
+  // A null/undefined task id would otherwise hit the task_events.task_id NOT NULL constraint with a
+  // cryptic SQLite error. Fail with a clear, catchable code instead — this is the guard that turns the
+  // gfa_submit_output "NOT NULL constraint failed: task_events.task_id" crash into a clean NO_TASK.
+  if (!taskId) throw new Error('NO_TASK');
   const id = randomUUID();
   db.prepare('INSERT INTO task_events (id, task_id, actor, kind, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
     id,

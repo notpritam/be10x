@@ -229,6 +229,9 @@ export function importTask(db, spec = {}, actor) {
 }
 
 export function setRefs(db, id, refs, actor) {
+  // Guard existence up front: a bad/missing id used to fall through to appendEvent and surface as a
+  // cryptic "NOT NULL constraint failed: task_events.task_id" (the gfa_submit_output failure).
+  if (!getTask(db, id)) throw new Error('NO_TASK');
   const now = Date.now();
   db.prepare('UPDATE tasks SET refs_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(refs), now, id);
   // Submitting output means the implementation is done — reconcile the checklist so it can't be left with

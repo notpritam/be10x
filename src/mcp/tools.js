@@ -27,6 +27,16 @@ const TYPES = ['code-issue', 'general'];
 // Free-form JSON object stored verbatim on the task (fields vary by task type / board convention).
 const freeObject = (description) => ({ type: 'object', additionalProperties: true, description });
 
+// The task id may arrive as `id` (this file's convention) OR `taskId` (the convention of
+// gfa_update_progress / gfa_submit_plan / gfa_reply). Accept either everywhere so the agent mixing them
+// up can't wedge a task — passing `taskId` to gfa_submit_output(id) is exactly what silently produced a
+// "NOT NULL constraint failed: task_events.task_id" crash and left the task looping in verify.
+const taskIdOf = (args = {}) => args.id ?? args.taskId;
+const ID_OR_TASKID = {
+  id: { type: 'string', description: 'Task id (uuid).' },
+  taskId: { type: 'string', description: 'Alias for id — either is accepted.' },
+};
+
 // The registry. Every entry: { name, description, inputSchema (JSON Schema), handler(db, ctx, args) }.
 // Handlers call core and return the JSON-serializable result — core errors are allowed to throw.
 export const TOOLS = [
@@ -51,11 +61,10 @@ export const TOOLS = [
     description: 'Fetch a single task (with content, plan, research, refs, agent progress) by id.',
     inputSchema: {
       type: 'object',
-      properties: { id: { type: 'string', description: 'Task id (uuid).' } },
-      required: ['id'],
+      properties: { ...ID_OR_TASKID },
       additionalProperties: false,
     },
-    handler: (db, ctx, args) => getTask(db, args.id),
+    handler: (db, ctx, args) => getTask(db, taskIdOf(args)),
   },
   {
     name: 'gfa_create_task',
@@ -91,13 +100,13 @@ export const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Task id.' },
+        ...ID_OR_TASKID,
         research: freeObject('Research findings for the task.'),
       },
-      required: ['id', 'research'],
+      required: ['research'],
       additionalProperties: false,
     },
-    handler: (db, ctx, args) => setResearch(db, args.id, args.research, ctx.userId),
+    handler: (db, ctx, args) => setResearch(db, taskIdOf(args), args.research, ctx.userId),
   },
   {
     name: 'gfa_plan_task',
@@ -106,14 +115,14 @@ export const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Task id.' },
+        ...ID_OR_TASKID,
         // No `type` constraint: the plan may be a string (HTML/markdown) or an object/array.
         plan: { description: 'The plan: a rich HTML string, markdown string, or an object like { steps, diagram, html } or { blocks: [...] }.' },
       },
-      required: ['id', 'plan'],
+      required: ['plan'],
       additionalProperties: false,
     },
-    handler: (db, ctx, args) => setPlan(db, args.id, args.plan, ctx.userId),
+    handler: (db, ctx, args) => setPlan(db, taskIdOf(args), args.plan, ctx.userId),
   },
   {
     name: 'gfa_submit_for_review',
@@ -153,11 +162,10 @@ export const TOOLS = [
     description: 'Transition a task to "ready_to_work" so the worker can claim it.',
     inputSchema: {
       type: 'object',
-      properties: { id: { type: 'string', description: 'Task id.' } },
-      required: ['id'],
+      properties: { ...ID_OR_TASKID },
       additionalProperties: false,
     },
-    handler: (db, ctx, args) => transition(db, args.id, 'ready_to_work', ctx.userId),
+    handler: (db, ctx, args) => transition(db, taskIdOf(args), 'ready_to_work', ctx.userId),
   },
   {
     name: 'gfa_claim_task',
@@ -248,13 +256,13 @@ export const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Task id.' },
+        ...ID_OR_TASKID,
         rating: freeObject('Rating payload (e.g. { score: 0.9, comment }).'),
       },
-      required: ['id', 'rating'],
+      required: ['rating'],
       additionalProperties: false,
     },
-    handler: (db, ctx, args) => rateTask(db, args.id, args.rating, ctx.userId),
+    handler: (db, ctx, args) => rateTask(db, taskIdOf(args), args.rating, ctx.userId),
   },
   {
     name: 'gfa_import_task',
@@ -340,31 +348,31 @@ export const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Task id.' },
+        ...ID_OR_TASKID,
         kind: { type: 'string', description: 'rca | diagram | finding | suggestion | verification | doc | note' },
         title: { type: 'string', description: 'Short human label for the artifact.' },
         key: { type: 'string', description: 'Stable id; posting the same key updates that artifact instead of adding a new one.' },
         content: freeObject('The artifact body — rich content, HTML preferred (rendered in a sandbox), or markdown / { blocks|html|steps|diagram }.'),
       },
-      required: ['id', 'content'],
+      required: ['content'],
       additionalProperties: false,
     },
     handler: (db, ctx, args) =>
-      postArtifact(db, args.id, { key: args.key, kind: args.kind, title: args.title, content: args.content }, ctx.userId),
+      postArtifact(db, taskIdOf(args), { key: args.key, kind: args.kind, title: args.title, content: args.content }, ctx.userId),
   },
   {
     name: 'gfa_submit_output',
-    description: 'Record output references / artifacts (the "ship" step), e.g. { pr: "https://..." }.',
+    description: 'Record output references / artifacts (the "ship" step), e.g. { pr: "https://..." }. Accepts the task id as either `id` or `taskId`.',
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Task id.' },
+        ...ID_OR_TASKID,
         refs: freeObject('Output artifacts / links.'),
       },
-      required: ['id', 'refs'],
+      required: ['refs'],
       additionalProperties: false,
     },
-    handler: (db, ctx, args) => setRefs(db, args.id, args.refs, ctx.userId),
+    handler: (db, ctx, args) => setRefs(db, taskIdOf(args), args.refs, ctx.userId),
   },
 ];
 

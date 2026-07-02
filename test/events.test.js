@@ -25,3 +25,9 @@ test('appendEvent then listEvents returns events oldest-first with parsed payloa
   assert.deepEqual(evs[0].payload, { a: 1 });
   assert.equal(evs[1].payload.to, 'researching');
 });
+
+test('appendEvent refuses a null/undefined task id with a clean NO_TASK (no cryptic NOT NULL crash)', () => {
+  const db = openDb(':memory:');
+  assert.throws(() => appendEvent(db, null, 'actor', 'kind', {}), /NO_TASK/);
+  assert.throws(() => appendEvent(db, undefined, 'actor', 'kind', {}), /NO_TASK/);
+});

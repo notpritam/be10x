@@ -216,3 +216,25 @@ test('verifyToken rejects a bogus secret and accepts a freshly created one', () 
   const ok = verifyToken(db, tok.token);
   assert.equal(ok.userId, owner.id);
 });
+
+test('gfa_submit_output accepts the task id as `taskId` (the alias the agent often sends) and records refs', () => {
+  const { db, ctx } = seed();
+  const task = call(db, ctx, 'gfa_create_task', { type: 'general', scope: 'personal', title: 'Ship it', content: { summary: 's' } });
+  // The agent habitually passes `taskId` (matching gfa_update_progress / gfa_submit_plan). This used to
+  // crash with "NOT NULL constraint failed: task_events.task_id" and wedge the task in verify; now it works.
+  const updated = call(db, ctx, 'gfa_submit_output', { taskId: task.id, refs: { pr: 'https://x/pr/1' } });
+  assert.deepEqual(updated.refs, { pr: 'https://x/pr/1' });
+});
+
+test('gfa_submit_output with no resolvable task id fails cleanly (NO_TASK), not a NOT NULL crash', () => {
+  const { db, ctx } = seed();
+  assert.throws(() => call(db, ctx, 'gfa_submit_output', { refs: { pr: 'x' } }), /NO_TASK/);
+});
+
+test('id-based tools also accept `taskId` (gfa_get_task / gfa_plan_task)', () => {
+  const { db, ctx } = seed();
+  const task = call(db, ctx, 'gfa_create_task', { type: 'general', scope: 'personal', title: 'T', content: { summary: 's' } });
+  assert.equal(call(db, ctx, 'gfa_get_task', { taskId: task.id }).id, task.id);
+  const planned = call(db, ctx, 'gfa_plan_task', { taskId: task.id, plan: '<b>plan</b>' });
+  assert.equal(planned.plan, '<b>plan</b>');
+});
