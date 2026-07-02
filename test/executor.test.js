@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb } from '../src/db/db.js';
 import { getLatestRunForTask, createRun, setRunSession } from '../src/executor/runs.js';
+import { listRunSteps } from '../src/executor/run-steps.js';
 import { makeClaudeExecutor, buildPrompt } from '../src/executor/executor.js';
 
 // A task row must exist for recordProgress (UPDATE tasks + appendEvent) to land.
@@ -171,6 +172,43 @@ test('a successful run scrapes + persists the session id and marks the run done'
   assert.equal(summary.done, true);
   assert.equal(summary.sessionId, 'sess-xyz');
   assert.equal(summary.runId, run.id);
+});
+
+test('a run records an execution trace: the prompt/context handed down, each tool call, then the result', async () => {
+  const db = seed();
+  const spawn = fakeSpawn({
+    stdout: [
+      '{"type":"system","subtype":"init","session_id":"sess-tr"}',
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"git status"}}]}}',
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"gfa_update_progress","input":{"todos":[]}}]}}',
+      '{"type":"result","subtype":"success","session_id":"sess-tr","result":"ok"}',
+    ],
+    exitCode: 0,
+  });
+  const execute = makeClaudeExecutor(db, PROJECT, { spawn, ensureWorktree: fakeEnsure() });
+
+  const summary = await execute(TASK, { mode: 'execute' });
+  const steps = listRunSteps(db, summary.runId);
+
+  // First step is the context we passed down — the full prompt + the resolved command/args.
+  assert.equal(steps[0].kind, 'prompt');
+  assert.match(steps[0].detail.prompt, /EXECUTE MODE/);
+  assert.ok(Array.isArray(steps[0].detail.args));
+
+  // Then the commands the agent ran, in order.
+  const tools = steps.filter((s) => s.kind === 'tool');
+  assert.equal(tools.length, 2);
+  assert.equal(tools[0].tool, 'Bash');
+  assert.equal(tools[0].detail.input.command, 'git status');
+  assert.equal(tools[1].tool, 'gfa_update_progress');
+
+  // Bookended by the outcome.
+  const last = steps[steps.length - 1];
+  assert.equal(last.kind, 'result');
+  assert.equal(last.detail.done, true);
+
+  // Ordered contiguously by seq.
+  steps.forEach((s, i) => assert.equal(s.seq, i));
 });
 
 test('a run that exits without a result is marked failed and the board shows blocked', async () => {

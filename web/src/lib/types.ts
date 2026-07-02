@@ -166,7 +166,21 @@ export interface InputRequest {
 
 export type ReviewVerdict = "approved" | "changes_requested";
 
-/** One execution of the agent against a task — the "where/how it worked" metadata. */
+/** One step of a run's execution trace — the prompt/context we handed down, a tool the agent invoked
+ *  (with its input), a tool result, or the terminal outcome. The "what happened, in depth" record. */
+export interface RunStep {
+  id: string;
+  runId: string;
+  taskId: string;
+  seq: number;
+  kind: "prompt" | "tool" | "tool_result" | "text" | "result";
+  tool: string | null;
+  detail: Record<string, unknown> | null;
+  createdAt: number;
+}
+
+/** One execution of the agent against a task — the "where/how it worked" metadata. `steps` is the
+ *  execution trace, present on the debug snapshot (GET /api/tasks/:id/debug) and absent elsewhere. */
 export interface Run {
   id: string;
   taskId: string;
@@ -184,6 +198,7 @@ export interface Run {
   createdAt: number;
   startedAt: number | null;
   endedAt: number | null;
+  steps?: RunStep[];
 }
 
 /** A comment on a task — the human's channel for steering the agent (plan feedback, direction). */

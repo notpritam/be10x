@@ -5,6 +5,7 @@
 import { getTask } from './tasks.js';
 import { listEvents } from './events.js';
 import { listRunsForTask } from '../executor/runs.js';
+import { listRunSteps } from '../executor/run-steps.js';
 import { getOpenInputRequest } from './input_requests.js';
 
 const EVENT_LIMIT = 60;
@@ -41,11 +42,22 @@ export function taskDebug(db, taskId) {
   const task = getTask(db, taskId);
   if (!task) return null;
   const events = listEvents(db, taskId);
+  // Each run carries its execution trace (prompt/context handed down + every command it ran) so the
+  // debug view can go in-depth on demand. Best-effort: a missing run_steps table (very old db) yields [].
+  const runs = listRunsForTask(db, taskId).map((r) => {
+    let steps = [];
+    try {
+      steps = listRunSteps(db, r.id);
+    } catch {
+      steps = [];
+    }
+    return { ...r, steps };
+  });
   return {
     now: Date.now(),
     task,
     agent: task.agent ?? null,
-    runs: listRunsForTask(db, taskId),
+    runs,
     wakes: listWakesForTask(db, taskId),
     events: events.slice(-EVENT_LIMIT).reverse(), // most-recent first for the debug view
     input: getOpenInputRequest(db, taskId),

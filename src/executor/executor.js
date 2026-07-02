@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto';
 import { buildClaudeCommand, BE10X_SYSTEM_PROMPT, StreamAccumulator } from './claude-adapter.js';
 import { ensureWorktree as realEnsureWorktree, worktreeBranch, collectGitMeta } from './worktree.js';
 import { createRun, setRunSession, setRunModel, setRunPid, markRunning, finishRun, getLatestRunForTask } from './runs.js';
+import { recordRunStep } from './run-steps.js';
 import { recordProgress } from '../worker/worker.js';
 
 const BOARD_MSG_MAX = 280;
@@ -198,13 +199,31 @@ export function makeClaudeExecutor(db, project, opts = {}) {
       workerId
     );
 
+    // Monotonic trace sequence for this run (prompt=0, then each tool call, then the result). Shared by
+    // the stdin write below and the stream consumer's closure.
+    let stepSeq = 0;
+    const promptText = buildPrompt(task, { mode, comments, wakeContext });
+    // The exact context we handed down — the full prompt, the resolved command + args, and whether this
+    // was a resume. Recorded verbatim so the debug view can show "what we passed the agent" in depth.
+    try {
+      recordRunStep(db, {
+        runId: run.id,
+        taskId: task.id,
+        seq: stepSeq++,
+        kind: 'prompt',
+        detail: { mode, resumed: !!resumeSessionId, sessionId: resumeSessionId, command, args, prompt: promptText },
+      });
+    } catch {
+      // best-effort trace — never block the run on a trace write
+    }
+
     return await new Promise((resolve) => {
       const child = spawn(command, args, { cwd: wt.path, env: childEnv, stdio: ['pipe', 'pipe', 'pipe'] });
       if (child.pid) setRunPid(db, run.id, child.pid);
 
       // Deliver the prompt on stdin, then close it so the CLI's print mode runs to completion.
       try {
-        child.stdin.write(buildPrompt(task, { mode, comments, wakeContext }));
+        child.stdin.write(promptText);
         child.stdin.end();
       } catch {
         // if stdin is already gone the child.error/close path handles it
@@ -237,6 +256,12 @@ export function makeClaudeExecutor(db, project, opts = {}) {
           }
           if (ev.text) {
             recordProgress(db, task.id, { state: 'working', step: 'agent', message: truncate(ev.text) }, workerId);
+          }
+          // The commands the agent ran, in order: each tool_use (Bash, Edit, gfa_*, …) with its input.
+          if (ev.toolUses && ev.toolUses.length) {
+            for (const t of ev.toolUses) {
+              recordRunStep(db, { runId: run.id, taskId: task.id, seq: stepSeq++, kind: 'tool', tool: t.name, detail: { input: t.input } });
+            }
           }
         } catch {
           // best-effort telemetry — never let a stream-side write crash the process
@@ -272,6 +297,18 @@ export function makeClaudeExecutor(db, project, opts = {}) {
           ...(git ? { git } : {}),
           ...extra,
         };
+        // Bookend the trace with the outcome (best-effort).
+        try {
+          recordRunStep(db, {
+            runId: run.id,
+            taskId: task.id,
+            seq: stepSeq++,
+            kind: 'result',
+            detail: { done: acc.done, ok, ...(extra.exitCode !== undefined ? { exitCode: extra.exitCode } : {}), ...(extra.error ? { error: extra.error } : {}) },
+          });
+        } catch {
+          // best-effort trace
+        }
         if (ok && acc.done) {
           finishRun(db, run.id, { status: 'done', result: summary });
           recordProgress(

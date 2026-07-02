@@ -120,8 +120,24 @@ function extractAssistantText(obj) {
   return text;
 }
 
+// Pull the tool calls out of an assistant message: each `{type:'tool_use', name, input}` content item
+// becomes `{ name, input }`. This is the "what commands did the agent run" signal — Bash commands, file
+// edits, gfa_* board calls. Non-assistant / text-only messages yield []. Tolerant of shape drift.
+function extractToolUses(obj) {
+  if (obj.type !== 'assistant' || !obj.message || typeof obj.message !== 'object') return [];
+  const content = obj.message.content;
+  if (!Array.isArray(content)) return [];
+  const uses = [];
+  for (const item of content) {
+    if (item && typeof item === 'object' && item.type === 'tool_use' && typeof item.name === 'string') {
+      uses.push({ name: item.name, input: item.input ?? null });
+    }
+  }
+  return uses;
+}
+
 // Parse one line of Claude `stream-json`. Returns null for blank / non-JSON / non-object lines.
-// Otherwise a normalized event: { raw, type, sessionId, messageId, text, result, isResult }.
+// Otherwise a normalized event: { raw, type, sessionId, messageId, text, toolUses, result, isResult }.
 // Tolerant by design — any object surfaces its session id and its result-ness regardless of shape.
 export function parseStreamLine(line) {
   if (typeof line !== 'string') return null;
@@ -147,6 +163,7 @@ export function parseStreamLine(line) {
     model: findModel(obj),
     messageId: findMessageId(obj),
     text: extractAssistantText(obj),
+    toolUses: extractToolUses(obj),
     result: isResult ? obj : null,
     isResult,
   };

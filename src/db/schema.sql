@@ -131,6 +131,24 @@ CREATE TABLE IF NOT EXISTS runs (
   ended_at      INTEGER
 );
 
+-- The step-by-step execution trace of a run — the "what happened, in depth" record for debugging: the
+-- exact prompt/context handed to the agent (kind='prompt'), each tool the agent invoked with its input
+-- (kind='tool', e.g. a Bash command or an Edit) and the tool's result (kind='tool_result'), plus the
+-- terminal outcome (kind='result'). Append-only, ordered by seq within a run. Deliberately verbose (not
+-- truncated like board progress notes) so a human can reconstruct exactly what the agent ran and saw.
+CREATE TABLE IF NOT EXISTS run_steps (
+  id          TEXT PRIMARY KEY,
+  run_id      TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  task_id     TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  seq         INTEGER NOT NULL,
+  kind        TEXT NOT NULL,
+  tool        TEXT,
+  detail_json TEXT,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_run_steps_run ON run_steps (run_id, seq);
+CREATE INDEX IF NOT EXISTS idx_run_steps_task ON run_steps (task_id, created_at);
+
 -- Human context delivered to the agent: a comment on the plan (or the diagram, or general). anchor lets
 -- the board pin a thread to a plan line / diagram node. seen_at is stamped once the agent has folded the
 -- comment into a wake prompt, so follow-up wakes stay delta-only (unseen comments only).

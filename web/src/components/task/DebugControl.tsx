@@ -2,10 +2,10 @@
 // status, wake queue, run rows, recent events) with Copy JSON + Log to console. Rendered in the task
 // page's right rail (no modal); read-only, auto-refreshes while mounted.
 import { useCallback, useEffect, useState } from "react";
-import { ClipboardCopy, RefreshCw, TerminalSquare } from "lucide-react";
+import { ChevronRight, ClipboardCopy, RefreshCw, TerminalSquare } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import type { TaskDebug } from "@/lib/types";
+import type { Run, RunStep, TaskDebug } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -142,8 +142,16 @@ export function DebugPanelContent({ taskId }: { taskId: string }) {
             {dbg.wakes.length === 0 ? <Empty>No wakes.</Empty> : <Raw value={dbg.wakes} />}
           </DebugSection>
 
-          <DebugSection title={`Runs (${dbg.runs.length})`}>
-            {dbg.runs.length === 0 ? <Empty>No runs.</Empty> : <Raw value={dbg.runs} />}
+          <DebugSection title={`Runs & trace (${dbg.runs.length})`}>
+            {dbg.runs.length === 0 ? (
+              <Empty>No runs.</Empty>
+            ) : (
+              <ul className="space-y-2">
+                {[...dbg.runs].reverse().map((r) => (
+                  <RunTrace key={r.id} run={r} now={dbg.now} />
+                ))}
+              </ul>
+            )}
           </DebugSection>
 
           <DebugSection title="Live agent">
@@ -157,6 +165,157 @@ export function DebugPanelContent({ taskId }: { taskId: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+// One run rendered as an expandable execution trace: the context we handed the agent, each command it
+// ran (with a one-line summary + drill-down), and the outcome. This is the "see the steps in depth"
+// view — deliberately verbose, only when you open it.
+function RunTrace({ run, now }: { run: Run; now: number }) {
+  const live = run.status === "running" || run.status === "starting";
+  const [open, setOpen] = useState(live);
+  const steps = run.steps ?? [];
+  const prompt = steps.find((s) => s.kind === "prompt");
+  const tools = steps.filter((s) => s.kind === "tool");
+  const result = steps.find((s) => s.kind === "result");
+  const mode = typeof prompt?.detail?.mode === "string" ? (prompt.detail.mode as string) : null;
+  const when = run.startedAt ?? run.createdAt;
+
+  return (
+    <li className="overflow-hidden rounded-[8px] border border-border/60 bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-2.5 py-2 text-left"
+      >
+        <ChevronRight className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
+        <span
+          className={cn(
+            "size-1.5 shrink-0 rounded-full",
+            live ? "bg-emerald-500" : run.status === "failed" ? "bg-red-500" : "bg-muted-foreground/40",
+          )}
+        />
+        {mode && <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{mode}</span>}
+        <span className="text-[11.5px] font-medium text-foreground">{live ? "running" : run.status}</span>
+        <span className="text-[11px] text-muted-foreground">{tools.length} cmd{tools.length === 1 ? "" : "s"}</span>
+        <span className="ml-auto text-[10.5px] text-muted-foreground/70">{agoLabel(now - when)}</span>
+      </button>
+
+      {open && (
+        <div className="space-y-2 border-t border-border/50 px-2.5 py-2.5">
+          {/* What we passed down */}
+          {prompt ? (
+            <StepDisclosure label="Context handed down" tone="prompt">
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-1.5 text-[10.5px] text-muted-foreground">
+                  {mode && <Tag>mode: {mode}</Tag>}
+                  <Tag>{prompt.detail?.resumed ? "resumed session" : "fresh session"}</Tag>
+                  {typeof prompt.detail?.sessionId === "string" && <Tag>resume {String(prompt.detail.sessionId).slice(0, 8)}</Tag>}
+                </div>
+                {Array.isArray(prompt.detail?.args) && (
+                  <div>
+                    <div className="mb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/60">command</div>
+                    <pre className="overflow-auto scroll-thin rounded border border-border/50 bg-muted/50 p-2 font-mono text-[10px] leading-relaxed text-foreground/80">
+                      {String(prompt.detail?.command ?? "")} {(prompt.detail.args as unknown[]).join(" ")}
+                    </pre>
+                  </div>
+                )}
+                {typeof prompt.detail?.prompt === "string" && (
+                  <div>
+                    <div className="mb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/60">prompt / context</div>
+                    <pre className="max-h-72 overflow-auto scroll-thin rounded border border-border/50 bg-muted/50 p-2 whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-foreground/80">
+                      {prompt.detail.prompt as string}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            </StepDisclosure>
+          ) : (
+            <Empty>No trace for this run (it may predate tracing, or ran under an older server).</Empty>
+          )}
+
+          {/* Commands it ran */}
+          {tools.length > 0 && (
+            <div>
+              <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground/60">Commands ({tools.length})</div>
+              <ol className="space-y-1">
+                {tools.map((s) => (
+                  <StepRow key={s.id} step={s} />
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {/* Outcome */}
+          {result && (
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <span className="text-muted-foreground/60">→</span>
+              <span className={cn("font-medium", result.detail?.done ? "text-emerald-600" : "text-red-600")}>
+                {result.detail?.done ? "completed" : "ended without a result"}
+              </span>
+              {typeof result.detail?.exitCode === "number" && <span className="text-muted-foreground">exit {String(result.detail.exitCode)}</span>}
+              {typeof result.detail?.error === "string" && <span className="truncate text-red-600/80" title={result.detail.error}>{result.detail.error}</span>}
+            </div>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+// One command the agent ran: tool name + a readable one-line summary, expandable to the full input JSON.
+function StepRow({ step }: { step: RunStep }) {
+  const [open, setOpen] = useState(false);
+  const summary = toolSummary(step);
+  return (
+    <li className="rounded border border-border/40 bg-muted/30">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-start gap-1.5 px-2 py-1 text-left">
+        <ChevronRight className={cn("mt-0.5 size-3 shrink-0 text-muted-foreground/60 transition-transform", open && "rotate-90")} />
+        <code className="shrink-0 font-mono text-[10.5px] font-semibold text-primary/90">{step.tool}</code>
+        {summary && <span className="min-w-0 truncate font-mono text-[10.5px] text-foreground/70" title={summary}>{summary}</span>}
+      </button>
+      {open && step.detail != null && (
+        <pre className="max-h-56 overflow-auto scroll-thin border-t border-border/40 p-2 font-mono text-[10px] leading-relaxed text-foreground/75">
+          {JSON.stringify((step.detail as { input?: unknown }).input ?? step.detail, null, 2)}
+        </pre>
+      )}
+    </li>
+  );
+}
+
+function StepDisclosure({ label, tone, children }: { label: string; tone?: "prompt"; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={cn("rounded border", tone === "prompt" ? "border-primary/20 bg-primary/[0.03]" : "border-border/40")}>
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left">
+        <ChevronRight className={cn("size-3 shrink-0 text-muted-foreground/60 transition-transform", open && "rotate-90")} />
+        <span className="text-[11px] font-medium text-foreground/80">{label}</span>
+      </button>
+      {open && <div className="border-t border-border/40 px-2 py-2">{children}</div>}
+    </div>
+  );
+}
+
+function Tag({ children }: { children: React.ReactNode }) {
+  return <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{children}</span>;
+}
+
+// A readable one-liner for a tool call: the Bash command, the edited file, the search pattern, etc.
+function toolSummary(step: RunStep): string {
+  const input = (step.detail as { input?: unknown } | null)?.input;
+  if (!input || typeof input !== "object") return "";
+  const rec = input as Record<string, unknown>;
+  const pick = (k: string) => (typeof rec[k] === "string" ? (rec[k] as string) : "");
+  return (
+    pick("command") ||
+    pick("file_path") ||
+    pick("path") ||
+    pick("pattern") ||
+    pick("url") ||
+    pick("query") ||
+    pick("description") ||
+    pick("message") ||
+    ""
   );
 }
 
