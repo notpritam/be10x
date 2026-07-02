@@ -35,7 +35,7 @@ function truncate(s, n = BOARD_MSG_MAX) {
 // ("Not logged in · Please run /login", "API Error: Unable to connect…") — both of which the executor used
 // to discard, leaving every failure looking identical in the DB. Order: explicit spawn error → result
 // payload → last assistant text → stderr → exit code.
-function deriveError(acc, stderrBuf, extra) {
+export function deriveError(acc, stderrBuf, extra) {
   if (extra.error) return String(extra.error);
   const r = acc.result;
   if (r && typeof r === 'object') {
@@ -90,7 +90,7 @@ const MODE_DIRECTIVE = {
 // transcript: `plan` is a clean start; `execute` is a clean handoff from the APPROVED PLAN (the planning
 // session is deliberately not carried over); `verify` is a clean read of the diff. Everything else
 // (revise, input_answer, follow_up, chat) resumes the same session for tight, stateful iteration.
-const FRESH_MODES = new Set(['plan', 'execute', 'verify']);
+export const FRESH_MODES = new Set(['plan', 'execute', 'verify']);
 // Fresh modes whose prompt must carry the approved plan (they don't inherit it from a resumed session).
 const PLAN_MODES = new Set(['execute', 'verify']);
 
