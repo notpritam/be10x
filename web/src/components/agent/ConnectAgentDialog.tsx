@@ -2,7 +2,7 @@
 // show the plaintext secret exactly ONCE with a copy button, and render a ready-to-paste MCP config JSON
 // built from GET /api/agent-config + the new token. Also lists existing tokens with a Revoke action.
 import { useCallback, useEffect, useState } from "react";
-import { Check, Copy, KeyRound, Loader2, Plug, ShieldCheck, Trash2 } from "lucide-react";
+import { Check, Copy, KeyRound, Loader2, Plug, ShieldCheck, Terminal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import type { AgentConfig, MintedToken, TokenInfo } from "@/lib/types";
@@ -32,6 +32,17 @@ function buildMcpConfig(config: AgentConfig | null, token: string): string {
     },
   };
   return JSON.stringify(obj, null, 2);
+}
+
+// The board's own URL — when a member opens this hosted dashboard, the origin IS the board they link to.
+function boardOrigin(): string {
+  if (typeof window !== "undefined" && window.location?.origin) return window.location.origin;
+  return "https://your-board.example.com";
+}
+
+// The one command a member runs on THEIR machine to link it to this board and run the agent locally.
+function buildConnectCommand(token: string): string {
+  return `be10x connect --board ${boardOrigin()} --token ${token} --repos ~/code/your-repo`;
 }
 
 function useCopy(): [boolean, (text: string) => void] {
@@ -137,10 +148,11 @@ export function ConnectAgentDialog({
             <span className="grid size-7 place-items-center rounded-lg bg-primary/12 text-primary">
               <Plug className="size-4" />
             </span>
-            Connect an agent
+            Connect your machine
           </DialogTitle>
           <DialogDescription>
-            Give Claude Code an access token, then paste the MCP config so it can work your board.
+            Link your computer to this board. Claude runs on your machine, on your own repos and login — the
+            board just coordinates the work. Nothing runs on the server.
           </DialogDescription>
         </DialogHeader>
 
@@ -192,28 +204,53 @@ export function ConnectAgentDialog({
                 </h3>
               </div>
 
-              <div className="mb-3 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+              <div className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
                 <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground">
                   {minted.token}
                 </code>
                 <CopyButton text={minted.token} label="Copy token" />
               </div>
 
-              <div className="mb-1.5 flex items-center justify-between">
-                <p className="text-[12px] font-semibold text-foreground/80">
-                  MCP config for Claude Code
-                </p>
-                <CopyButton text={buildMcpConfig(config, minted.token)} label="Copy config" />
+              {/* Primary path: run the agent on YOUR machine, linked to this board. */}
+              <div className="mb-1.5 flex items-center gap-2">
+                <Terminal className="size-4 text-primary" />
+                <p className="text-[12px] font-semibold text-foreground/80">Run this on your machine</p>
               </div>
-              <pre className="max-h-64 overflow-auto scroll-thin rounded-lg border border-border bg-card px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground/90">
-                {buildMcpConfig(config, minted.token)}
-              </pre>
-              {!config && (
-                <p className="mt-1.5 text-[11px] text-muted-foreground/80">
-                  Couldn't reach the server for exact paths — replace the placeholder path and DB path
-                  with yours.
-                </p>
-              )}
+              <p className="mb-2 text-[11.5px] text-muted-foreground/80">
+                Install the be10x CLI once (you'll use your own Claude Code login), then link this machine —
+                point <code className="font-mono text-[11px]">--repos</code> at the checkouts you want to work
+                here:
+              </p>
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+                <code className="min-w-0 flex-1 overflow-x-auto scroll-thin whitespace-nowrap font-mono text-[12px] text-foreground">
+                  {buildConnectCommand(minted.token)}
+                </code>
+                <CopyButton text={buildConnectCommand(minted.token)} label="Copy" />
+              </div>
+              <p className="mt-2 text-[11.5px] text-muted-foreground/80">
+                Now create a task for one of those repos on the board — your machine picks it up, runs Claude
+                locally, and streams the plan and progress back here for the team to review.
+              </p>
+
+              {/* Advanced: agent on the SAME machine as the board (local stdio MCP + shared db). */}
+              <details className="mt-4 rounded-lg border border-border/60 bg-card/60 px-3 py-2">
+                <summary className="cursor-pointer select-none text-[12px] font-medium text-muted-foreground">
+                  Running Claude Code on the same machine as the board? Use this MCP config instead
+                </summary>
+                <div className="mt-2.5 flex items-center justify-between">
+                  <p className="text-[11.5px] text-muted-foreground/80">MCP config for Claude Code</p>
+                  <CopyButton text={buildMcpConfig(config, minted.token)} label="Copy config" />
+                </div>
+                <pre className="mt-1.5 max-h-56 overflow-auto scroll-thin rounded-lg border border-border bg-card px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground/90">
+                  {buildMcpConfig(config, minted.token)}
+                </pre>
+                {!config && (
+                  <p className="mt-1.5 text-[11px] text-muted-foreground/80">
+                    Couldn't reach the server for exact paths — replace the placeholder path and DB path with
+                    yours.
+                  </p>
+                )}
+              </details>
             </div>
           )}
 
