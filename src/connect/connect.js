@@ -29,6 +29,60 @@ export function makeBoardClient({ board, token, fetchImpl = fetch }) {
   };
 }
 
+// Drive the browser device-authorization login (`be10x login`) against a hosted board: mint a code, hand the
+// user the approve URL (opened in their browser), then poll until the board mints and returns a token. Pure
+// of process concerns — `open` (browser), `sleep` (backoff), `fetchImpl`, and `now` are injected so
+// bin/be10x.js wires the real ones and tests drive it deterministically. Resolves { board, token, user }.
+export async function runDeviceLogin({
+  board,
+  label = null,
+  fetchImpl = fetch,
+  open = () => {},
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+  log = () => {},
+  now = () => Date.now(),
+  maxMs = 10 * 60 * 1000,
+} = {}) {
+  const base = String(board || '').replace(/\/+$/, '');
+  if (!base) throw new Error('a board URL is required (be10x login <board-url>)');
+  const post = async (path, body) => {
+    const res = await fetchImpl(base + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+    return json;
+  };
+
+  const start = await post('/api/device/code', { label });
+  const approveUrl = start.verificationUriComplete || start.verificationUri;
+  log({ event: 'code', userCode: start.userCode, verificationUri: approveUrl });
+  open(approveUrl);
+
+  const intervalMs = Math.max(1, Number(start.interval) || 3) * 1000;
+  const deadline = now() + Math.min(maxMs, start.expiresIn ? start.expiresIn * 1000 : maxMs);
+  while (now() < deadline) {
+    await sleep(intervalMs);
+    let poll;
+    try {
+      poll = await post('/api/device/token', { deviceCode: start.deviceCode });
+    } catch (e) {
+      // A transient network blip shouldn't abort the login — keep polling until the deadline.
+      log({ event: 'poll_error', error: e?.message ?? String(e) });
+      continue;
+    }
+    if (poll.status === 'approved') return { board: base, token: poll.token, user: poll.user || null };
+    if (poll.status === 'denied') throw new Error('the request was denied on the board');
+    if (poll.status === 'expired' || poll.status === 'consumed' || poll.status === 'not_found') {
+      throw new Error('the login code expired — run `be10x login` again');
+    }
+    // 'pending' → keep waiting
+  }
+  throw new Error('timed out waiting for approval — run `be10x login` again');
+}
+
 // One claim→run→report cycle. Claims the next wake for the repos this connector serves; if one comes back,
 // maps it to the matching local checkout (by project key), runs the injected executor there, and reports the
 // summary so the board applies durability. Returns { claim, summary } (or null when nothing is ready). A

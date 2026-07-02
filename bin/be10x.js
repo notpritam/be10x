@@ -3,7 +3,8 @@
 // ABOUTME: MCP config for Claude Code (`link`), runs the local agent runner (`work`), and serves the board.
 // Dependency-free: node built-ins + the project's own src/* core only.
 import { fileURLToPath } from 'node:url';
-import { homedir } from 'node:os';
+import { homedir, hostname } from 'node:os';
+import { spawn } from 'node:child_process';
 import { dirname, resolve, join, basename } from 'node:path';
 import { mkdirSync, writeFileSync, readFileSync, cpSync, existsSync } from 'node:fs';
 import { getUserByEmail } from '../src/auth/users.js';
@@ -14,7 +15,7 @@ import { detectProjectKey, registerProject, getProjectByKey, listProjects } from
 import { enqueueWake } from '../src/executor/wake.js';
 import { wakeLoop, wakeLoopAll } from '../src/runner/runner.js';
 import { makeRemoteExecutor } from '../src/connect/remote-executor.js';
-import { makeBoardClient, connectLoop, writeMcpConfig, loadConnectConfig, saveConnectConfig, connectConfigPath } from '../src/connect/connect.js';
+import { makeBoardClient, connectLoop, writeMcpConfig, loadConnectConfig, saveConnectConfig, connectConfigPath, runDeviceLogin } from '../src/connect/connect.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SIGNUP_HINT = 'Sign up on the board first: be10x serve → http://localhost:4610';
@@ -63,6 +64,19 @@ async function openBoardDb(path = dbPathAbs()) {
 
 const mcpServerPath = () => resolve(here, '..', 'src', 'mcp', 'server.js');
 
+// Best-effort "open this URL in the default browser" for `be10x login`. Detached + unref'd so the CLI never
+// waits on the browser; the URL is always printed too, so a headless box (no opener) just falls back to that.
+function openBrowser(url) {
+  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+  try {
+    const child = spawn(cmd, [url], { stdio: 'ignore', detached: true, shell: process.platform === 'win32' });
+    child.on('error', () => {});
+    child.unref();
+  } catch {
+    /* no opener available — the printed URL is the fallback */
+  }
+}
+
 // Owning user: an explicit --email/GFA_EMAIL wins; otherwise the single/first user on the board. Null if
 // there's no such user (the caller prints the signup hint and exits).
 function resolveUserId(db, email) {
@@ -87,6 +101,53 @@ async function cmdServe(args) {
   const makeExecutor = (project) => makeClaudeExecutor(db, project, { model: process.env.GFA_MODEL, workerId: 'runner' });
   wakeLoopAll(db, { workerId: 'runner', makeExecutor });
   console.log('be10x runner working all linked repos on board wakes.');
+}
+
+// login [<board-url>] [--board URL] [--name label] — browser device-authorization against a HOSTED board.
+// Opens the board's approve screen; once you click Authorize there (you're already logged in), the CLI
+// collects a personal token and saves it to ~/.be10x/connect.json — so `be10x link` / `be10x connect`
+// afterwards need no flags. The paste-free way onto a hosted board; the board URL is only needed once.
+async function cmdLogin(args) {
+  const cfgPath = connectConfigPath();
+  const saved = loadConnectConfig(cfgPath) || {};
+  const board = args._[0] || (args.board && args.board !== true ? args.board : null) || saved.board;
+  if (!board) {
+    console.error('Usage: be10x login <board-url>');
+    console.error('  e.g. be10x login https://be10x.notpritam.in');
+    process.exit(1);
+  }
+  const label = args.name && args.name !== true ? args.name : hostname();
+  console.log('Connecting to ' + board + ' …');
+
+  let result;
+  try {
+    result = await runDeviceLogin({
+      board,
+      label,
+      open: openBrowser,
+      log: (ev) => {
+        if (ev.event === 'code') {
+          console.log('');
+          console.log('  Opening your browser to authorize this machine.');
+          console.log("  If it doesn't open, visit:  " + ev.verificationUri);
+          console.log('  Confirm this code matches:  ' + ev.userCode);
+          console.log('');
+          console.log('  Waiting for you to click Authorize on the board…  (Ctrl-C to cancel)');
+        }
+      },
+    });
+  } catch (e) {
+    console.error('Login failed: ' + (e?.message ?? e));
+    process.exit(1);
+  }
+
+  saveConnectConfig({ ...saved, board: result.board, token: result.token }, cfgPath);
+  const who = result.user && (result.user.displayName || result.user.email);
+  console.log('');
+  console.log('✓ Logged in to ' + result.board + (who ? ' as ' + who : '') + '.');
+  console.log('  Saved to ' + cfgPath);
+  console.log('');
+  console.log('Next:  cd into a repo, run  be10x link  — then  be10x connect');
 }
 
 // link [--name X] [--email you@x] — register the cwd as a project, mint a cli token, and write + print a
@@ -407,6 +468,7 @@ async function cmdInstallSkill() {
 
 const COMMANDS = {
   serve: cmdServe,
+  login: cmdLogin,
   link: cmdLink,
   token: cmdToken,
   work: cmdWork,
@@ -422,6 +484,7 @@ function usage() {
   console.log('');
   console.log('Commands:');
   console.log('  serve [--port N]                 run the HTTP board');
+  console.log('  login [board-url]                browser sign-in to a hosted board (saves a token, no paste)');
   console.log('  link  [--name X] [--email E]     register this repo + write Claude-Code MCP config');
   console.log('  token [--name X] [--email E]     mint a personal access token (shown once)');
   console.log('  work  [--interval S] [--once]    run the agent runner for this repo');
