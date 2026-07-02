@@ -103,6 +103,14 @@ test('deny makes the CLI poll return denied', async () => {
   });
 });
 
+test('GET /api/version is public and reports the board version', async () => {
+  await withServer(async (base) => {
+    const res = await req(base, 'GET', '/api/version');
+    assert.equal(res.status, 200);
+    assert.match(res.json.version, /^\d+\.\d+\.\d+/);
+  });
+});
+
 test('pending lookup of an unknown code is 404', async () => {
   await withServer(async (base) => {
     const cookie = await signup(base);

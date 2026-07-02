@@ -31,6 +31,15 @@ import { listPlanVersions, getPlanVersion } from '../plans/versions.js';
 const here = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(here, '..', '..', 'public');
 const MCP_SERVER_PATH = resolve(here, '..', 'mcp', 'server.js');
+// The board's own version (from package.json) — served publicly at /api/version so a connector can tell when
+// its CLI is behind and prompt `be10x update`.
+const VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(join(here, '..', '..', 'package.json'), 'utf8')).version || '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+})();
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 
 // Append "; Secure" to the session cookie in HTTPS deploys (behind a TLS-terminating proxy like Caddy).
@@ -155,6 +164,7 @@ const ROUTES = [
     res.setHeader('Set-Cookie', `gfa_sid=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${SECURE_COOKIE}`);
     send(res, 200, { ok: true });
   }],
+  ['GET', '/api/version', false, async ({ res }) => send(res, 200, { version: VERSION })],
   ['GET', '/api/me', true, async ({ res, user }) => send(res, 200, { user })],
   ['GET', '/api/teams', true, async ({ db, res, user }) => send(res, 200, { teams: teamsForUser(db, user.id) })],
   ['POST', '/api/teams', true, async ({ db, res, body, user }) => send(res, 200, { team: createTeam(db, { name: body.name, createdBy: user.id }) })],

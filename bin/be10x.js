@@ -17,6 +17,8 @@ import { wakeLoop, wakeLoopAll } from '../src/runner/runner.js';
 import { makeRemoteExecutor } from '../src/connect/remote-executor.js';
 import { makeBoardClient, connectLoop, writeMcpConfig, loadConnectConfig, saveConnectConfig, connectConfigPath, runDeviceLogin, upsertRepo } from '../src/connect/connect.js';
 import { buildLaunchdPlist, buildSystemdUnit, serviceEnvPath, servicePaths, isRemovablePath } from '../src/connect/service.js';
+import { renderWelcome } from '../src/cli/welcome.js';
+import { fg, dim, bold, sym, BRAND } from '../src/cli/ui.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SIGNUP_HINT = 'Sign up on the board first: be10x serve → http://localhost:4610';
@@ -76,6 +78,63 @@ function openBrowser(url) {
   } catch {
     /* no opener available — the printed URL is the fallback */
   }
+}
+
+// --- welcome / version helpers ------------------------------------------------
+
+function readPkgVersion() {
+  try {
+    return JSON.parse(readFileSync(resolve(here, '..', 'package.json'), 'utf8')).version || '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
+// Ask a board which version it runs (public, unauthed) so the welcome can flag an available update. Tight
+// timeout + swallow-all so a slow/unreachable board never blocks or errors the CLI.
+async function fetchLatestVersion(board) {
+  try {
+    const res = await fetch(String(board).replace(/\/+$/, '') + '/api/version', { signal: AbortSignal.timeout(800) });
+    if (!res.ok) return null;
+    return (await res.json()).version || null;
+  } catch {
+    return null;
+  }
+}
+
+// Snapshot the local state the welcome screen renders: who/where you're signed in, whether the agent runs as
+// a background service, your linked repos, and whether an update is out.
+async function gatherWelcomeState() {
+  const saved = loadConnectConfig() || {};
+  const version = readPkgVersion();
+  let service = 'none';
+  try {
+    const { execFileSync } = await import('node:child_process');
+    const { plistPath, systemdPath, label, unit } = servicePaths();
+    if (process.platform === 'darwin') {
+      const listed = execFileSync('launchctl', ['list'], { encoding: 'utf8' }).split('\n').some((l) => l.includes(label));
+      service = listed ? 'running' : existsSync(plistPath) ? 'stopped' : 'none';
+    } else if (process.platform === 'linux') {
+      try {
+        execFileSync('systemctl', ['--user', 'is-active', unit], { stdio: 'ignore' });
+        service = 'running';
+      } catch {
+        service = existsSync(systemdPath) ? 'stopped' : 'none';
+      }
+    }
+  } catch {
+    /* no service manager here — leave as 'none' */
+  }
+  const latest = saved.board ? await fetchLatestVersion(saved.board) : null;
+  return {
+    user: saved.user || null,
+    signedIn: !!saved.token,
+    board: saved.board || null,
+    service,
+    repos: (saved.repos || []).map((r) => r.key),
+    version,
+    latest,
+  };
 }
 
 // Owning user: an explicit --email/GFA_EMAIL wins; otherwise the single/first user on the board. Null if
@@ -142,7 +201,7 @@ async function cmdLogin(args) {
     process.exit(1);
   }
 
-  saveConnectConfig({ ...saved, board: result.board, token: result.token }, cfgPath);
+  saveConnectConfig({ ...saved, board: result.board, token: result.token, user: result.user?.email || saved.user || null }, cfgPath);
   const who = result.user && (result.user.displayName || result.user.email);
   console.log('');
   console.log('✓ Logged in to ' + result.board + (who ? ' as ' + who : '') + '.');
@@ -472,6 +531,41 @@ async function cmdService(args) {
   process.exit(1);
 }
 
+// update — self-update the globally-installed CLI to the latest, then restart the background service (if any)
+// so it runs the new binary. Running from source? Update with git in that repo instead.
+async function cmdUpdate() {
+  const { execFileSync } = await import('node:child_process');
+  const cli = fileURLToPath(import.meta.url);
+  if (isRemovablePath(cli)) {
+    console.error("You're running be10x from source (" + cli + '), not a global install.');
+    console.error(dim('Update it with: git -C <that repo> pull'));
+    process.exit(1);
+  }
+  console.log(fg(BRAND.teal, '↑ Updating be10x to the latest…'));
+  try {
+    execFileSync('npm', ['install', '-g', 'github:notpritam/be10x'], { stdio: 'inherit' });
+  } catch (e) {
+    console.error(sym.bad + ' Update failed: ' + (e?.message ?? e));
+    console.error(dim('If the repo is private, make sure your active GitHub account has access.'));
+    process.exit(1);
+  }
+  console.log(sym.ok + ' ' + fg(BRAND.good, 'be10x is up to date') + dim('  (v' + readPkgVersion() + ')'));
+  // Restart the background service, if installed, so it picks up the new version immediately.
+  try {
+    const { label, unit } = servicePaths();
+    if (process.platform === 'darwin') {
+      const uid = execFileSync('id', ['-u'], { encoding: 'utf8' }).trim();
+      execFileSync('launchctl', ['kickstart', '-k', `gui/${uid}/${label}`], { stdio: 'ignore' });
+      console.log(dim('  restarted the background service.'));
+    } else if (process.platform === 'linux') {
+      execFileSync('systemctl', ['--user', 'restart', unit], { stdio: 'ignore' });
+      console.log(dim('  restarted the background service.'));
+    }
+  } catch {
+    /* no service installed — nothing to restart */
+  }
+}
+
 // list — print registered projects and, for the cwd's project, its tasks grouped by status.
 async function cmdList() {
   const db = await openBoardDb();
@@ -616,6 +710,7 @@ const COMMANDS = {
   work: cmdWork,
   connect: cmdConnect,
   service: cmdService,
+  update: cmdUpdate,
   list: cmdList,
   adopt: cmdAdopt,
   'install-skill': cmdInstallSkill,
@@ -647,15 +742,27 @@ function usage() {
 async function main() {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
+  // Full, flat command reference (every command incl. advanced ones).
+  if (cmd === 'commands' || (cmd === 'help' && argv.includes('--all'))) return usage();
+  // Bare `be10x` (or help/menu) → the welcome + live status + curated menu.
+  if (!cmd || cmd === 'help' || cmd === 'menu' || cmd === '--help' || cmd === '-h') {
+    process.stdout.write(renderWelcome(await gatherWelcomeState()) + '\n');
+    return;
+  }
+  if (cmd === 'version' || cmd === '--version' || cmd === '-v') {
+    console.log('be10x v' + readPkgVersion());
+    return;
+  }
   const fn = COMMANDS[cmd];
   if (!fn) {
-    usage();
-    process.exit(cmd ? 1 : 0);
+    console.error(fg(BRAND.bad, 'Unknown command: ') + bold(cmd));
+    console.error(dim('Run `be10x` for the menu, or `be10x commands` for the full list.'));
+    process.exit(1);
   }
   await fn(parseArgs(argv.slice(1)));
 }
 
 main().catch((e) => {
-  console.error(String(e?.stack || e?.message || e));
+  console.error(fg(BRAND.bad, '✗ ') + String(process.env.BE10X_DEBUG ? e?.stack || e : e?.message || e));
   process.exit(1);
 });
