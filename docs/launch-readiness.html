@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>be10x — V1 Launch Readiness</title>
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#12161b; --panel2:#161b22; --line:#232a33;
+    --ink:#e7edf3; --muted:#9aa7b4; --faint:#6b7683;
+    --ok:#3fb950; --ok-bg:rgba(63,185,80,.12);
+    --warn:#e0a83e; --warn-bg:rgba(224,168,62,.12);
+    --info:#4a9eef; --info-bg:rgba(74,158,239,.12);
+    --accent:#7c93ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 15% -5%, #141a22 0%, var(--bg) 55%);
+    color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;padding:40px 20px 80px}
+  .wrap{max-width:1080px;margin:0 auto}
+  .num{font-variant-numeric:tabular-nums}
+  code{font:12.5px/1.5 ui-monospace,"JetBrains Mono",SFMono-Regular,Menlo,monospace;
+    background:#0d1117;border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:#cdd7e1}
+  header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font-size:26px;letter-spacing:-.02em;margin:0;font-weight:700}
+  h1 b{color:var(--accent)}
+  .sub{color:var(--muted);font-size:13.5px;margin-top:4px}
+  .stamp{color:var(--faint);font-size:12.5px;text-align:right}
+
+  .verdict{margin:22px 0 26px;border:1px solid var(--line);border-left:3px solid var(--ok);
+    background:linear-gradient(90deg,var(--ok-bg),transparent 70%);border-radius:12px;padding:18px 20px}
+  .verdict .big{font-size:19px;font-weight:650;letter-spacing:-.01em}
+  .verdict .small{color:var(--muted);font-size:13.5px;margin-top:4px}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:26px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 16px}
+  .stat .v{font-size:24px;font-weight:700;letter-spacing:-.02em}
+  .stat .k{color:var(--muted);font-size:12px;margin-top:2px}
+
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--faint);
+    font-weight:650;margin:30px 0 12px}
+
+  .bars{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .bar{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 16px}
+  .bar .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}
+  .bar .name{font-weight:600;font-size:14px}
+  .bar .pct{font-size:12.5px;color:var(--muted)}
+  .track{height:7px;border-radius:6px;background:#0d1117;border:1px solid var(--line);overflow:hidden}
+  .fill{height:100%;border-radius:6px}
+  .bar .note{color:var(--faint);font-size:12px;margin-top:8px}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .chip{display:flex;gap:9px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;padding:9px 11px;font-size:13px}
+  .chip .dot{margin-top:5px;width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:var(--ok)}
+  .chip small{display:block;color:var(--faint);font-size:11.5px;margin-top:1px}
+
+  .steps{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .step{display:flex;gap:14px;padding:14px 16px;border-top:1px solid var(--line);align-items:flex-start}
+  .step:first-child{border-top:0}
+  .step .n{flex:0 0 auto;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
+    font-size:12.5px;font-weight:700;background:var(--warn-bg);color:var(--warn);border:1px solid rgba(224,168,62,.35)}
+  .step.crit .n{background:rgba(224,80,80,.14);color:#e56767;border-color:rgba(224,80,80,.4)}
+  .step .body{flex:1;min-width:0}
+  .step .body .t{font-weight:600;font-size:14px}
+  .step .body .d{color:var(--muted);font-size:13px;margin-top:2px}
+  .step .who{flex:0 0 auto;font-size:11px;color:var(--faint);border:1px solid var(--line);
+    border-radius:20px;padding:2px 9px;margin-top:2px;white-space:nowrap}
+
+  .limits{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .limit{background:var(--info-bg);border:1px solid rgba(74,158,239,.25);border-radius:10px;padding:12px 14px;font-size:13px}
+  .limit .t{font-weight:600;color:#bcd8f5}
+  .limit .d{color:var(--muted);font-size:12.5px;margin-top:3px}
+
+  footer{margin-top:34px;color:var(--faint);font-size:12px;border-top:1px solid var(--line);padding-top:14px}
+  @media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}.bars,.grid,.limits{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>be10x — <b>V1 launch readiness</b></h1>
+      <div class="sub">A human + agent task board. Sessions disposable, state durable.</div>
+    </div>
+    <div class="stamp">snapshot · 2026-07-02<br/>branch <code>main</code> · 128 commits</div>
+  </header>
+
+  <div class="verdict">
+    <div class="big">Code-complete. The product is V1-ready — what's left is hosting &amp; release, not engineering.</div>
+    <div class="small">Every V1 feature is built and tested; the gap to “live” is ~8 ops steps (create the repo, provision a host, set one API key, deploy, smoke-test). No open code work blocks launch.</div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="v num">201</div><div class="k">tests passing (33 files)</div></div>
+    <div class="stat"><div class="v num">31</div><div class="k">backend modules · 0 TODOs</div></div>
+    <div class="stat"><div class="v num">100%</div><div class="k">deploy kit present</div></div>
+    <div class="stat"><div class="v num">0</div><div class="k">git remotes (blocker #1)</div></div>
+  </div>
+
+  <h2>Readiness by area</h2>
+  <div class="bars">
+    <div class="bar">
+      <div class="top"><span class="name">Product &amp; features</span><span class="pct">100%</span></div>
+      <div class="track"><div class="fill" style="width:100%;background:var(--ok)"></div></div>
+      <div class="note">Board, auth, teams/roles, typed tasks, plans + versions, HTML artifacts, wake-driven agent orchestration, share links, adopt-to-board, PWA, rich rendering, durable self-heal.</div>
+    </div>
+    <div class="bar">
+      <div class="top"><span class="name">Tests &amp; quality</span><span class="pct">100%</span></div>
+      <div class="track"><div class="fill" style="width:100%;background:var(--ok)"></div></div>
+      <div class="note">201 tests green (<code>node --test</code>), web build clean, zero TODO/FIXME in <code>src/</code>. Honest “built vs not” README.</div>
+    </div>
+    <div class="bar">
+      <div class="top"><span class="name">Deploy kit</span><span class="pct">90%</span></div>
+      <div class="track"><div class="fill" style="width:90%;background:var(--ok)"></div></div>
+      <div class="note">Dockerfile + compose + Caddyfile (auto-HTTPS) + <code>.env.example</code> + backups doc. Image build not yet verified on a real host (no Docker in the authoring env).</div>
+    </div>
+    <div class="bar">
+      <div class="top"><span class="name">Docs &amp; onboarding</span><span class="pct">100%</span></div>
+      <div class="track"><div class="fill" style="width:100%;background:var(--ok)"></div></div>
+      <div class="note">README run/host/config, <code>docs/architecture.html</code> visual explainer, <code>/be10x-adopt</code> skill, this dashboard.</div>
+    </div>
+    <div class="bar">
+      <div class="top"><span class="name">Release (repo + host)</span><span class="pct">25%</span></div>
+      <div class="track"><div class="fill" style="width:25%;background:var(--warn)"></div></div>
+      <div class="note">Local git repo (128 commits) but <b>no remote</b> and no host provisioned yet. This is the main thing standing between you and a URL.</div>
+    </div>
+    <div class="bar">
+      <div class="top"><span class="name">Runtime auth &amp; ops</span><span class="pct">45%</span></div>
+      <div class="track"><div class="fill" style="width:45%;background:var(--warn)"></div></div>
+      <div class="note"><code>ANTHROPIC_API_KEY</code> not yet set (the #1 cause of the agent stopping), Secure cookies + backups to enable on the host. Durability self-heal ships in a fresh deploy.</div>
+    </div>
+  </div>
+
+  <h2>Shipped &amp; tested</h2>
+  <div class="grid">
+    <div class="chip"><span class="dot"></span><div>Multi-tenant board<small>auth, teams, roles, scopes</small></div></div>
+    <div class="chip"><span class="dot"></span><div>Typed tasks + lifecycle<small>backlog→…→done state machine</small></div></div>
+    <div class="chip"><span class="dot"></span><div>Plans + version history<small>snapshot &amp; restore</small></div></div>
+    <div class="chip"><span class="dot"></span><div>HTML artifacts<small>RCA / diagrams / findings, sandboxed</small></div></div>
+    <div class="chip"><span class="dot"></span><div>Agent orchestration<small>wake-driven, resumable runs</small></div></div>
+    <div class="chip"><span class="dot"></span><div>Durable self-heal<small>auto-retry + orphan recovery</small></div></div>
+    <div class="chip"><span class="dot"></span><div>Share links<small>permissioned review, no account</small></div></div>
+    <div class="chip"><span class="dot"></span><div>Adopt-to-board<small>move a terminal session in</small></div></div>
+    <div class="chip"><span class="dot"></span><div>Rich rendering + PWA<small>markdown/structured, installable</small></div></div>
+  </div>
+
+  <h2>Pending to host &amp; launch</h2>
+  <div class="steps">
+    <div class="step"><div class="n">1</div><div class="body"><div class="t">Create the GitHub repo &amp; push</div><div class="d">No remote today. <code>gh repo create emergentbase/be10x --private --source=. --push</code> (or add a remote + push). This is release blocker #1.</div></div><span class="who">you</span></div>
+    <div class="step"><div class="n">2</div><div class="body"><div class="t">Provision a host with a persistent volume</div><div class="d">be10x is stateful (SQLite + git worktrees + spawns <code>claude</code>). A small always-on VM, Fly.io+volume, Railway, or Render+disk. <b>Not</b> Vercel/Netlify (serverless).</div></div><span class="who">you</span></div>
+    <div class="step"><div class="n">3</div><div class="body"><div class="t">Point DNS &amp; set the domain</div><div class="d">An <code>A</code> record → the host (Caddy needs :80 + :443). Set <code>DOMAIN</code> in <code>.env</code>; TLS is automatic.</div></div><span class="who">you</span></div>
+    <div class="step crit"><div class="n">4</div><div class="body"><div class="t">Set the agent's API key — critical</div><div class="d">Put <code>ANTHROPIC_API_KEY</code> in <code>.env</code>. This is the #1 reason the agent “kept stopping” (lost OAuth login). With it set, a spawned agent can never come up “Not logged in”.</div></div><span class="who">host</span></div>
+    <div class="step"><div class="n">5</div><div class="body"><div class="t">Deploy &amp; verify the image builds</div><div class="d"><code>cp .env.example .env</code> → <code>docker compose up -d --build</code>. First real build of the image (native <code>better-sqlite3</code> + pinned CLI) — confirm it compiles on the host.</div></div><span class="who">host</span></div>
+    <div class="step"><div class="n">6</div><div class="body"><div class="t">Mount &amp; link a repo</div><div class="d">Mount the repos the agent should work and <code>be10x link</code> each inside the container, so tasks have somewhere to run.</div></div><span class="who">host</span></div>
+    <div class="step"><div class="n">7</div><div class="body"><div class="t">End-to-end smoke test</div><div class="d">Sign up → new task → hand to agent → watch a run go plan → review → execute → verify. Confirms auth, worktrees, MCP tools, and the durability layer on the real host.</div></div><span class="who">you</span></div>
+    <div class="step"><div class="n">8</div><div class="body"><div class="t">Schedule backups</div><div class="d">Snapshot the <code>be10x-data</code> volume (the SQLite DB + worktrees), or copy <code>/data/be10x.db</code> out on a cron.</div></div><span class="who">you</span></div>
+  </div>
+
+  <h2>V1 limitations — by design, documented, not blockers</h2>
+  <div class="limits">
+    <div class="limit"><div class="t">Single-host</div><div class="d">Board + agents run on one server. Perfect for one team hosting one board.</div></div>
+    <div class="limit"><div class="t">No distributed runners</div><div class="d">Teammates running agents on their own machines over HTTPS is V2.</div></div>
+    <div class="limit"><div class="t">Host-level Claude auth</div><div class="d">Dashboard-managed per-user Claude login is V2; V1 uses one host key.</div></div>
+  </div>
+
+  <footer>
+    One local-only footnote: the running demo needs a single <code>serve</code> restart to activate the durability layer — but a <b>fresh Docker deploy already includes it</b> (all committed), so it is not a launch blocker. Verdict: build is done; launch is an afternoon of ops.
+  </footer>
+
+</div>
+</body>
+</html>
