@@ -244,6 +244,15 @@ export const api = {
   revokeToken: (id: string) => del<{ ok: true }>(`/api/tokens/${id}`),
   agentConfig: () => request<AgentConfig>("/api/agent-config"),
 
+  // Device authorization — the browser half of `be10x login`. The approve screen (/connect?code=…) fetches
+  // what's asking, then the signed-in user authorizes (minting the machine a token) or denies it.
+  devicePending: (code: string) =>
+    request<{ userCode: string; label: string | null; status: string; createdAt: number }>(
+      `/api/device/pending?code=${encodeURIComponent(code)}`,
+    ),
+  deviceApprove: (code: string) => post<{ ok: true; label: string | null }>("/api/device/approve", { code }),
+  deviceDeny: (code: string) => post<{ ok: true }>("/api/device/deny", { code }),
+
   // Agent orchestration — hand a task to the agent, ping it to pick up now, and the comment thread it reads
   handToAgent: (id: string) => post<{ task: Task }>(`/api/tasks/${id}/hand-to-agent`),
   pickUpNow: (id: string) => post<{ ok: true; wake: unknown }>(`/api/tasks/${id}/pick-up-now`),

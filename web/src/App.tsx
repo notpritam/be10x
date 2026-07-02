@@ -10,6 +10,7 @@ import { AuthScreen } from "@/components/auth/AuthScreen";
 import { AppShell } from "@/components/shell/AppShell";
 import { BootSplash } from "@/components/common/BootSplash";
 import { ShareReviewPage } from "@/components/share/ShareReviewPage";
+import { DeviceApprovePage } from "@/components/agent/DeviceApprovePage";
 
 type Session = "loading" | User | null;
 
@@ -33,12 +34,21 @@ export function App() {
   const shareToken =
     typeof window !== "undefined" ? /^\/share\/([^/]+)\/?$/.exec(window.location.pathname)?.[1] : undefined;
 
+  // The `be10x login` approve screen (/connect?code=…). Requires an account — the minted token binds to it —
+  // so it renders after auth; a signed-out visitor hits the auth screen first, then lands back here.
+  const connectCode =
+    typeof window !== "undefined" && window.location.pathname === "/connect"
+      ? new URLSearchParams(window.location.search).get("code") ?? ""
+      : undefined;
+
   return (
     <TooltipProvider delayDuration={200}>
       {shareToken ? (
         <ShareReviewPage token={decodeURIComponent(shareToken)} />
       ) : session === "loading" ? (
         <BootSplash />
+      ) : connectCode !== undefined && session ? (
+        <DeviceApprovePage code={connectCode} user={session} />
       ) : session === null ? (
         <AuthScreen onAuthed={setSession} />
       ) : (

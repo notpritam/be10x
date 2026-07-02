@@ -1,7 +1,7 @@
-// ABOUTME: Connect an agent (Claude Code) to be10x over MCP. Mint a personal access token (POST /tokens),
-// show the plaintext secret exactly ONCE with a copy button, and render a ready-to-paste MCP config JSON
-// built from GET /api/agent-config + the new token. Also lists existing tokens with a Revoke action.
-import { useCallback, useEffect, useState } from "react";
+// ABOUTME: Connect an agent (Claude Code) to be10x. Leads with the paste-free flow: install the CLI, run
+// ABOUTME: `be10x login <board>` (approve in-browser), then `be10x link` + `be10x connect`. A manual-token
+// ABOUTME: path (mint/copy a token + MCP config) stays under Advanced for CI / headless / same-machine use.
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Check, Copy, KeyRound, Loader2, Plug, ShieldCheck, Terminal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
@@ -18,34 +18,29 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-function buildMcpConfig(config: AgentConfig | null, token: string): string {
-  const obj = {
-    mcpServers: {
-      be10x: {
-        command: "node",
-        args: [config?.mcpServerPath ?? "/path/to/git-for-agents/src/mcp/server.js"],
-        env: {
-          GFA_TOKEN: token,
-          GFA_DB_PATH: config?.dbPath ?? "./gfa.db",
-        },
-      },
-    },
-  };
-  return JSON.stringify(obj, null, 2);
-}
-
 // The board's own URL — when a member opens this hosted dashboard, the origin IS the board they link to.
 function boardOrigin(): string {
   if (typeof window !== "undefined" && window.location?.origin) return window.location.origin;
   return "https://your-board.example.com";
 }
 
-// Install the be10x CLI in one command — no repo clone, no build step (needs Node 18+).
+// The three commands a teammate runs — no token to copy, no flags. `be10x login` opens THIS board to approve.
 const INSTALL_CMD = "npm install -g github:notpritam/be10x";
+const LINK_CMD = "cd ~/code/your-repo\nbe10x link";
+const CONNECT_CMD = "be10x connect";
+const loginCmd = () => `be10x login ${boardOrigin()}`;
 
-// The one command a member runs on THEIR machine to link it to this board and run the agent locally.
-function buildConnectCommand(token: string): string {
-  return `be10x connect --board ${boardOrigin()} --token ${token} --repos ~/code/your-repo`;
+function buildMcpConfig(config: AgentConfig | null, token: string): string {
+  const obj = {
+    mcpServers: {
+      be10x: {
+        command: "node",
+        args: [config?.mcpServerPath ?? "/path/to/git-for-agents/src/mcp/server.js"],
+        env: { GFA_TOKEN: token, GFA_DB_PATH: config?.dbPath ?? "./gfa.db" },
+      },
+    },
+  };
+  return JSON.stringify(obj, null, 2);
 }
 
 function useCopy(): [boolean, (text: string) => void] {
@@ -73,6 +68,33 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
       {copied ? <Check className="size-3.5 text-primary" /> : <Copy className="size-3.5" />}
       {copied ? "Copied" : label}
     </button>
+  );
+}
+
+function CommandRow({ cmd }: { cmd: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+      <code className="min-w-0 flex-1 overflow-x-auto scroll-thin whitespace-pre font-mono text-[12px] leading-relaxed text-foreground">
+        {cmd}
+      </code>
+      <CopyButton text={cmd} />
+    </div>
+  );
+}
+
+function Step({ n, title, hint, children }: { n: number; title: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="flex gap-3">
+      <span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary/12 text-[12px] font-bold text-primary">
+        {n}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-semibold text-foreground">{title}</p>
+        {hint && <p className="mb-2 mt-0.5 text-[11.5px] text-muted-foreground/80">{hint}</p>}
+        {!hint && <div className="mb-2" />}
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -154,135 +176,113 @@ export function ConnectAgentDialog({
             Connect your machine
           </DialogTitle>
           <DialogDescription>
-            Link your computer to this board. Claude runs on your machine, on your own repos and login — the
-            board just coordinates the work. Nothing runs on the server.
+            Claude runs on your computer — your repos, your login. The board just coordinates. Three commands,
+            no token to copy.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex max-h-[72vh] flex-col overflow-y-auto scroll-thin px-6 py-5">
-          {/* Create a token */}
-          <Label htmlFor="ca-name" className="mb-1.5 block text-[12px] text-foreground/80">
-            Token name
-          </Label>
-          <div className="flex items-start gap-2">
-            <Input
-              id="ca-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void create();
-                }
-              }}
-              placeholder="e.g. My laptop"
-              className="h-9 flex-1 bg-background text-[13px]"
-            />
-            <Button
-              onClick={() => void create()}
-              disabled={creating || !name.trim()}
-              className="h-9 shrink-0 text-[13px]"
-            >
-              {creating ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <>
-                  <KeyRound className="size-4" />
-                  Create token
-                </>
-              )}
-            </Button>
+          {/* Primary path: install → login (approve in-browser) → link + connect. No token handling. */}
+          <div className="flex flex-col gap-4">
+            <Step n={1} title="Install the CLI" hint="One command — no clone, no build (needs Node 18+).">
+              <CommandRow cmd={INSTALL_CMD} />
+            </Step>
+            <Step n={2} title="Sign in" hint="Opens this board in your browser — click Authorize. The token installs itself.">
+              <CommandRow cmd={loginCmd()} />
+            </Step>
+            <Step n={3} title="Link a repo, then run the agent" hint="Point be10x link at each repo you want worked here. Leave connect running.">
+              <div className="flex flex-col gap-2">
+                <CommandRow cmd={LINK_CMD} />
+                <CommandRow cmd={CONNECT_CMD} />
+              </div>
+            </Step>
           </div>
-          <p className="mt-1.5 text-[11.5px] text-muted-foreground/80">
-            Name it for where it runs. The secret is shown once, right after you create it.
+
+          <p className="mt-4 rounded-lg border border-border/60 bg-muted/40 px-3.5 py-2.5 text-[11.5px] leading-relaxed text-muted-foreground">
+            Then create a task for one of those repos on the board — your machine picks it up, runs Claude
+            locally, and streams the plan and progress back here for the team to review.
           </p>
 
-          {/* Freshly minted secret + config — shown ONCE */}
-          {minted && (
-            <div className="mt-4 rounded-xl border border-primary/30 bg-primary/[0.04] p-4 soft-fade">
-              <div className="mb-2 flex items-center gap-2">
-                <ShieldCheck className="size-4 text-primary" />
-                <h3 className="text-[13px] font-bold text-foreground">
-                  Copy your token now — you won't see it again
-                </h3>
+          {/* Advanced: mint a token by hand (CI / headless / same-machine MCP config). */}
+          <details className="mt-5 rounded-xl border border-border/60 bg-card/60 px-4 py-3">
+            <summary className="cursor-pointer select-none text-[12.5px] font-semibold text-foreground/80">
+              Advanced — mint a token by hand (CI, headless, or same-machine MCP)
+            </summary>
+
+            <div className="mt-3">
+              <Label htmlFor="ca-name" className="mb-1.5 block text-[12px] text-foreground/80">
+                Token name
+              </Label>
+              <div className="flex items-start gap-2">
+                <Input
+                  id="ca-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void create();
+                    }
+                  }}
+                  placeholder="e.g. CI runner"
+                  className="h-9 flex-1 bg-background text-[13px]"
+                />
+                <Button onClick={() => void create()} disabled={creating || !name.trim()} className="h-9 shrink-0 text-[13px]">
+                  {creating ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <>
+                      <KeyRound className="size-4" />
+                      Create token
+                    </>
+                  )}
+                </Button>
               </div>
 
-              <div className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
-                <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground">
-                  {minted.token}
-                </code>
-                <CopyButton text={minted.token} label="Copy token" />
-              </div>
+              {minted && (
+                <div className="mt-4 rounded-xl border border-primary/30 bg-primary/[0.04] p-4 soft-fade">
+                  <div className="mb-2 flex items-center gap-2">
+                    <ShieldCheck className="size-4 text-primary" />
+                    <h3 className="text-[13px] font-bold text-foreground">Copy your token now — you won't see it again</h3>
+                  </div>
+                  <div className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+                    <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground">{minted.token}</code>
+                    <CopyButton text={minted.token} label="Copy token" />
+                  </div>
 
-              {/* Primary path: run the agent on YOUR machine, linked to this board. */}
-              <div className="mb-1.5 flex items-center gap-2">
-                <Terminal className="size-4 text-primary" />
-                <p className="text-[12px] font-semibold text-foreground/80">Run this on your machine</p>
-              </div>
-              <p className="mb-2 text-[11.5px] text-muted-foreground/80">
-                Install the CLI once — no clone, no build (you'll use your own Claude Code login):
-              </p>
-              <div className="mb-2.5 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
-                <code className="min-w-0 flex-1 overflow-x-auto scroll-thin whitespace-nowrap font-mono text-[12px] text-foreground">
-                  {INSTALL_CMD}
-                </code>
-                <CopyButton text={INSTALL_CMD} label="Copy" />
-              </div>
-              <p className="mb-2 text-[11.5px] text-muted-foreground/80">
-                Then link this machine — point <code className="font-mono text-[11px]">--repos</code> at the
-                checkouts you want to work here:
-              </p>
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
-                <code className="min-w-0 flex-1 overflow-x-auto scroll-thin whitespace-nowrap font-mono text-[12px] text-foreground">
-                  {buildConnectCommand(minted.token)}
-                </code>
-                <CopyButton text={buildConnectCommand(minted.token)} label="Copy" />
-              </div>
-              <p className="mt-2 text-[11.5px] text-muted-foreground/80">
-                Now create a task for one of those repos on the board — your machine picks it up, runs Claude
-                locally, and streams the plan and progress back here for the team to review.
-              </p>
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <Terminal className="size-4 text-primary" />
+                    <p className="text-[12px] font-semibold text-foreground/80">Connect with the token (no browser)</p>
+                  </div>
+                  <CommandRow cmd={`be10x connect --board ${boardOrigin()} --token ${minted.token} --repos ~/code/your-repo`} />
 
-              {/* Advanced: agent on the SAME machine as the board (local stdio MCP + shared db). */}
-              <details className="mt-4 rounded-lg border border-border/60 bg-card/60 px-3 py-2">
-                <summary className="cursor-pointer select-none text-[12px] font-medium text-muted-foreground">
-                  Running Claude Code on the same machine as the board? Use this MCP config instead
-                </summary>
-                <div className="mt-2.5 flex items-center justify-between">
-                  <p className="text-[11.5px] text-muted-foreground/80">MCP config for Claude Code</p>
-                  <CopyButton text={buildMcpConfig(config, minted.token)} label="Copy config" />
+                  <div className="mt-3.5 flex items-center justify-between">
+                    <p className="text-[11.5px] text-muted-foreground/80">Same machine as the board? MCP config for Claude Code</p>
+                    <CopyButton text={buildMcpConfig(config, minted.token)} label="Copy config" />
+                  </div>
+                  <pre className="mt-1.5 max-h-56 overflow-auto scroll-thin rounded-lg border border-border bg-card px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground/90">
+                    {buildMcpConfig(config, minted.token)}
+                  </pre>
                 </div>
-                <pre className="mt-1.5 max-h-56 overflow-auto scroll-thin rounded-lg border border-border bg-card px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground/90">
-                  {buildMcpConfig(config, minted.token)}
-                </pre>
-                {!config && (
-                  <p className="mt-1.5 text-[11px] text-muted-foreground/80">
-                    Couldn't reach the server for exact paths — replace the placeholder path and DB path with
-                    yours.
-                  </p>
-                )}
-              </details>
+              )}
             </div>
-          )}
+          </details>
 
-          {/* Existing tokens */}
+          {/* Existing tokens — device logins land here too, so this is where you revoke a machine's access. */}
           <div className="mt-6">
-            <h3 className="mb-2.5 text-[12px] font-semibold text-muted-foreground/80">Your tokens</h3>
+            <h3 className="mb-2.5 text-[12px] font-semibold text-muted-foreground/80">Your connected machines &amp; tokens</h3>
             {tokens === null ? (
               <div className="flex items-center gap-2 py-4 text-[12.5px] text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" /> Loading tokens…
+                <Loader2 className="size-4 animate-spin" /> Loading…
               </div>
             ) : tokens.length === 0 ? (
               <p className="rounded-xl border border-dashed border-border/70 px-3.5 py-6 text-center text-[12.5px] text-muted-foreground/70">
-                No tokens yet. Create one above to connect an agent.
+                No machines linked yet. Run the steps above to connect one.
               </p>
             ) : (
               <ul className="flex flex-col gap-1">
                 {tokens.map((t) => (
-                  <li
-                    key={t.id}
-                    className="flex items-center gap-3 rounded-xl border border-border/60 bg-card px-3 py-2.5"
-                  >
+                  <li key={t.id} className="flex items-center gap-3 rounded-xl border border-border/60 bg-card px-3 py-2.5">
                     <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
                       <KeyRound className="size-4" />
                     </span>
@@ -299,11 +299,7 @@ export function ConnectAgentDialog({
                       disabled={revokingId === t.id}
                       className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40 disabled:opacity-50"
                     >
-                      {revokingId === t.id ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <Trash2 className="size-3.5" />
-                      )}
+                      {revokingId === t.id ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
                       Revoke
                     </button>
                   </li>
