@@ -26,7 +26,6 @@ import { PlanView } from "./PlanView";
 import { PlanVersions } from "./PlanVersions";
 import { TaskOverview } from "./TaskOverview";
 import { TaskArtifacts } from "./TaskArtifacts";
-import { PendingWork, useTaskWakes } from "./PendingWork";
 import { TaskChecklist } from "./TaskChecklist";
 import { CurrentStep } from "./CurrentStep";
 import { AgentConfigControl } from "./AgentConfigControl";
@@ -85,8 +84,6 @@ export function DeepDivePanel({
   const [showHistory, setShowHistory] = useState(false);
   const [interactionBarOpen, setInteractionBarOpen] = useState(true);
   const [overviewOpen, setOverviewOpen] = useState(false);
-  // Queued (enqueued-but-unclaimed) wakes — drives the "what the agent will pick up next" indicator.
-  const pendingWakes = useTaskWakes(taskId);
 
   // Right-panel width — draggable and remembered. The drag binds window-level listeners on pointerdown
   // and removes them on pointerup, so it can't get stuck: there's no reliance on pointer-capture staying
@@ -202,10 +199,6 @@ export function DeepDivePanel({
 
                 {/* Lead with where we are + what's here — not the Move/Plan controls. */}
                 <CurrentStep task={task} runs={detail.runs} />
-
-                {/* Queued work — wakes enqueued but not yet claimed (a "pick up now", an approval, or a
-                    message you posted). Makes "the agent will pick this up next" visible, not buried in debug. */}
-                <PendingWork wakes={pendingWakes} agentActive={agentActive} />
 
                 {/* The model + reasoning effort this task runs at — visible and togglable. */}
                 <AgentConfigControl task={task} onChanged={refresh} />
@@ -376,7 +369,6 @@ export function DeepDivePanel({
                       events={detail.events}
                       task={task}
                       runs={detail.runs}
-                      wakes={pendingWakes}
                       resolveActor={resolveActor}
                       onPosted={refresh}
                     />

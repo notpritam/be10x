@@ -1,9 +1,9 @@
 // ABOUTME: Shared agent-interaction blocks used by both the slide-over and the deep-dive: the hand-off /
 // pick-up-now action row, and the comment thread the agent reads on its next wake.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Activity, Bot, ChevronDown, ChevronRight, Copy, SendHorizontal } from "lucide-react";
+import { Activity, Bot, CheckCheck, ChevronDown, ChevronRight, Clock3, Copy, SendHorizontal } from "lucide-react";
 import { toast } from "sonner";
-import type { Comment, Run, Task, TaskEvent, WakeEntry } from "@/lib/types";
+import type { Comment, Run, Task, TaskEvent } from "@/lib/types";
 import { api } from "@/lib/api";
 import { useApp } from "@/state/app-store";
 import { cn, relativeTime } from "@/lib/utils";
@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { describe } from "./ActivityFeed";
 import { AgentLiveStatus } from "./AgentLiveStatus";
-import { PendingWork } from "./PendingWork";
 
 // Actor ids that mean "the agent" (mirrors app-store's resolveActor) — used to color/label its bubbles.
 const AGENT_ACTORS = new Set(["agent", "worker", "runner"]);
@@ -162,7 +161,36 @@ function CommentBubble({
       >
         <CommentBody text={c.body} />
       </div>
+      {/* Per-message delivery status on YOUR messages: "Queued" until the agent folds it into its next
+          run, then "Picked up". This is the "is my message still in the queue?" signal. */}
+      {mine && <DeliveryStatus seenAt={c.seenAt} />}
     </li>
+  );
+}
+
+// A delivery receipt for the human's own messages, driven by the comment's seen_at: amber "Queued" while
+// the agent hasn't consumed it yet (seenAt null) — e.g. posted while a run was in flight, so it waits in
+// the queue — and a muted "Picked up" once the runner has folded it into the agent's next run.
+function DeliveryStatus({ seenAt }: { seenAt: number | null }) {
+  const picked = seenAt != null;
+  return (
+    <span
+      title={picked ? "The agent has picked up this message." : "Queued — the agent will pick this up on its next run."}
+      className={cn(
+        "inline-flex items-center gap-1 px-1 text-[10.5px] font-medium",
+        picked ? "text-muted-foreground/70" : "text-amber-600",
+      )}
+    >
+      {picked ? (
+        <>
+          <CheckCheck className="size-3" /> Picked up
+        </>
+      ) : (
+        <>
+          <Clock3 className="size-3" /> Queued
+        </>
+      )}
+    </span>
   );
 }
 
@@ -258,7 +286,6 @@ export function CommentThread({
   events = [],
   task,
   runs,
-  wakes,
   resolveActor,
   onPosted,
 }: {
@@ -267,8 +294,6 @@ export function CommentThread({
   events?: TaskEvent[];
   task: Task;
   runs: Run[];
-  /** Queued (unclaimed) wakes — a message you posted shows here as "queued" until the agent picks it up. */
-  wakes?: WakeEntry[];
   resolveActor: (id: string) => string;
   onPosted: () => void;
 }) {
@@ -405,14 +430,6 @@ export function CommentThread({
           </div>
         )}
       </div>
-
-      {/* Queued indicator — a message you posted (or any unclaimed wake) shows here until the agent picks
-          it up on its next run, so you're never left wondering whether it landed. */}
-      {wakes && wakes.length > 0 && (
-        <div className="shrink-0 px-3 pt-2">
-          <PendingWork wakes={wakes} agentActive={agentActive} compact />
-        </div>
-      )}
 
       {/* Composer — input + send as one component, pinned at the foot. Enter sends, Shift+Enter newlines. */}
       <div className="shrink-0 border-t border-border/60 p-3">

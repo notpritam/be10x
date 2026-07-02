@@ -18,7 +18,7 @@ import { listEvents, appendEvent } from '../tasks/events.js';
 import { requestReview, submitReview } from '../reviews/reviews.js';
 import { requestInput, answerInput, getOpenInputRequest } from '../tasks/input_requests.js';
 import { addComment, listComments } from '../tasks/comments.js';
-import { enqueueWake, listPendingWakes } from '../executor/wake.js';
+import { enqueueWake } from '../executor/wake.js';
 import { listRunsForTask } from '../executor/runs.js';
 import { taskDebug } from '../tasks/debug.js';
 import { listProjects, registerProject, detectProjectKey } from '../projects/projects.js';
@@ -246,11 +246,6 @@ const ROUTES = [
     const dbg = taskDebug(db, params.id);
     if (!dbg) return send(res, 404, { error: 'NO_SUCH_TASK' });
     send(res, 200, dbg);
-  }],
-  // Pending (unclaimed) wakes for a task — the "queued work" indicator. A lightweight cut of the debug
-  // snapshot so the task view can poll it cheaply and show what the agent will pick up on its next run.
-  ['GET', '/api/tasks/:id/wakes', true, async ({ db, res, params }) => {
-    send(res, 200, { wakes: listPendingWakes(db, params.id).map((w) => ({ ...w, pending: true })) });
   }],
   ['POST', '/api/tasks/:id/transition', true, async ({ db, res, params, body, user }) => {
     const task = transition(db, params.id, body.to, user.id);

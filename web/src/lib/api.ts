@@ -23,7 +23,6 @@ import type {
   TokenInfo,
   User,
   UserLite,
-  WakeEntry,
 } from "./types";
 
 export class ApiError extends Error {
@@ -216,9 +215,6 @@ export const api = {
   listRuns: (id: string) => request<{ runs: Run[] }>(`/api/tasks/${id}/runs`),
   /** Consolidated raw state for the debug view — agent, runs, wake queue, events, server clock. */
   taskDebug: (id: string) => request<TaskDebug>(`/api/tasks/${id}/debug`),
-
-  /** Pending (queued, unclaimed) wakes for a task — powers the "queued work" indicator. */
-  wakes: (id: string) => request<{ wakes: WakeEntry[] }>(`/api/tasks/${id}/wakes`),
 
   // Task actions
   transition: (id: string, to: Status) =>
