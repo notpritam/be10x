@@ -1,6 +1,6 @@
 // ABOUTME: Pure, transport-agnostic MCP tool registry for be10x — the agent-facing "front door".
 // ABOUTME: Each tool wraps a core function; ctx.userId is the authenticated actor/owner. No I/O, no SDK here.
-import { createTask, getTask, listTasks, setResearch, setPlan, transition, rateTask, setRefs } from '../tasks/tasks.js';
+import { createTask, getTask, listTasks, setResearch, setPlan, transition, rateTask, setRefs, postArtifact } from '../tasks/tasks.js';
 import { requestReview } from '../reviews/reviews.js';
 import { requestInput, answerInput } from '../tasks/input_requests.js';
 import { addComment } from '../tasks/comments.js';
@@ -240,6 +240,25 @@ export const TOOLS = [
       additionalProperties: false,
     },
     handler: (db, ctx, args) => rateTask(db, args.id, args.rating, ctx.userId),
+  },
+  {
+    name: 'gfa_post_artifact',
+    description:
+      'Post a VISUAL artifact to the task so the human sees it directly in the task view. This is the primary way to convey what you found and what you propose — prefer it over long prose. Use it to: explain a root cause (kind:"rca") with a diagram of the failure path, show a flow/architecture/file-structure diagram (kind:"diagram"), report findings (kind:"finding"), propose options/suggestions (kind:"suggestion"), or show verification results (kind:"verification"). content is rich like a plan and HTML is the preferred medium — write real HTML (rendered safely in a sandbox) for diagrams, tables, side-by-side comparisons, annotated mock-ups; markdown or { blocks|html|steps|diagram } also work. Pass a stable "key" to UPDATE an existing artifact (e.g. refine the RCA as you learn) instead of adding duplicates.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Task id.' },
+        kind: { type: 'string', description: 'rca | diagram | finding | suggestion | verification | doc | note' },
+        title: { type: 'string', description: 'Short human label for the artifact.' },
+        key: { type: 'string', description: 'Stable id; posting the same key updates that artifact instead of adding a new one.' },
+        content: freeObject('The artifact body — rich content, HTML preferred (rendered in a sandbox), or markdown / { blocks|html|steps|diagram }.'),
+      },
+      required: ['id', 'content'],
+      additionalProperties: false,
+    },
+    handler: (db, ctx, args) =>
+      postArtifact(db, args.id, { key: args.key, kind: args.kind, title: args.title, content: args.content }, ctx.userId),
   },
   {
     name: 'gfa_submit_output',

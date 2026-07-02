@@ -13,6 +13,7 @@ import {
   retryTask,
   rateTask,
   setRefs,
+  postArtifact,
 } from '../src/tasks/tasks.js';
 import { listEvents } from '../src/tasks/events.js';
 
@@ -120,6 +121,45 @@ test('setRefs reconciles the checklist: shipping flips an in-progress step to do
   const after = setRefs(db, t.id, { pr: 'http://x/1' }, 'agent');
   assert.equal(after.agent.todos[1].status, 'done', 'the in-progress step is completed on ship');
   assert.equal(after.agent.todos[0].status, 'done');
+});
+
+test('postArtifact appends a keyed artifact, upserts by key, and logs an event', () => {
+  const db = openDb(':memory:');
+  const uid = owner(db);
+  const t = createTask(db, { type: 'code-issue', scope: 'personal', title: 'Bug', ownerId: uid, content: { symptom: 'x' } });
+
+  // First post — an RCA with HTML content.
+  const a = postArtifact(db, t.id, { key: 'rca', kind: 'rca', title: 'Root cause', content: '<b>race</b>' }, 'agent');
+  assert.equal(a.artifacts.length, 1);
+  assert.equal(a.artifacts[0].key, 'rca');
+  assert.equal(a.artifacts[0].kind, 'rca');
+  assert.equal(a.artifacts[0].content, '<b>race</b>');
+  assert.ok(a.artifacts[0].createdAt);
+
+  // Same key updates in place (refine the RCA) rather than adding a duplicate.
+  const b = postArtifact(db, t.id, { key: 'rca', kind: 'rca', title: 'Root cause (refined)', content: '<b>lock order</b>' }, 'agent');
+  assert.equal(b.artifacts.length, 1);
+  assert.equal(b.artifacts[0].title, 'Root cause (refined)');
+  assert.equal(b.artifacts[0].content, '<b>lock order</b>');
+  assert.ok(b.artifacts[0].updatedAt);
+
+  // A different key appends a second artifact.
+  const c = postArtifact(db, t.id, { key: 'fix', kind: 'suggestion', title: 'Proposed fix', content: 'reorder locks' }, 'agent');
+  assert.equal(c.artifacts.length, 2);
+
+  const arts = listEvents(db, t.id).filter((e) => e.kind === 'artifact');
+  assert.equal(arts.length, 3);
+  assert.equal(arts[0].payload.key, 'rca');
+});
+
+test('postArtifact defaults kind to note, generates a key, and accepts structured content', () => {
+  const db = openDb(':memory:');
+  const uid = owner(db);
+  const t = createTask(db, { type: 'general', scope: 'personal', title: 'Idea', ownerId: uid, content: { summary: 's' } });
+  const a = postArtifact(db, t.id, { content: { blocks: [{ type: 'text', text: 'hi' }] } }, 'agent');
+  assert.equal(a.artifacts[0].kind, 'note');
+  assert.ok(a.artifacts[0].key, 'a key is generated when none is given');
+  assert.deepEqual(a.artifacts[0].content, { blocks: [{ type: 'text', text: 'hi' }] });
 });
 
 test('DoD: a task walks the full legal lifecycle and records every event', () => {

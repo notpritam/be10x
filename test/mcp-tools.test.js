@@ -25,7 +25,7 @@ function seed() {
   return { db, owner, reviewer, tok, ctx };
 }
 
-test('TOOLS registers exactly the 15 be10x front-door tools, all well-formed', () => {
+test('TOOLS registers exactly the 16 be10x front-door tools, all well-formed', () => {
   const names = TOOLS.map((t) => t.name).sort();
   assert.deepEqual(names, [
     'gfa_answer_input',
@@ -35,6 +35,7 @@ test('TOOLS registers exactly the 15 be10x front-door tools, all well-formed', (
     'gfa_list_tasks',
     'gfa_mark_ready',
     'gfa_plan_task',
+    'gfa_post_artifact',
     'gfa_rate_task',
     'gfa_reply',
     'gfa_request_input',
@@ -145,6 +146,27 @@ test('gfa_update_progress, gfa_submit_output and gfa_rate_task record onto the t
 
   const rated = call(db, ctx, 'gfa_rate_task', { id: t.id, rating: { score: 0.9 } });
   assert.deepEqual(rated.rating, { score: 0.9 });
+});
+
+test('gfa_post_artifact posts a visual artifact and upserts by key', () => {
+  const { db, ctx } = seed();
+  const t = call(db, ctx, 'gfa_create_task', { type: 'code-issue', scope: 'personal', title: 'Bug', content: { symptom: 'x' } });
+
+  const posted = call(db, ctx, 'gfa_post_artifact', {
+    id: t.id,
+    kind: 'rca',
+    title: 'Why it crashed',
+    key: 'rca',
+    content: '<div>the failure path</div>',
+  });
+  assert.equal(posted.artifacts.length, 1);
+  assert.equal(posted.artifacts[0].kind, 'rca');
+  assert.equal(posted.artifacts[0].content, '<div>the failure path</div>');
+
+  // Re-posting the same key refines it in place.
+  const refined = call(db, ctx, 'gfa_post_artifact', { id: t.id, key: 'rca', kind: 'rca', content: '<div>refined</div>' });
+  assert.equal(refined.artifacts.length, 1);
+  assert.equal(refined.artifacts[0].content, '<div>refined</div>');
 });
 
 test('verifyToken rejects a bogus secret and accepts a freshly created one', () => {

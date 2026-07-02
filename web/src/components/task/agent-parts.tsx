@@ -16,7 +16,7 @@ import { AgentLiveStatus } from "./AgentLiveStatus";
 const AGENT_ACTORS = new Set(["agent", "worker", "runner"]);
 // Events worth surfacing on their own line (never hidden in a collapsed activity cluster) — the things a
 // human acts on: the agent's questions, your answers, and review verdicts/requests.
-const IMPORTANT_KINDS = new Set(["input_request", "input_answer", "review", "review_requested"]);
+const IMPORTANT_KINDS = new Set(["input_request", "input_answer", "review", "review_requested", "artifact"]);
 
 // A stable key for de-duplicating consecutive routine events (the repeated "working…" progress notes).
 function eventKey(e: TaskEvent): string {

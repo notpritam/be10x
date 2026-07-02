@@ -42,8 +42,9 @@ export function revokeShareLink(db, token) {
   return db.prepare('UPDATE share_links SET revoked_at = ? WHERE token = ? AND revoked_at IS NULL').run(Date.now(), token).changes;
 }
 
-// The shareable subset behind a valid token: the task header, its plan, and the discussion — nothing else
-// about the board leaks out. Returns null for an unknown/revoked token or a vanished task.
+// The shareable subset behind a valid token: the task header, its plan, the agent's visual artifacts
+// (RCA / diagrams / findings — what a reviewer needs to approve "go live"), and the discussion — nothing
+// else about the board leaks out. Returns null for an unknown/revoked token or a vanished task.
 export function shareView(db, token) {
   const link = getActiveShareLinkByToken(db, token);
   if (!link) return null;
@@ -52,6 +53,7 @@ export function shareView(db, token) {
   return {
     task: { id: task.id, humanId: task.humanId, title: task.title, status: task.status, type: task.type },
     plan: task.plan,
+    artifacts: task.artifacts ?? [],
     comments: listComments(db, link.task_id),
   };
 }

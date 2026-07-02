@@ -15,6 +15,7 @@ import {
   Star,
   Package,
   GitPullRequestArrow,
+  Sparkles,
   Dot,
   type LucideIcon,
 } from "lucide-react";
@@ -59,6 +60,18 @@ export function describe(event: TaskEvent): { icon: LucideIcon; phrase: ReactNod
       return { icon: Star, phrase: <>rated the result</> };
     case "ship":
       return { icon: Package, phrase: <>shipped references</> };
+    case "artifact": {
+      const label = asString(p.title) ?? asString(p.kind) ?? "an artifact";
+      return {
+        icon: Sparkles,
+        phrase: (
+          <>
+            posted <span className="text-foreground">{label}</span>
+          </>
+        ),
+        tone: "accent",
+      };
+    }
     case "input_request":
       return {
         icon: MessageCircleQuestion,

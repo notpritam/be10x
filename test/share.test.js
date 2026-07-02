@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { openDb } from '../src/db/db.js';
 import { createApp } from '../src/http/server.js';
 import { createUser } from '../src/auth/users.js';
-import { createTask, setPlan } from '../src/tasks/tasks.js';
+import { createTask, setPlan, postArtifact } from '../src/tasks/tasks.js';
 import { addComment } from '../src/tasks/comments.js';
 import {
   createShareLink,
@@ -63,15 +63,19 @@ test('listShareLinksForTask returns every minted link, newest first', () => {
   assert.deepEqual(ids, [b.id, a.id]);
 });
 
-test('shareView exposes only the plan-review subset of the task', () => {
+test('shareView exposes only the plan-review subset of the task (plan, artifacts, comments)', () => {
   const db = openDb(':memory:');
   const { owner, taskId } = seedTask(db);
   addComment(db, taskId, { author: owner, body: 'looks good' });
+  postArtifact(db, taskId, { key: 'rca', kind: 'rca', title: 'Root cause', content: '<b>race</b>' }, owner);
   const link = createShareLink(db, { taskId });
   const view = shareView(db, link.token);
-  assert.deepEqual(Object.keys(view).sort(), ['comments', 'plan', 'task']);
+  assert.deepEqual(Object.keys(view).sort(), ['artifacts', 'comments', 'plan', 'task']);
   assert.deepEqual(Object.keys(view.task).sort(), ['humanId', 'id', 'status', 'title', 'type']);
   assert.deepEqual(view.plan, { steps: ['a', 'b'] });
+  // The agent's visual artifacts travel with the share so reviewers can approve on the evidence.
+  assert.equal(view.artifacts.length, 1);
+  assert.equal(view.artifacts[0].kind, 'rca');
   assert.equal(view.comments.length, 1);
   assert.equal(view.comments[0].body, 'looks good');
   assert.equal(shareView(db, 'bogus'), null);
@@ -120,7 +124,7 @@ test('owner mints a link; an anonymous holder can view + comment without a sessi
     // Public view — no cookie — returns only the shared subset.
     const view = await api(base, 'GET', '/api/share/' + token, {});
     assert.equal(view.status, 200);
-    assert.deepEqual(Object.keys(view.json).sort(), ['comments', 'plan', 'task']);
+    assert.deepEqual(Object.keys(view.json).sort(), ['artifacts', 'comments', 'plan', 'task']);
     assert.equal(view.json.task.id, taskId);
 
     // A comment with no author defaults to 'guest'.

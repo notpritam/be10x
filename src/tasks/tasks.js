@@ -26,6 +26,7 @@ function hydrate(row) {
     rating: row.rating_json ? JSON.parse(row.rating_json) : null,
     refs: row.refs_json ? JSON.parse(row.refs_json) : null,
     agent: row.agent_json ? JSON.parse(row.agent_json) : null,
+    artifacts: row.artifacts_json ? JSON.parse(row.artifacts_json) : [],
     retryCount: row.retry_count,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -65,6 +66,31 @@ export function listTasks(db, { scope, teamId, status, ownerId } = {}) {
   if (ownerId) { where.push('owner_id = ?'); args.push(ownerId); }
   const sql = 'SELECT * FROM tasks' + (where.length ? ' WHERE ' + where.join(' AND ') : '') + ' ORDER BY created_at';
   return db.prepare(sql).all(...args).map(hydrate);
+}
+
+// Post a visual artifact (RCA, diagram, finding, suggestion) the human sees in the task view. `content`
+// is rich like a plan — HTML (rendered in a sandbox), markdown, or a structured { blocks|html|steps|
+// diagram } — HTML being the primary medium (visuals convey best). A stable `key` upserts, so the agent
+// can refine an artifact (e.g. update the RCA as it learns) instead of piling up duplicates.
+export function postArtifact(db, id, artifact, actor) {
+  const task = getTask(db, id);
+  if (!task) throw new Error('NO_TASK');
+  const now = Date.now();
+  const list = Array.isArray(task.artifacts) ? [...task.artifacts] : [];
+  const a = artifact && typeof artifact === 'object' ? artifact : {};
+  const key = typeof a.key === 'string' && a.key.trim() ? a.key.trim() : randomUUID();
+  const kind = typeof a.kind === 'string' && a.kind.trim() ? a.kind.trim() : 'note';
+  const title = typeof a.title === 'string' ? a.title : '';
+  const content = a.content !== undefined ? a.content : a;
+  const idx = list.findIndex((x) => x && x.key === key);
+  if (idx >= 0) {
+    list[idx] = { ...list[idx], kind, title, content, updatedAt: now };
+  } else {
+    list.push({ key, kind, title, content, createdAt: now });
+  }
+  db.prepare('UPDATE tasks SET artifacts_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(list), now, id);
+  appendEvent(db, id, actor, 'artifact', { key, kind, title });
+  return getTask(db, id);
 }
 
 export function setResearch(db, id, research, actor) {

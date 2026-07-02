@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PlanView } from "@/components/task/PlanView";
+import { TaskArtifacts } from "@/components/task/TaskArtifacts";
 
 const NAME_KEY = "be10x_share_author";
 
@@ -185,6 +186,7 @@ export function ShareReviewPage({ token }: { token: string }) {
   }
 
   const { task, plan, comments } = view;
+  const artifacts = view.artifacts ?? [];
   const statusMeta = STATUS_META[task.status];
 
   return (
@@ -258,6 +260,14 @@ export function ShareReviewPage({ token }: { token: string }) {
             <PlanView plan={plan} />
           )}
         </section>
+
+        {/* Findings & artifacts — the agent's RCA / diagrams / findings, so a reviewer can approve on the
+            evidence, not just the plan text. Renders nothing when the agent hasn't posted any. */}
+        {artifacts.length > 0 && (
+          <section className={`${CARD} p-5 sm:p-6`}>
+            <TaskArtifacts artifacts={artifacts} />
+          </section>
+        )}
 
         {/* Review */}
         <section className={`${CARD} p-5 sm:p-6`}>

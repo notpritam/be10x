@@ -25,6 +25,7 @@ import { LifecycleStrip } from "./LifecycleStrip";
 import { PlanView } from "./PlanView";
 import { PlanVersions } from "./PlanVersions";
 import { TaskOverview } from "./TaskOverview";
+import { TaskArtifacts } from "./TaskArtifacts";
 import { TaskChecklist } from "./TaskChecklist";
 import { CurrentStep } from "./CurrentStep";
 import { AgentConfigControl } from "./AgentConfigControl";
@@ -210,6 +211,11 @@ export function DeepDivePanel({
                 {/* The agent's live implementation task list — what it's working on, what's done/left.
                     When the agent isn't active, an in-progress step shows as paused (not a live spinner). */}
                 <TaskChecklist todos={task.agent?.todos} active={agentActive} />
+
+                {/* The agent's visual brief — RCA, diagrams, findings, suggestions, verification, rendered
+                    as HTML. This leads the view: it's how the agent shows what it found and proposes, so the
+                    human grasps the task at a glance and steers from the interaction panel. */}
+                <TaskArtifacts artifacts={task.artifacts} />
 
                 {/* Plan first — the artifact under review. Copy its content or expand it full-screen. */}
                 {task.plan != null && (

@@ -129,6 +129,17 @@ export interface TaskDebug {
   input: InputRequest | null;
 }
 
+/** A visual artifact the agent posted to a task — RCA, diagram, finding, suggestion, verification —
+ *  rendered richly (HTML preferred) in the task view. `content` has the same shape as a plan value. */
+export interface Artifact {
+  key: string;
+  kind: string;
+  title?: string;
+  content: unknown;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
 export interface Task {
   id: string;
   humanId: string;
@@ -148,6 +159,7 @@ export interface Task {
   rating: unknown | null;
   refs: unknown | null;
   agent: AgentStatus | null;
+  artifacts?: Artifact[];
   retryCount: number;
   createdAt: number;
   updatedAt: number;

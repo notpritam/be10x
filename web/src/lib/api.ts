@@ -2,6 +2,7 @@
 // cookie (gfa_sid) rides along automatically because the app is served same-origin.
 import type {
   AgentConfig,
+  Artifact,
   Comment,
   FsListing,
   InputRequest,
@@ -132,10 +133,12 @@ export interface ShareLink {
   revoked_at: number | null;
 }
 
-/** The public, token-scoped view behind a valid link: the task header, its plan, and the discussion. */
+/** The public, token-scoped view behind a valid link: the task header, its plan, the agent's visual
+ *  artifacts (RCA / diagrams / findings), and the discussion. */
 export interface ShareView {
   task: { id: string; humanId: string; title: string; status: Status; type: TaskType };
   plan: unknown;
+  artifacts?: Artifact[];
   comments: Comment[];
 }
 

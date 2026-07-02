@@ -15,6 +15,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const COLUMN_MIGRATIONS = [
   { table: 'runs', column: 'executor', ddl: "ALTER TABLE runs ADD COLUMN executor TEXT NOT NULL DEFAULT 'claude'" },
   { table: 'runs', column: 'model', ddl: 'ALTER TABLE runs ADD COLUMN model TEXT' },
+  { table: 'tasks', column: 'artifacts_json', ddl: 'ALTER TABLE tasks ADD COLUMN artifacts_json TEXT' },
 ];
 
 // Bring an existing db up to the current schema without dropping data. Table names here are our own
