@@ -18,6 +18,8 @@ services:
     branch: main
     dockerfilePath: ./Dockerfile
     healthCheckPath: /         # the board serves the UI at / (HTTP 200) — Render uses this for zero-downtime deploys
+    domains:                   # serve the board on your own subdomain; set the DNS CNAME (below) and Render issues TLS
+      - be10x.notpritam.in
     autoDeploy: true           # redeploy automatically on every push to `branch`
     envVars:
       - key: GFA_SECURE_COOKIES  # add "; Secure" to the session cookie (this deploy is HTTPS end-to-end)
