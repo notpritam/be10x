@@ -106,19 +106,22 @@ function teamsForUser(db, userId) {
 }
 
 function serveStatic(req, res) {
+  const isHead = req.method === 'HEAD';
   let rel = new URL(req.url, 'http://x').pathname;
   if (rel === '/') rel = '/index.html';
   let fp = normalize(join(PUBLIC, rel));
   if (!fp.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
   if (!existsSync(fp)) {
     // SPA fallback: client-side routes (no file extension, e.g. /t/<id>) get index.html so deep links and
-    // refreshes work; a missing path that has an extension is a real 404.
-    if (rel.includes('.')) { res.writeHead(404); return res.end('not found'); }
+    // refreshes work; a missing path that has an extension is a real 404 (with an explicit Content-Type so
+    // a browser never mis-sniffs the miss as a stylesheet/script).
+    if (rel.includes('.')) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end(isHead ? undefined : 'not found'); }
     fp = join(PUBLIC, 'index.html');
   }
   const ext = fp.slice(fp.lastIndexOf('.'));
   res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': 'no-store' });
-  res.end(readFileSync(fp));
+  // HEAD (proxies, preloaders, uptime checks) gets the same headers with no body.
+  res.end(isHead ? undefined : readFileSync(fp));
 }
 
 // Route table: [method, pattern, needsAuth, handler(ctx)] where ctx = { db, req, res, params, body, user }
@@ -469,7 +472,7 @@ export function createApp(db) {
   return http.createServer(async (req, res) => {
     try {
       const pathname = new URL(req.url, 'http://x').pathname;
-      if (!pathname.startsWith('/api/')) { if (req.method === 'GET') return serveStatic(req, res); res.writeHead(404); return res.end(); }
+      if (!pathname.startsWith('/api/')) { if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(req, res); res.writeHead(404); return res.end(); }
       // Agent/runner API: token (Bearer) auth, dispatched before the human/session routes.
       if (pathname.startsWith('/api/agent/')) {
         for (const [method, pattern, handler] of AGENT_ROUTES) {

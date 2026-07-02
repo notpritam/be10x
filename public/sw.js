@@ -1,7 +1,7 @@
 // ABOUTME: be10x service worker — makes the board installable (PWA) and gives the app shell an offline
 // fallback. Deliberately conservative: it NEVER touches /api (auth + live data always hit the network),
 // serves navigations network-first, and treats Vite's hashed /assets as immutable (cache-first).
-const VERSION = 'be10x-v2';
+const VERSION = 'be10x-v3';
 const SHELL = ['/', '/icon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
@@ -29,8 +29,10 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(
       fetch(request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(VERSION).then((c) => c.put('/', copy)).catch(() => {});
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(VERSION).then((c) => c.put('/', copy)).catch(() => {});
+          }
           return res;
         })
         .catch(() => caches.match('/', { ignoreSearch: true })),
@@ -45,8 +47,12 @@ self.addEventListener('fetch', (e) => {
         (hit) =>
           hit ||
           fetch(request).then((res) => {
-            const copy = res.clone();
-            caches.open(VERSION).then((c) => c.put(request, copy)).catch(() => {});
+            // NEVER cache a non-OK response (e.g. a mid-deploy 404): a cached 404 would be served
+            // cache-first indefinitely and break the app until the next VERSION bump. Only 2xx is immutable.
+            if (res.ok) {
+              const copy = res.clone();
+              caches.open(VERSION).then((c) => c.put(request, copy)).catch(() => {});
+            }
             return res;
           }),
       ),
