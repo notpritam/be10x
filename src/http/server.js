@@ -6,12 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { dirname, join, normalize, resolve, basename } from 'node:path';
 import { openDb } from '../db/db.js';
-import { createUser, getUserByEmail, getUserById } from '../auth/users.js';
+import { createUser, getUserByEmail, getUserById, searchUsers, recentCollaborators } from '../auth/users.js';
 import { verifyPassword } from '../auth/passwords.js';
 import { createSession, getSession, deleteSession } from '../auth/sessions.js';
 import { createToken, listTokens, revokeToken, getTokenOwner } from '../auth/tokens.js';
 import { createTeam, deleteTeam } from '../teams/teams.js';
-import { listMembers, addMember } from '../teams/memberships.js';
+import { listMembers, addMember, setRole, removeMember } from '../teams/memberships.js';
 import { assertCan } from '../authz/authz.js';
 import { createTask, getTask, listTasks, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
@@ -136,10 +136,38 @@ const ROUTES = [
   }],
   ['POST', '/api/teams/:id/members', true, async ({ db, res, params, body, user }) => {
     assertCan(db, user.id, 'members.manage', { teamId: params.id });
-    const invitee = getUserByEmail(db, body.email || '');
+    // Add by explicit userId (from search / recent quick-add) or fall back to email lookup.
+    const invitee = body.userId ? getUserById(db, body.userId) : getUserByEmail(db, body.email || '');
     if (!invitee) throw new Error('USER_NOT_FOUND');
     const m = addMember(db, { teamId: params.id, userId: invitee.id, role: body.role });
     send(res, 200, { member: { userId: m.userId, role: m.role } });
+  }],
+  ['PATCH', '/api/teams/:id/members/:userId', true, async ({ db, res, params, body, user }) => {
+    assertCan(db, user.id, 'members.manage', { teamId: params.id });
+    setRole(db, params.id, params.userId, body.role);
+    send(res, 200, { ok: true });
+  }],
+  ['DELETE', '/api/teams/:id/members/:userId', true, async ({ db, res, params, user }) => {
+    assertCan(db, user.id, 'members.manage', { teamId: params.id });
+    removeMember(db, params.id, params.userId);
+    send(res, 200, { ok: true });
+  }],
+  // Find people already on the platform to add to a team — a live typeahead (email or name). Excludes
+  // yourself and, when excludeTeam is given, everyone already on that team.
+  ['GET', '/api/users/search', true, async ({ db, req, res, user }) => {
+    const q = new URL(req.url, 'http://x').searchParams;
+    const excludeIds = [user.id];
+    const excludeTeam = q.get('excludeTeam');
+    if (excludeTeam) for (const m of listMembers(db, excludeTeam)) excludeIds.push(m.userId);
+    send(res, 200, { users: searchUsers(db, q.get('q') || '', { excludeIds }) });
+  }],
+  // People you've recently worked with (share a team with you) — quick-add chips, no typing.
+  ['GET', '/api/users/recent', true, async ({ db, req, res, user }) => {
+    const q = new URL(req.url, 'http://x').searchParams;
+    const excludeIds = [];
+    const excludeTeam = q.get('excludeTeam');
+    if (excludeTeam) for (const m of listMembers(db, excludeTeam)) excludeIds.push(m.userId);
+    send(res, 200, { users: recentCollaborators(db, user.id, { excludeIds }) });
   }],
   ['DELETE', '/api/teams/:id', true, async ({ db, res, params, user }) => {
     assertCan(db, user.id, 'team.delete', { teamId: params.id });

@@ -63,6 +63,13 @@ export interface Member {
   role: TeamRole;
 }
 
+/** A lightweight public user card — search results, recent collaborators, quick-add chips. */
+export interface UserLite {
+  id: string;
+  email: string;
+  displayName: string;
+}
+
 /** A personal access token as shown in a list — never carries the plaintext secret. */
 export interface TokenInfo {
   id: string;

@@ -21,6 +21,7 @@ import type {
   TeamRole,
   TokenInfo,
   User,
+  UserLite,
 } from "./types";
 
 export class ApiError extends Error {
@@ -73,6 +74,13 @@ function post<T>(path: string, body?: unknown): Promise<T> {
 
 function del<T>(path: string): Promise<T> {
   return request<T>(path, { method: "DELETE" });
+}
+
+function patch<T>(path: string, body?: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "PATCH",
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
 }
 
 export interface TaskFilter {
@@ -160,7 +168,31 @@ export const api = {
       email,
       ...(role ? { role } : {}),
     }),
+  /** Add a known user (from search / recent quick-add) by id — no email typing. */
+  addMemberById: (teamId: string, userId: string, role?: TeamRole) =>
+    post<{ member: { userId: string; role: TeamRole } }>(`/api/teams/${teamId}/members`, {
+      userId,
+      ...(role ? { role } : {}),
+    }),
+  setMemberRole: (teamId: string, userId: string, role: TeamRole) =>
+    patch<{ ok: true }>(`/api/teams/${teamId}/members/${userId}`, { role }),
+  removeMember: (teamId: string, userId: string) =>
+    del<{ ok: true }>(`/api/teams/${teamId}/members/${userId}`),
   deleteTeam: (teamId: string) => del<{ ok: true }>(`/api/teams/${teamId}`),
+
+  // Find people on the platform to add to a team.
+  searchUsers: (q: string, excludeTeam?: string) => {
+    const p = new URLSearchParams({ q });
+    if (excludeTeam) p.set("excludeTeam", excludeTeam);
+    return request<{ users: UserLite[] }>(`/api/users/search?${p.toString()}`);
+  },
+  /** People you've recently worked with — quick-add chips. */
+  recentPeople: (excludeTeam?: string) => {
+    const p = new URLSearchParams();
+    if (excludeTeam) p.set("excludeTeam", excludeTeam);
+    const qs = p.toString();
+    return request<{ users: UserLite[] }>(`/api/users/recent${qs ? `?${qs}` : ""}`);
+  },
 
   // Projects (linked repos)
   listProjects: () => request<{ projects: Project[] }>("/api/projects"),

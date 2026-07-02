@@ -70,6 +70,81 @@ test('owner adds an existing user by email and they appear in members', async ()
   });
 });
 
+test('user search finds a signed-up person, excluding current team members', async () => {
+  await withServer(async (base) => {
+    const a = await signup(base, 'owner@b.co');
+    const b = await signup(base, 'grace@hopper.dev');
+    const team = await api(base, 'POST', '/api/teams', { cookie: a.cookie, body: { name: 'Alpha' } });
+    const teamId = team.json.team.id;
+
+    // grace is on the platform but not on the team → shows up in search
+    const s1 = await api(base, 'GET', '/api/users/search?q=grace&excludeTeam=' + teamId, { cookie: a.cookie });
+    assert.equal(s1.status, 200);
+    assert.equal(s1.json.users.length, 1);
+    assert.equal(s1.json.users[0].id, b.json.user.id);
+
+    // add her, then she's excluded from search for that team
+    await api(base, 'POST', '/api/teams/' + teamId + '/members', { cookie: a.cookie, body: { userId: b.json.user.id } });
+    const s2 = await api(base, 'GET', '/api/users/search?q=grace&excludeTeam=' + teamId, { cookie: a.cookie });
+    assert.equal(s2.json.users.length, 0);
+  });
+});
+
+test('add a member by userId (from search/quick-add), change their role, then remove them', async () => {
+  await withServer(async (base) => {
+    const a = await signup(base, 'owner@b.co');
+    const b = await signup(base, 'second@b.co');
+    const team = await api(base, 'POST', '/api/teams', { cookie: a.cookie, body: { name: 'Alpha' } });
+    const teamId = team.json.team.id;
+
+    // add by id
+    const added = await api(base, 'POST', '/api/teams/' + teamId + '/members', { cookie: a.cookie, body: { userId: b.json.user.id, role: 'admin' } });
+    assert.equal(added.status, 200);
+    assert.equal(added.json.member.role, 'admin');
+
+    // change role
+    const patched = await api(base, 'PATCH', '/api/teams/' + teamId + '/members/' + b.json.user.id, { cookie: a.cookie, body: { role: 'viewer' } });
+    assert.equal(patched.status, 200);
+    let list = await api(base, 'GET', '/api/teams/' + teamId + '/members', { cookie: a.cookie });
+    assert.equal(list.json.members.find((m) => m.userId === b.json.user.id).role, 'viewer');
+
+    // remove
+    const removed = await api(base, 'DELETE', '/api/teams/' + teamId + '/members/' + b.json.user.id, { cookie: a.cookie });
+    assert.equal(removed.status, 200);
+    list = await api(base, 'GET', '/api/teams/' + teamId + '/members', { cookie: a.cookie });
+    assert.equal(list.json.members.length, 1);
+  });
+});
+
+test('recent collaborators surfaces a co-member from a shared team', async () => {
+  await withServer(async (base) => {
+    const a = await signup(base, 'owner@b.co');
+    const b = await signup(base, 'peer@b.co');
+    const team = await api(base, 'POST', '/api/teams', { cookie: a.cookie, body: { name: 'Alpha' } });
+    await api(base, 'POST', '/api/teams/' + team.json.team.id + '/members', { cookie: a.cookie, body: { userId: b.json.user.id } });
+
+    // a new empty team; peer should be suggested (shared the first team), excluded from members of the new one
+    const team2 = await api(base, 'POST', '/api/teams', { cookie: a.cookie, body: { name: 'Beta' } });
+    const recent = await api(base, 'GET', '/api/users/recent?excludeTeam=' + team2.json.team.id, { cookie: a.cookie });
+    assert.equal(recent.status, 200);
+    assert.ok(recent.json.users.some((u) => u.id === b.json.user.id));
+  });
+});
+
+test('a non-admin member cannot add or remove members (403)', async () => {
+  await withServer(async (base) => {
+    const a = await signup(base, 'owner@b.co');
+    const b = await signup(base, 'member@b.co');
+    const c = await signup(base, 'target@b.co');
+    const team = await api(base, 'POST', '/api/teams', { cookie: a.cookie, body: { name: 'Alpha' } });
+    const teamId = team.json.team.id;
+    await api(base, 'POST', '/api/teams/' + teamId + '/members', { cookie: a.cookie, body: { userId: b.json.user.id } }); // plain member
+
+    const denied = await api(base, 'POST', '/api/teams/' + teamId + '/members', { cookie: b.cookie, body: { userId: c.json.user.id } });
+    assert.equal(denied.status, 403);
+  });
+});
+
 test('a signed-up non-member gets 403 listing members of a team they are not in', async () => {
   await withServer(async (base) => {
     const a = await signup(base, 'owner@b.co');

@@ -1,7 +1,7 @@
 // ABOUTME: Workspace tab bar atop the main content. A leading "context" button = the current view
 // (Personal / a team / …) that returns to the board and reads as selected when no task is open, then
 // the open task tabs (title + a status dot, closable). Browser-style; the active tab is a raised card.
-import { LayoutGrid, Plus, Rows3, X, type LucideIcon } from "lucide-react";
+import { LayoutGrid, Plus, Rows3, Users, X, type LucideIcon } from "lucide-react";
 import { useApp, type View } from "@/state/app-store";
 import { STATUS_META } from "@/lib/lifecycle";
 import { cn } from "@/lib/utils";
@@ -30,6 +30,7 @@ export function TabBar({
   tab,
   onTab,
   onNewTask,
+  onManageTeam,
   composing = false,
   onCloseCompose,
 }: {
@@ -37,6 +38,7 @@ export function TabBar({
   tab: BoardTab;
   onTab: (tab: BoardTab) => void;
   onNewTask: () => void;
+  onManageTeam?: () => void;
   composing?: boolean;
   onCloseCompose?: () => void;
 }) {
@@ -124,6 +126,11 @@ export function TabBar({
       {/* Board controls live on the tab line (no separate header). Only on the board. */}
       {onBoard && (
         <div className="flex shrink-0 items-center gap-2 pl-2">
+          {view.kind === "team" && onManageTeam && (
+            <Button variant="outline" size="sm" onClick={onManageTeam} className="h-8 gap-1.5" title="Manage team — members & access">
+              <Users className="size-4" /> Manage team
+            </Button>
+          )}
           <div className="inline-flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
             <SegBtn active={tab === "board"} onClick={() => onTab("board")} icon={LayoutGrid} label="Board" />
             <SegBtn active={tab === "list"} onClick={() => onTab("list")} icon={Rows3} label="List" />

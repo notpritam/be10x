@@ -57,6 +57,7 @@ export function AppShell() {
           tab={tab}
           onTab={setTab}
           onNewTask={startCompose}
+          onManageTeam={() => setManageTeamOpen(true)}
           composing={composing}
           onCloseCompose={() => setComposing(false)}
         />
