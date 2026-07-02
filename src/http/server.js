@@ -19,8 +19,9 @@ import { listEvents, appendEvent } from '../tasks/events.js';
 import { requestReview, submitReview } from '../reviews/reviews.js';
 import { requestInput, answerInput, getOpenInputRequest } from '../tasks/input_requests.js';
 import { addComment, listComments } from '../tasks/comments.js';
-import { enqueueWake } from '../executor/wake.js';
-import { listRunsForTask } from '../executor/runs.js';
+import { enqueueWake, getWake, claimNextWakeForKeys } from '../executor/wake.js';
+import { listRunsForTask, createRun, finishRun, setRunSession, getLatestRunForTask } from '../executor/runs.js';
+import { prepareWake, settleWake } from '../runner/runner.js';
 import { taskDebug } from '../tasks/debug.js';
 import { listProjects, registerProject, detectProjectKey } from '../projects/projects.js';
 import { createShareLink, listShareLinksForTask, revokeShareLink, getActiveShareLinkByToken, shareView } from '../share/share.js';
@@ -392,6 +393,73 @@ const AGENT_ROUTES = [
     if (!tool) throw new Error('UNKNOWN_TOOL');
     const result = tool.handler(db, auth, body.args ?? {});
     send(res, 200, { result: result ?? null });
+  }],
+
+  // A connector declares a repo it serves so tasks can target it and `claim` can match it. The project is
+  // path-less on a hosted board (the repo lives on the member's machine, not the server). Idempotent.
+  ['POST', '/api/agent/projects', async ({ db, res, body }) => {
+    const key = String(body.key || '').trim();
+    if (!key) throw new Error('MISSING_FIELD:key');
+    const project = registerProject(db, { key, name: body.name || key, rootPath: null });
+    send(res, 200, { project });
+  }],
+
+  // Hand the next wake to a member's connector. Scoped to the repos (project keys) the connector serves,
+  // this runs the SAME prepareWake the in-process runner does (lifecycle claim + delta gather), opens a run
+  // row (so the board shows "agent running" and holds a resume record), and returns everything the remote
+  // executor needs to build the prompt and --resume the prior session. Comments are left unseen until the
+  // connector reports back, so a failed run re-delivers them.
+  ['POST', '/api/agent/claim', async ({ db, res, body, auth }) => {
+    const projectKeys = Array.isArray(body.projectKeys) ? body.projectKeys : [];
+    const workerId = body.workerId || 'connect:' + auth.userId;
+    const wake = claimNextWakeForKeys(db, { projectKeys, workerId });
+    if (!wake) return send(res, 200, { wake: null });
+    const task = getTask(db, wake.taskId);
+    if (!task) return send(res, 200, { wake: null }); // orphaned wake row; nothing to run
+    // The prior run's session (fetch BEFORE opening this run row, or we'd read the one we just created).
+    const resumeSessionId = getLatestRunForTask(db, task.id)?.sessionId || null;
+    const { mode, staged, comments } = prepareWake(db, { wake, task, workerId });
+    const run = createRun(db, { taskId: staged.id, projectId: staged.projectId });
+    send(res, 200, {
+      wake: { id: wake.id, reason: wake.reason },
+      runId: run.id,
+      task: staged, // full task: content + plan travel so the connector builds the prompt without another call
+      mode,
+      resume: wake.context?.retry ? true : undefined,
+      resumeSessionId,
+      comments: comments.map((c) => ({ id: c.id, anchor: c.anchor, author: c.author, body: c.body })),
+      commentIds: comments.map((c) => c.id),
+    });
+  }],
+
+  // Take a run's outcome back from the connector. Closes the run row and applies the durability tail via
+  // the SAME settleWake the in-process runner uses (auto-retry env failures, execute→verifying hand-off,
+  // mark the delivered comments seen, blocked/gave-up). commentIds identify exactly the set delivered.
+  ['POST', '/api/agent/report', async ({ db, res, body, auth }) => {
+    const wake = getWake(db, body.wakeId);
+    if (!wake) throw new Error('NOT_FOUND');
+    const task = getTask(db, wake.taskId);
+    if (!task) throw new Error('NO_TASK');
+    const summary = body.summary || {};
+    const workerId = body.workerId || 'connect:' + auth.userId;
+    if (body.runId) {
+      if (summary.sessionId) setRunSession(db, body.runId, summary.sessionId);
+      finishRun(
+        db,
+        body.runId,
+        summary.ok === false ? { status: 'failed', result: summary, error: summary.error } : { status: 'done', result: summary }
+      );
+    }
+    const commentIds = Array.isArray(body.commentIds) ? body.commentIds : [];
+    const result = settleWake(db, {
+      wake,
+      task,
+      workerId,
+      mode: summary.mode,
+      comments: commentIds.map((id) => ({ id })),
+      summary,
+    });
+    send(res, 200, { ok: true, retrying: result.retrying || null });
   }],
 ];
 

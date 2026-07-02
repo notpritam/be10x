@@ -2,6 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../src/db/db.js';
 import { createApp } from '../src/http/server.js';
+import { createToken } from '../src/auth/tokens.js';
+import { registerProject } from '../src/projects/projects.js';
+import { enqueueWake, listPendingWakes } from '../src/executor/wake.js';
+import { getTask } from '../src/tasks/tasks.js';
+import { addComment, unseenComments } from '../src/tasks/comments.js';
+import { getRun } from '../src/executor/runs.js';
 
 // The token-authenticated agent/runner API (/api/agent/*) — how an agent on a MEMBER's own machine reaches
 // a hosted board. These tests drive it over a real loopback server, the way the HTTP MCP transport and the
@@ -17,6 +23,34 @@ async function withServer(fn) {
   } finally {
     await new Promise((r) => app.close(r));
   }
+}
+
+// Same, but hands the db to the test so it can seed a project/task/wake directly (the way the board's own
+// state would already look) and then drive claim/report over HTTP.
+async function withServerDb(fn) {
+  const db = openDb(':memory:');
+  const app = createApp(db);
+  await new Promise((r) => app.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + app.address().port;
+  try {
+    await fn(base, db);
+  } finally {
+    await new Promise((r) => app.close(r));
+  }
+}
+
+// Seed a user + token + project + one task in `status`, returning the ids the runner-API tests need.
+function seedBoard(db, { status = 'ready_to_work', key = 'github.com/acme/app' } = {}) {
+  const now = Date.now();
+  db.prepare('INSERT INTO users (id,email,display_name,password_hash,created_at) VALUES (?,?,?,?,?)').run(
+    'u1', 'a@b.dev', 'A', 'x', now
+  );
+  const { token } = createToken(db, 'u1', 'laptop');
+  const project = registerProject(db, { key, name: 'app', rootPath: null });
+  db.prepare(
+    'INSERT INTO tasks (id,human_id,type,scope,project_id,owner_id,title,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)'
+  ).run('t1', 't1', 'general', 'project', project.id, 'u1', 'T', status, now, now);
+  return { token, key, projectId: project.id };
 }
 
 // Bearer-token request (the agent transport) — no session cookie.
@@ -114,5 +148,94 @@ test('rpc gateway passes a domain error through with the right status (NO_TASK -
     });
     assert.equal(res.status, 404);
     assert.equal(res.json.error, 'NO_TASK');
+  });
+});
+
+test('POST /api/agent/projects registers a path-less project a connector serves', async () => {
+  await withServer(async (base) => {
+    const { token } = await boot(base);
+    const res = await agent(base, 'POST', '/api/agent/projects', { token, body: { key: 'github.com/acme/app', name: 'app' } });
+    assert.equal(res.status, 200);
+    assert.equal(res.json.project.key, 'github.com/acme/app');
+    assert.equal(res.json.project.rootPath, null, 'path-less on a hosted board (repo lives on the member machine)');
+  });
+});
+
+test('claim → report drives the full execute→verifying hand-off over HTTP', async () => {
+  await withServerDb(async (base, db) => {
+    const { token, key } = seedBoard(db, { status: 'ready_to_work' });
+    enqueueWake(db, 't1', 'execute');
+
+    const claim = await agent(base, 'POST', '/api/agent/claim', { token, body: { projectKeys: [key] } });
+    assert.equal(claim.status, 200);
+    assert.ok(claim.json.wake.id, 'a wake was handed out');
+    assert.equal(claim.json.mode, 'execute');
+    assert.equal(claim.json.task.status, 'in_progress', 'prepareWake claimed ready_to_work→in_progress');
+    assert.equal(claim.json.resumeSessionId, null, 'no prior session to resume on the first run');
+    assert.ok(claim.json.runId, 'a run row was opened');
+
+    const report = await agent(base, 'POST', '/api/agent/report', {
+      token,
+      body: {
+        wakeId: claim.json.wake.id,
+        runId: claim.json.runId,
+        taskId: 't1',
+        commentIds: claim.json.commentIds,
+        summary: { ok: true, done: true, mode: 'execute', sessionId: 'sess-1' },
+      },
+    });
+    assert.equal(report.status, 200);
+    assert.equal(report.json.ok, true);
+
+    // The board applied the durability tail: execute→verifying + a fresh verify wake; run closed done + session.
+    assert.equal(getTask(db, 't1').status, 'verifying');
+    const pending = listPendingWakes(db, 't1');
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].reason, 'verify');
+    const run = getRun(db, claim.json.runId);
+    assert.equal(run.status, 'done');
+    assert.equal(run.sessionId, 'sess-1', 'the new session id was persisted for the next resume');
+  });
+});
+
+test('claim returns { wake: null } when no served repo matches', async () => {
+  await withServerDb(async (base, db) => {
+    const { token } = seedBoard(db);
+    enqueueWake(db, 't1', 'execute');
+    const claim = await agent(base, 'POST', '/api/agent/claim', { token, body: { projectKeys: ['github.com/someone/else'] } });
+    assert.equal(claim.status, 200);
+    assert.equal(claim.json.wake, null);
+    // The wake is untouched — still pending for a runner that does serve the repo.
+    assert.equal(listPendingWakes(db, 't1').length, 1);
+  });
+});
+
+test('report of a network failure auto-retries over HTTP and keeps the delivered comment unseen', async () => {
+  await withServerDb(async (base, db) => {
+    const { token, key } = seedBoard(db, { status: 'in_progress' });
+    const c = addComment(db, 't1', { author: 'u1', body: 'steer' });
+    enqueueWake(db, 't1', 'execute');
+
+    const claim = await agent(base, 'POST', '/api/agent/claim', { token, body: { projectKeys: [key] } });
+    assert.equal(claim.json.commentIds.length, 1);
+
+    const report = await agent(base, 'POST', '/api/agent/report', {
+      token,
+      body: {
+        wakeId: claim.json.wake.id,
+        runId: claim.json.runId,
+        taskId: 't1',
+        commentIds: claim.json.commentIds,
+        summary: { ok: false, failureKind: 'network', error: 'ECONNRESET', mode: 'execute' },
+      },
+    });
+    assert.equal(report.status, 200);
+    assert.equal(report.json.retrying.kind, 'network');
+
+    const pending = listPendingWakes(db, 't1');
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].context.retry, true);
+    assert.equal(unseenComments(db, 't1').length, 1, 'the retry must re-deliver the comment');
+    assert.equal(c.id, claim.json.commentIds[0]);
   });
 });

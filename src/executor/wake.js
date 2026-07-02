@@ -65,6 +65,32 @@ export function claimNextWake(db, { projectId, workerId = 'runner' } = {}) {
   return null;
 }
 
+// Remote claim: the oldest pending wake for a task whose project's KEY is one this runner serves. This is
+// what a `be10x connect` runner on a MEMBER's machine calls over HTTP — it declares the repos (project
+// keys) it has checked out locally, and only gets wakes for those. Same optimistic-lock claim as the
+// others. Personal/project-less tasks are intentionally excluded (a remote runner has no repo for them).
+// Returns the claimed wake, or null (empty keys → null).
+export function claimNextWakeForKeys(db, { projectKeys = [], workerId = 'runner' } = {}) {
+  if (!Array.isArray(projectKeys) || projectKeys.length === 0) return null;
+  const placeholders = projectKeys.map(() => '?').join(',');
+  const rows = db
+    .prepare(
+      `SELECT w.id FROM wake_queue w
+         JOIN tasks t ON t.id = w.task_id
+         JOIN projects p ON p.id = t.project_id
+        WHERE w.claimed_at IS NULL AND w.enqueued_at <= ? AND p.key IN (${placeholders})
+        ORDER BY w.enqueued_at, w.rowid`
+    )
+    .all(Date.now(), ...projectKeys);
+  for (const { id } of rows) {
+    const res = db
+      .prepare('UPDATE wake_queue SET claimed_at = ?, claimed_by = ? WHERE id = ? AND claimed_at IS NULL')
+      .run(Date.now(), workerId, id);
+    if (res.changes === 1) return getWake(db, id);
+  }
+  return null;
+}
+
 // Board-wide claim: the oldest pending wake for ANY task that has a project (the executor needs the
 // project's repo to work in). Used by the runner baked into `be10x serve`, which works every linked
 // repo — so a user adds a folder on the board and it just works, no per-repo terminal.
