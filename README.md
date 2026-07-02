@@ -90,12 +90,16 @@ npm install -g github:notpritam/be10x
 # 2. Sign in — opens the board in your browser; click "Authorize". The token installs itself, no paste:
 be10x login https://your-board.example.com
 
-# 3. In each repo you want worked here, link it — then start the agent:
+# 3. In each repo you want worked here, link it:
 cd ~/code/app && be10x link
+
+# 4. Run the agent — foreground (to watch)…
 be10x connect
+#    …or as an always-on background service that auto-starts on login/boot (recommended):
+be10x service install
 ```
 
-`be10x login` uses a browser **device-authorization** flow (like `gh auth login`): the CLI shows a short code, opens the board's approve screen where you're already signed in, and collects a personal token over the back channel once you click **Authorize** — it never touches your clipboard. Everything is saved to `~/.be10x/connect.json`, so a bare `be10x connect` works next time. `be10x link` registers the repo with the board and writes it a board-pointing MCP config; `be10x connect` then claims wakes for your linked repos, spawns **your** `claude` in each repo's worktree, and streams the plan / progress / output back to the board over HTTPS — where the whole team reviews and comments. Create a task for one of those repos on the board and your machine picks it up.
+`be10x login` uses a browser **device-authorization** flow (like `gh auth login`): the CLI shows a short code, opens the board's approve screen where you're already signed in, and collects a personal token over the back channel once you click **Authorize** — it never touches your clipboard. Everything is saved to `~/.be10x/connect.json`, so a bare `be10x connect` works next time. `be10x service install` turns that into a real background daemon (macOS launchd / Linux systemd) that starts on boot and restarts on crash — `be10x service status|logs|uninstall` manage it. `be10x link` registers the repo with the board and writes it a board-pointing MCP config; `be10x connect` then claims wakes for your linked repos, spawns **your** `claude` in each repo's worktree, and streams the plan / progress / output back to the board over HTTPS — where the whole team reviews and comments. Create a task for one of those repos on the board and your machine picks it up.
 
 > Prefer no browser (CI, headless)? `be10x connect --board <url> --token <gfa_…> --repos a,b` still works — mint the token under **Connect your machine → Advanced**.
 

@@ -28,6 +28,7 @@ function boardOrigin(): string {
 const INSTALL_CMD = "npm install -g github:notpritam/be10x";
 const LINK_CMD = "cd ~/code/your-repo\nbe10x link";
 const CONNECT_CMD = "be10x connect";
+const SERVICE_CMD = "be10x service install";
 const loginCmd = () => `be10x login ${boardOrigin()}`;
 
 function buildMcpConfig(config: AgentConfig | null, token: string): string {
@@ -190,11 +191,15 @@ export function ConnectAgentDialog({
             <Step n={2} title="Sign in" hint="Opens this board in your browser — click Authorize. The token installs itself.">
               <CommandRow cmd={loginCmd()} />
             </Step>
-            <Step n={3} title="Link a repo, then run the agent" hint="Point be10x link at each repo you want worked here. Leave connect running.">
+            <Step n={3} title="Link a repo, then run the agent" hint="Point be10x link at each repo you want worked here.">
               <div className="flex flex-col gap-2">
                 <CommandRow cmd={LINK_CMD} />
                 <CommandRow cmd={CONNECT_CMD} />
               </div>
+              <p className="mb-1.5 mt-2.5 text-[11.5px] text-muted-foreground/80">
+                Always-on? Run it as a background service that auto-starts on login (no terminal to keep open):
+              </p>
+              <CommandRow cmd={SERVICE_CMD} />
             </Step>
           </div>
 

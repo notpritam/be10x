@@ -95,12 +95,14 @@ npm install -g github:notpritam/be10x
 # 2. Sign in — opens the board in your browser; click "Authorize" (no token to copy):
 be10x login https://be10x.notpritam.in
 
-# 3. Link each repo you want worked here, then run the agent:
+# 3. Link each repo you want worked here:
 cd ~/code/app && be10x link
-be10x connect
+
+# 4. Run the agent as an always-on background service (starts on boot, restarts on crash):
+be10x service install
 ```
 
-`be10x login` opens the board's approve screen (you're already signed in there), you click **Authorize**, and the CLI collects a personal token over the back channel — saved to `~/.be10x/connect.json`, so a bare `be10x connect` works from then on. Now anyone creates a task for one of those repos on the board, hands it to the agent, and **that person's machine** picks it up, runs Claude locally, and streams the plan/progress/output back for the team to review. Leave `be10x connect` running (or run it under `tmux`/`pm2`/a login item so it survives).
+`be10x login` opens the board's approve screen (you're already signed in there), you click **Authorize**, and the CLI collects a personal token over the back channel — saved to `~/.be10x/connect.json`, so a bare `be10x connect` works from then on. `be10x service install` runs that connector as a background daemon (macOS launchd / Linux systemd `--user`) so it survives logout and reboots — no terminal to keep open; `be10x service status|logs|uninstall` manage it. (Prefer to watch it live instead? Just run `be10x connect` in a terminal.) Now anyone creates a task for one of those repos on the board, hands it to the agent, and **that person's machine** picks it up, runs Claude locally, and streams the plan/progress/output back for the team to review.
 
 > Headless box or CI (no browser to click Authorize)? Mint a token under **Connect your machine → Advanced** and run `be10x connect --board https://be10x.notpritam.in --token gfa_… --repos ~/code/app`.
 
