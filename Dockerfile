@@ -30,4 +30,5 @@ ENV NODE_ENV=production \
 VOLUME ["/data"]
 EXPOSE 4610
 
-CMD ["node", "bin/be10x.js", "serve", "--host", "0.0.0.0", "--port", "4610"]
+# Honor a platform-injected $PORT (Render, Railway, Fly all set one) and fall back to 4610 for local/compose.
+CMD ["sh", "-c", "node bin/be10x.js serve --host 0.0.0.0 --port ${PORT:-4610}"]
