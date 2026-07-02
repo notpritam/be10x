@@ -4,7 +4,7 @@ import { openDb } from '../src/db/db.js';
 import { getTask } from '../src/tasks/tasks.js';
 import { addComment, unseenComments } from '../src/tasks/comments.js';
 import { enqueueWake, listPendingWakes } from '../src/executor/wake.js';
-import { createRun, getRun, markRunning } from '../src/executor/runs.js';
+import { createRun, getRun, markRunning, setRunPid } from '../src/executor/runs.js';
 import { registerProject } from '../src/projects/projects.js';
 import { runWakeOnce, runAnyWakeOnce, recoverOrphans } from '../src/runner/runner.js';
 
@@ -140,4 +140,26 @@ test('recoverOrphans fails runs left running at restart; empty queue returns nul
   assert.equal(recoverOrphans(db), 1);
   assert.equal(getRun(db, run.id).status, 'failed');
   assert.equal(await runWakeOnce(db, { projectId: 'p1', execute: fakeExec() }), null);
+});
+
+test('recoverOrphans: live sweep reaps a dead-pid run but spares a mid-spawn (pid-less) run', () => {
+  const { db, mk } = seed();
+  mk('t1', 'in_progress');
+  mk('t2', 'in_progress');
+
+  // A run that recorded a pid which is now gone → a live sweep reaps it (false "running" self-corrects).
+  const dead = createRun(db, { taskId: 't1' });
+  markRunning(db, dead.id);
+  setRunPid(db, dead.id, 2 ** 30); // a pid that isn't a running process → ESRCH → treated as dead
+  // A freshly-created run with no pid yet (createRun sets status before the spawn records a pid).
+  const newborn = createRun(db, { taskId: 't2' });
+
+  // Live sweep: reap the dead one, spare the newborn (or we'd kill our own just-spawned run).
+  assert.equal(recoverOrphans(db, { requirePid: true }), 1);
+  assert.equal(getRun(db, dead.id).status, 'failed');
+  assert.equal(getRun(db, newborn.id).status, 'starting');
+
+  // Boot recovery (no requirePid): the pid-less leftover from a dead process IS reaped.
+  assert.equal(recoverOrphans(db), 1);
+  assert.equal(getRun(db, newborn.id).status, 'failed');
 });

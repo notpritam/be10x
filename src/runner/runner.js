@@ -208,27 +208,42 @@ function pidAlive(pid) {
   }
 }
 
-// Boot-time orphan recovery: a run left 'starting'/'running' usually means the process died mid-flight —
-// mark it failed so it can't wedge the task. But an agent spawned by a previous server can OUTLIVE a
-// restart; reaping it would falsely fail live work. So only reap runs whose recorded pid is actually
-// dead — a genuinely-live agent is left to finish. Returns how many were reaped.
-export function recoverOrphans(db) {
+// Orphan recovery: a run left 'starting'/'running' whose process is gone must be failed so it can't wedge
+// the task or falsely read as "Agent running" forever. An agent spawned by a previous server can OUTLIVE a
+// restart, so we only reap runs whose recorded pid is actually dead — a genuinely-live agent is left alone.
+//
+// `requirePid` distinguishes two callers:
+//   - boot (false, default): a run with NO pid is a genuine orphan from a dead process (the parent died
+//     before it ever recorded a pid) → reap it.
+//   - live periodic sweep (true): a pid-less run is almost certainly one we just created and haven't
+//     spawned yet (createRun sets status before setRunPid) → LEAVE it, or we'd reap our own newborn run.
+// Returns how many were reaped.
+export function recoverOrphans(db, { requirePid = false } = {}) {
   const rows = db.prepare("SELECT id, pid FROM runs WHERE status IN ('starting','running')").all();
   let reaped = 0;
   for (const r of rows) {
-    if (pidAlive(r.pid)) continue; // survived the restart — leave it running
+    if (r.pid == null) {
+      if (requirePid) continue; // live sweep: mid-spawn, not an orphan
+      // boot: a pid-less starting run is a genuine leftover — fall through and reap
+    } else if (pidAlive(r.pid)) {
+      continue; // process still alive — leave it running
+    }
     finishRun(db, r.id, { status: 'failed', error: 'orphaned: process gone before completion' });
     reaped++;
   }
   return reaped;
 }
 
-// Poll runWakeOnce on an interval (recovering orphans once at start). Same stoppable handle as workLoop.
-export function wakeLoop(db, { projectId, workerId = 'runner', intervalMs = 3000, execute, once = false } = {}) {
+// Poll runWakeOnce on an interval (recovering orphans once at start, then sweeping dead-pid runs on a
+// separate timer so an agent that dies AFTER a restart doesn't linger as a false "running"). Same
+// stoppable handle as workLoop.
+export function wakeLoop(db, { projectId, workerId = 'runner', intervalMs = 3000, sweepMs = 15000, execute, once = false } = {}) {
   recoverOrphans(db);
   let stopped = false;
   let timer = null;
+  let sweepTimer = null;
   let lastResult = null;
+  if (!once) sweepTimer = setInterval(() => { try { recoverOrphans(db, { requirePid: true }); } catch { /* best-effort */ } }, sweepMs);
 
   async function loop() {
     do {
@@ -247,6 +262,7 @@ export function wakeLoop(db, { projectId, workerId = 'runner', intervalMs = 3000
     stop() {
       stopped = true;
       if (timer) clearTimeout(timer);
+      if (sweepTimer) clearInterval(sweepTimer);
     },
     get stopped() {
       return stopped;
@@ -257,11 +273,15 @@ export function wakeLoop(db, { projectId, workerId = 'runner', intervalMs = 3000
 
 // Board-wide poll: drain wakes across ALL linked repos, spawning the agent in each task's own repo. This
 // is the runner baked into `be10x serve` so a user never runs a per-repo terminal.
-export function wakeLoopAll(db, { workerId = 'runner', intervalMs = 3000, makeExecutor, once = false } = {}) {
+export function wakeLoopAll(db, { workerId = 'runner', intervalMs = 3000, sweepMs = 15000, makeExecutor, once = false } = {}) {
   recoverOrphans(db);
   let stopped = false;
   let timer = null;
+  let sweepTimer = null;
   let lastResult = null;
+  // A dedicated timer (not the wake tick, which is busy awaiting a running agent) reaps runs whose pid has
+  // died since boot — so a false "Agent running" self-corrects within sweepMs instead of at the next restart.
+  if (!once) sweepTimer = setInterval(() => { try { recoverOrphans(db, { requirePid: true }); } catch { /* best-effort */ } }, sweepMs);
 
   async function loop() {
     do {
@@ -280,6 +300,7 @@ export function wakeLoopAll(db, { workerId = 'runner', intervalMs = 3000, makeEx
     stop() {
       stopped = true;
       if (timer) clearTimeout(timer);
+      if (sweepTimer) clearInterval(sweepTimer);
     },
     get stopped() {
       return stopped;
