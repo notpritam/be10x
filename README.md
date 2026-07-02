@@ -36,6 +36,8 @@ node bin/be10x.js install-skill
 
 be10x is a **stateful** service (a SQLite file on disk, it spawns the `claude` CLI, and it needs git worktrees on disk). Host it on a **VM/container with a persistent volume** — a small always-on VM, Fly.io with a volume, Railway, or Render with a disk. **Not** Vercel/Netlify (serverless, no persistent disk, can't run long-lived agent processes).
 
+> **Easiest path — Render (one-click blueprint).** The repo ships a [`render.yaml`](render.yaml): Render Dashboard → **New → Blueprint** → pick this repo → **Apply** (it provisions the service + a `/data` disk). Full step-by-step — disk, custom domain, backups, and connecting teammates — is in **[docs/deploy.md](docs/deploy.md)**. For the hosted "each teammate runs the agent locally" model you don't set any Claude key on the server.
+
 **Prerequisites:** a server with Docker + Docker Compose, a domain, and a DNS **A record** pointing at the server (Caddy needs public ports 80 + 443 for HTTPS).
 
 ```bash

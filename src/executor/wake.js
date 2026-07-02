@@ -91,15 +91,20 @@ export function claimNextWakeForKeys(db, { projectKeys = [], workerId = 'runner'
   return null;
 }
 
-// Board-wide claim: the oldest pending wake for ANY task that has a project (the executor needs the
-// project's repo to work in). Used by the runner baked into `be10x serve`, which works every linked
-// repo — so a user adds a folder on the board and it just works, no per-repo terminal.
+// Board-wide claim: the oldest pending wake for a task whose project has a LOCAL checkout on THIS host
+// (root_path set). Used by the runner baked into `be10x serve`, which works every linked repo — so a user
+// adds a folder on the board and it just works, no per-repo terminal. The `root_path IS NOT NULL` guard is
+// what makes a HOSTED board coexist with remote connectors: distributed projects are registered path-less
+// (their repo lives on a member's machine), so the baked runner never grabs — and then fails to worktree —
+// a task that a `be10x connect` runner is meant to claim. It just idles when there are no local repos.
 export function claimNextWakeAny(db, workerId = 'runner') {
   const rows = db
     .prepare(
-      `SELECT w.id FROM wake_queue w JOIN tasks t ON t.id = w.task_id
-       WHERE w.claimed_at IS NULL AND w.enqueued_at <= ? AND t.project_id IS NOT NULL
-       ORDER BY w.enqueued_at, w.rowid`
+      `SELECT w.id FROM wake_queue w
+         JOIN tasks t ON t.id = w.task_id
+         JOIN projects p ON p.id = t.project_id
+        WHERE w.claimed_at IS NULL AND w.enqueued_at <= ? AND p.root_path IS NOT NULL
+        ORDER BY w.enqueued_at, w.rowid`
     )
     .all(Date.now());
   for (const { id } of rows) {

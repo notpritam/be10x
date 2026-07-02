@@ -1,0 +1,32 @@
+# be10x — Render Blueprint (infrastructure as code).
+#
+# Deploy: Render Dashboard → New → Blueprint → pick the notpritam/be10x repo. Render reads THIS file and
+# provisions the web service + its persistent disk for you. (Or use the manual "New → Web Service" flow —
+# see docs/deploy.md.)
+#
+# What this deploys: the be10x BOARD only — web UI + REST API + SQLite. The Claude agent runs on each
+# teammate's OWN machine via `be10x connect`, so nothing agent-related runs here and NO Claude API key is
+# needed. The baked-in runner just idles (it only works repos physically on this host, of which there are
+# none), leaving all work to the connectors.
+services:
+  - type: web
+    name: be10x
+    runtime: docker            # build from the repo's Dockerfile (node 22 + git + the SQLite toolchain)
+    plan: starter              # IMPORTANT: a persistent disk needs a PAID instance (starter or above).
+                               # The free tier has no disk — the board's DB would vanish on every restart.
+    region: oregon             # oregon | ohio | virginia | frankfurt | singapore — pick the closest to you
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /         # the board serves the UI at / (HTTP 200) — Render uses this for zero-downtime deploys
+    autoDeploy: true           # redeploy automatically on every push to `branch`
+    envVars:
+      - key: GFA_SECURE_COOKIES  # add "; Secure" to the session cookie (this deploy is HTTPS end-to-end)
+        value: "1"
+      - key: GFA_DB_PATH         # keep the SQLite DB on the persistent disk so it survives restarts + deploys
+        value: /data/be10x.db
+      # PORT is injected by Render and honored by the Dockerfile CMD — do NOT set it here.
+      # No ANTHROPIC_API_KEY / no ~/.claude: agents run on members' machines, not on this host.
+    disk:
+      name: be10x-data          # persists the SQLite DB (and any worktrees) across deploys and restarts
+      mountPath: /data
+      sizeGB: 1                 # plenty for the board; grow it later only if you check out large repos here
