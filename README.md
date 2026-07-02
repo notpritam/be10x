@@ -82,10 +82,13 @@ The hosting above is **single-host** (board + agent on one server). The other mo
 **On each member's machine:**
 
 ```bash
-# 1. Get the be10x CLI (clone the repo + npm install) and your own Claude Code login.
+# 1. Install the CLI — one command, no clone (needs Node 18+) + sign in to Claude Code as usual:
+npm install -g github:notpritam/be10x
+
 # 2. Mint a token on the board:  Settings → Connect your machine  (or `be10x token`).
+
 # 3. Link this machine to the board and serve your repos:
-node bin/be10x.js connect \
+be10x connect \
   --board https://your-board.example.com \
   --token gfa_xxxxxxxx \
   --repos ~/code/app,~/code/api

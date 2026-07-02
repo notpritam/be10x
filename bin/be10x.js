@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { dirname, resolve, join, basename } from 'node:path';
 import { mkdirSync, writeFileSync, readFileSync, cpSync, existsSync } from 'node:fs';
-import { openDb } from '../src/db/db.js';
 import { getUserByEmail } from '../src/auth/users.js';
 import { createToken } from '../src/auth/tokens.js';
 import { listTasks, importTask, IMPORT_PHASES, handoffReasonForPhase } from '../src/tasks/tasks.js';
@@ -46,6 +45,22 @@ function dbPathAbs() {
   return resolve(process.cwd(), process.env.GFA_DB_PATH || './gfa.db');
 }
 
+// Open the board's local SQLite db, loading the native driver LAZILY so commands that don't touch a local
+// db — notably `be10x connect`, which talks to a hosted board over HTTP — run even when better-sqlite3 (an
+// OPTIONAL dependency) isn't installed or couldn't build on this machine.
+async function openBoardDb(path = dbPathAbs()) {
+  let openDb;
+  try {
+    ({ openDb } = await import('../src/db/db.js'));
+  } catch {
+    console.error("This command needs the local database driver (better-sqlite3), which isn't available here.");
+    console.error('Install it with:  npm install better-sqlite3');
+    console.error("(You don't need it for `be10x connect` — that talks to a hosted board over HTTP.)");
+    process.exit(1);
+  }
+  return openDb(path);
+}
+
 const mcpServerPath = () => resolve(here, '..', 'src', 'mcp', 'server.js');
 
 // Owning user: an explicit --email/GFA_EMAIL wins; otherwise the single/first user on the board. Null if
@@ -65,7 +80,7 @@ function resolveUserId(db, email) {
 // serve [--port N] — boot the HTTP board. Dynamic import so the http stack only loads for this command.
 async function cmdServe(args) {
   const { startServer } = await import('../src/http/server.js');
-  const db = openDb(dbPathAbs());
+  const db = await openBoardDb();
   startServer({ db, port: args.port ? Number(args.port) : 4610, host: args.host && args.host !== true ? args.host : undefined });
   // Board-wide runner baked into serve: works tasks across every linked repo, spawning the agent in each
   // task's own repo — so the user never needs a separate `be10x work` terminal.
@@ -78,7 +93,7 @@ async function cmdServe(args) {
 // Claude-Code MCP config wiring the be10x tools to this repo's board.
 async function cmdLink(args) {
   const dbPath = dbPathAbs();
-  const db = openDb(dbPath);
+  const db = await openBoardDb(dbPath);
   const cwd = process.cwd();
   const { key, rootPath, defaultBranch } = detectProjectKey(cwd);
   const name = args.name && args.name !== true ? args.name : basename(rootPath);
@@ -119,7 +134,7 @@ async function cmdLink(args) {
 
 // token [--name X] [--email you@x] — mint a personal access token; the secret is shown once.
 async function cmdToken(args) {
-  const db = openDb(dbPathAbs());
+  const db = await openBoardDb();
   const userId = resolveUserId(db, args.email);
   if (!userId) {
     console.error(SIGNUP_HINT);
@@ -134,7 +149,7 @@ async function cmdToken(args) {
 
 // work [--interval S] [--once] — run the agent runner against the cwd's project.
 async function cmdWork(args) {
-  const db = openDb(dbPathAbs());
+  const db = await openBoardDb();
   const { key } = detectProjectKey(process.cwd());
   const project = getProjectByKey(db, key);
   if (!project) {
@@ -256,7 +271,7 @@ async function cmdConnect(args) {
 
 // list — print registered projects and, for the cwd's project, its tasks grouped by status.
 async function cmdList() {
-  const db = openDb(dbPathAbs());
+  const db = await openBoardDb();
   const projects = listProjects(db);
   console.log('Registered projects (' + projects.length + '):');
   for (const p of projects) {
@@ -303,7 +318,7 @@ function readPayload(p) {
 // plan/research/artifacts/refs files. The agent-driven path (gfa_import_task / the be10x-adopt skill) is
 // richer because it captures the live session's state; this is the scriptable equivalent.
 async function cmdAdopt(args) {
-  const db = openDb(dbPathAbs());
+  const db = await openBoardDb();
   const userId = resolveUserId(db, args.email);
   if (!userId) {
     console.error(SIGNUP_HINT);

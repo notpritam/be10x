@@ -40,6 +40,9 @@ function boardOrigin(): string {
   return "https://your-board.example.com";
 }
 
+// Install the be10x CLI in one command — no repo clone, no build step (needs Node 18+).
+const INSTALL_CMD = "npm install -g github:notpritam/be10x";
+
 // The one command a member runs on THEIR machine to link it to this board and run the agent locally.
 function buildConnectCommand(token: string): string {
   return `be10x connect --board ${boardOrigin()} --token ${token} --repos ~/code/your-repo`;
@@ -217,9 +220,17 @@ export function ConnectAgentDialog({
                 <p className="text-[12px] font-semibold text-foreground/80">Run this on your machine</p>
               </div>
               <p className="mb-2 text-[11.5px] text-muted-foreground/80">
-                Install the be10x CLI once (you'll use your own Claude Code login), then link this machine —
-                point <code className="font-mono text-[11px]">--repos</code> at the checkouts you want to work
-                here:
+                Install the CLI once — no clone, no build (you'll use your own Claude Code login):
+              </p>
+              <div className="mb-2.5 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+                <code className="min-w-0 flex-1 overflow-x-auto scroll-thin whitespace-nowrap font-mono text-[12px] text-foreground">
+                  {INSTALL_CMD}
+                </code>
+                <CopyButton text={INSTALL_CMD} label="Copy" />
+              </div>
+              <p className="mb-2 text-[11.5px] text-muted-foreground/80">
+                Then link this machine — point <code className="font-mono text-[11px]">--repos</code> at the
+                checkouts you want to work here:
               </p>
               <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
                 <code className="min-w-0 flex-1 overflow-x-auto scroll-thin whitespace-nowrap font-mono text-[12px] text-foreground">
