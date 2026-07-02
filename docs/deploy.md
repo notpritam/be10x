@@ -106,7 +106,7 @@ be10x service install
 
 > Headless box or CI (no browser to click Authorize)? Mint a token under **Connect your machine → Advanced** and run `be10x connect --board https://be10x.notpritam.in --token gfa_… --repos ~/code/app`.
 
-> Installing from a **private** repo needs the teammate to have git access to it (they're your collaborators). If you'd rather they not need repo access, publish the CLI to npm and it becomes `npm i -g be10x` — see the README.
+> The CLI installs straight from the **public** `notpritam/be10x` repo — teammates need **no** GitHub access, just Node 18+. (Want the shorter `npm i -g be10x`? The repo is ready to publish to npm whenever you like.)
 
 ---
 
