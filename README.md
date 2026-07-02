@@ -8,6 +8,21 @@ A human + agent task board. **Sessions are disposable; state is durable** — th
 
 ---
 
+## Join a board (2 minutes)
+
+Someone shared a be10x board with you? Point your machine at it and it runs the agent on your own repos, with your own Claude login. All you need is **Node 18+**:
+
+```bash
+npm install -g github:notpritam/be10x        # 1. install the CLI (public repo — no access needed)
+be10x login https://your-board.example.com   # 2. sign in: opens your browser, click Authorize
+cd ~/code/your-repo && be10x link             # 3. link a repo you want the agent to work
+be10x service install                         # 4. run it always-on in the background (starts on boot)
+```
+
+Now create a task on the board for that repo and **your** machine picks it up, runs Claude locally, and streams the plan + progress back for the whole team to review. Run `be10x` anytime to see your status, or `be10x update` to grab the latest.
+
+---
+
 ## Run locally
 
 ```bash
