@@ -14,6 +14,8 @@ import {
   rateTask,
   setRefs,
   postArtifact,
+  importTask,
+  handoffReasonForPhase,
 } from '../src/tasks/tasks.js';
 import { listEvents } from '../src/tasks/events.js';
 
@@ -160,6 +162,62 @@ test('postArtifact defaults kind to note, generates a key, and accepts structure
   assert.equal(a.artifacts[0].kind, 'note');
   assert.ok(a.artifacts[0].key, 'a key is generated when none is given');
   assert.deepEqual(a.artifacts[0].content, { blocks: [{ type: 'text', text: 'hi' }] });
+});
+
+test('importTask: an early idea just lands in the backlog with a summary (falls back to title)', () => {
+  const db = openDb(':memory:');
+  const uid = owner(db);
+  const t = importTask(db, { title: 'Just an idea', phase: 'idea' }, uid);
+  assert.equal(t.status, 'backlog');
+  assert.equal(t.type, 'general');
+  assert.equal(t.scope, 'personal');
+  assert.equal(t.content.summary, 'Just an idea');
+  assert.ok(listEvents(db, t.id).some((e) => e.kind === 'imported'));
+});
+
+test('importTask: plan_review adopts a code-issue with plan + artifacts attached', () => {
+  const db = openDb(':memory:');
+  const uid = owner(db);
+  const t = importTask(
+    db,
+    {
+      title: 'Adopt me',
+      type: 'code-issue',
+      symptom: 'boom',
+      phase: 'plan_review',
+      plan: '<b>the plan</b>',
+      artifacts: [{ key: 'rca', kind: 'rca', content: '<i>why</i>' }],
+    },
+    uid
+  );
+  assert.equal(t.status, 'plan_review');
+  assert.equal(t.plan, '<b>the plan</b>');
+  assert.equal(t.artifacts.length, 1);
+  assert.equal(t.content.symptom, 'boom');
+});
+
+test('importTask: phase in_progress walks backlog→ready_to_work→in_progress', () => {
+  const db = openDb(':memory:');
+  const uid = owner(db);
+  const t = importTask(db, { title: 'WIP', phase: 'in_progress', summary: 'doing it' }, uid);
+  assert.equal(t.status, 'in_progress');
+});
+
+test('importTask: plan_review WITHOUT a plan stops at researching (nothing to review)', () => {
+  const db = openDb(':memory:');
+  const uid = owner(db);
+  const t = importTask(db, { title: 'no plan yet', phase: 'plan_review' }, uid);
+  assert.equal(t.status, 'researching');
+});
+
+test('importTask requires a title; handoffReasonForPhase maps phases to wake reasons', () => {
+  const db = openDb(':memory:');
+  const uid = owner(db);
+  assert.throws(() => importTask(db, { phase: 'idea' }, uid), /MISSING_FIELD:title/);
+  assert.equal(handoffReasonForPhase('ready'), 'execute');
+  assert.equal(handoffReasonForPhase('in_progress'), 'pick_up_now');
+  assert.equal(handoffReasonForPhase('idea'), 'plan');
+  assert.equal(handoffReasonForPhase('plan_review'), null);
 });
 
 test('DoD: a task walks the full legal lifecycle and records every event', () => {

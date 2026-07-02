@@ -3,14 +3,16 @@
 // ABOUTME: MCP config for Claude Code (`link`), runs the local agent runner (`work`), and serves the board.
 // Dependency-free: node built-ins + the project's own src/* core only.
 import { fileURLToPath } from 'node:url';
+import { homedir } from 'node:os';
 import { dirname, resolve, join, basename } from 'node:path';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, cpSync, existsSync } from 'node:fs';
 import { openDb } from '../src/db/db.js';
 import { getUserByEmail } from '../src/auth/users.js';
 import { createToken } from '../src/auth/tokens.js';
-import { listTasks } from '../src/tasks/tasks.js';
+import { listTasks, importTask, IMPORT_PHASES, handoffReasonForPhase } from '../src/tasks/tasks.js';
 import { makeClaudeExecutor } from '../src/executor/executor.js';
 import { detectProjectKey, registerProject, getProjectByKey, listProjects } from '../src/projects/projects.js';
+import { enqueueWake } from '../src/executor/wake.js';
 import { wakeLoop, wakeLoopAll } from '../src/runner/runner.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -203,9 +205,121 @@ async function cmdList() {
   }
 }
 
+// Read a file that may hold JSON (a plan object, a research payload, an artifacts array) or plain text
+// (an HTML/markdown plan). Returns the parsed value, the raw string, or null when no path was given.
+function readPayload(p) {
+  if (!p || p === true) return null;
+  const raw = readFileSync(resolve(process.cwd(), p), 'utf8');
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+// adopt --title "..." [--type ..] [--phase ..] [--project key] [--summary ..] [--symptom ..]
+//       [--plan-file f] [--research-file f] [--artifacts-file f] [--refs-file f] [--handoff] [--email E]
+// Move the work from THIS terminal/session onto the board as one task — the CLI half of "adopt to board".
+// Files it under --project (or the cwd's linked repo, else personal), at the given --phase, attaching any
+// plan/research/artifacts/refs files. The agent-driven path (gfa_import_task / the be10x-adopt skill) is
+// richer because it captures the live session's state; this is the scriptable equivalent.
+async function cmdAdopt(args) {
+  const db = openDb(dbPathAbs());
+  const userId = resolveUserId(db, args.email);
+  if (!userId) {
+    console.error(SIGNUP_HINT);
+    process.exit(1);
+  }
+
+  const title = args.title && args.title !== true ? args.title : null;
+  if (!title) {
+    console.error('adopt needs --title "..."');
+    process.exit(1);
+  }
+
+  const phase = args.phase && args.phase !== true ? String(args.phase) : 'idea';
+  if (!IMPORT_PHASES.includes(phase)) {
+    console.error('--phase must be one of: ' + IMPORT_PHASES.join(', '));
+    process.exit(1);
+  }
+
+  // Project: explicit --project wins; otherwise adopt into the cwd's repo if it's linked; else personal.
+  let projectId = null;
+  let projectLabel = 'personal';
+  const explicit = args.project && args.project !== true ? args.project : null;
+  const key = explicit || detectProjectKey(process.cwd()).key;
+  const project = getProjectByKey(db, key);
+  if (explicit && !project) {
+    console.error('Unknown project "' + key + '". Run `be10x link` in that repo first, or omit --project for a personal task.');
+    process.exit(1);
+  }
+  if (project) {
+    projectId = project.id;
+    projectLabel = project.key;
+  }
+
+  const artifactsRaw = readPayload(args['artifacts-file']);
+  const artifacts = Array.isArray(artifactsRaw) ? artifactsRaw : artifactsRaw ? [artifactsRaw] : null;
+
+  const task = importTask(
+    db,
+    {
+      title,
+      type: args.type && args.type !== true ? args.type : 'general',
+      projectId,
+      severity: args.severity && args.severity !== true ? args.severity : 'medium',
+      summary: args.summary && args.summary !== true ? args.summary : null,
+      symptom: args.symptom && args.symptom !== true ? args.symptom : null,
+      research: readPayload(args['research-file']),
+      plan: readPayload(args['plan-file']),
+      artifacts,
+      refs: readPayload(args['refs-file']),
+      phase,
+      source: 'cli-adopt',
+    },
+    userId
+  );
+
+  let handed = false;
+  const reason = handoffReasonForPhase(phase);
+  if (args.handoff && reason) {
+    enqueueWake(db, task.id, reason);
+    handed = true;
+  }
+
+  console.log(task.humanId + '  ' + task.title + '  [' + task.status + ']  project=' + projectLabel);
+  console.log('Adopted onto the board' + (handed ? ' and handed to the agent (' + reason + ').' : '.'));
+  console.log('Control it from the board: be10x serve → http://localhost:4610  →  /t/' + task.id + '/full');
+}
+
+// install-skill — copy the /be10x-adopt skill into ~/.claude/skills so any Claude Code session can run it.
+// This is the "key": in a repo you've `be10x link`-ed, /be10x-adopt pushes the session onto the board.
+async function cmdInstallSkill() {
+  const src = resolve(here, '..', 'skills', 'be10x-adopt');
+  if (!existsSync(src)) {
+    console.error('Skill source not found at ' + src);
+    process.exit(1);
+  }
+  const dest = join(homedir(), '.claude', 'skills', 'be10x-adopt');
+  mkdirSync(dirname(dest), { recursive: true });
+  cpSync(src, dest, { recursive: true });
+  console.log('Installed the /be10x-adopt skill → ' + dest);
+  console.log('');
+  console.log('Use it: in any repo linked with `be10x link`, open Claude Code and run /be10x-adopt');
+  console.log('(or just say "move this to the 10x board") to push the session onto the board.');
+}
+
 // --- dispatch -----------------------------------------------------------------
 
-const COMMANDS = { serve: cmdServe, link: cmdLink, token: cmdToken, work: cmdWork, list: cmdList };
+const COMMANDS = {
+  serve: cmdServe,
+  link: cmdLink,
+  token: cmdToken,
+  work: cmdWork,
+  list: cmdList,
+  adopt: cmdAdopt,
+  'install-skill': cmdInstallSkill,
+};
 
 function usage() {
   console.log('be10x — git-for-agents CLI');
@@ -217,6 +331,12 @@ function usage() {
   console.log('  token [--name X] [--email E]     mint a personal access token (shown once)');
   console.log('  work  [--interval S] [--once]    run the agent runner for this repo');
   console.log('  list                             list projects and this repo\'s tasks by status');
+  console.log('  adopt --title T [--phase P] ...  move this session\'s work onto the board as a task');
+  console.log('  install-skill                    install the /be10x-adopt skill into ~/.claude/skills');
+  console.log('');
+  console.log('  adopt options: --type code-issue|general  --project KEY  --phase ' + IMPORT_PHASES.join('|'));
+  console.log('                 --summary S  --symptom S  --plan-file F  --research-file F');
+  console.log('                 --artifacts-file F  --refs-file F  --handoff  --email E');
   console.log('');
   console.log('Env: GFA_DB_PATH (default ./gfa.db), GFA_EMAIL');
 }

@@ -1,10 +1,25 @@
 // ABOUTME: Pure, transport-agnostic MCP tool registry for be10x — the agent-facing "front door".
 // ABOUTME: Each tool wraps a core function; ctx.userId is the authenticated actor/owner. No I/O, no SDK here.
-import { createTask, getTask, listTasks, setResearch, setPlan, transition, rateTask, setRefs, postArtifact } from '../tasks/tasks.js';
+import {
+  createTask,
+  getTask,
+  listTasks,
+  setResearch,
+  setPlan,
+  transition,
+  rateTask,
+  setRefs,
+  postArtifact,
+  importTask,
+  IMPORT_PHASES,
+  handoffReasonForPhase,
+} from '../tasks/tasks.js';
 import { requestReview } from '../reviews/reviews.js';
 import { requestInput, answerInput } from '../tasks/input_requests.js';
 import { addComment } from '../tasks/comments.js';
 import { claimNextReadyTask, recordProgress } from '../worker/worker.js';
+import { getProjectByKey } from '../projects/projects.js';
+import { enqueueWake } from '../executor/wake.js';
 import { STATES } from '../tasks/lifecycle.js';
 
 const SCOPES = ['personal', 'project', 'team'];
@@ -240,6 +255,83 @@ export const TOOLS = [
       additionalProperties: false,
     },
     handler: (db, ctx, args) => rateTask(db, args.id, args.rating, ctx.userId),
+  },
+  {
+    name: 'gfa_import_task',
+    description:
+      'Adopt work from your current (terminal/CLI) session onto the be10x board as ONE task — "move this to the 10x board". Use this when the human asks to move/adopt/push the work you are doing into be10x. In a single call it files the task in a project and lands it at the phase it is ACTUALLY in, attaching whatever already exists: title, a summary or symptom, a plan, findings as artifacts, and output refs. Capture only what fits the phase — an early idea needs just a title/summary; a task under review needs the plan; work in flight can carry artifacts and refs. Prefer passing real findings as artifacts (HTML). Pass handoff:true to have the board\'s agent CONTINUE the work; omit it to let the human drive from the board. Returns the created task and its board path.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short human-readable title for the task.' },
+        type: { type: 'string', enum: TYPES, description: 'Task type (default general).' },
+        projectKey: {
+          type: 'string',
+          description: 'File the task under this project (its key from `be10x link`). Omit for a personal task.',
+        },
+        scope: { type: 'string', enum: SCOPES, description: 'Visibility scope (defaults to project when a projectKey resolves, else personal).' },
+        teamId: { type: 'string', description: 'Team id (used when scope="team").' },
+        phase: {
+          type: 'string',
+          enum: IMPORT_PHASES,
+          description:
+            'Where the work is: idea (just a title/summary → backlog) | researching | plan_review (needs a plan) | ready | in_progress. The task is walked to this phase.',
+        },
+        summary: { type: 'string', description: 'One-line summary (general tasks). Falls back to the title.' },
+        symptom: { type: 'string', description: 'The problem (code-issue tasks). Falls back to summary/title.' },
+        content: freeObject('Extra type-specific fields to store on the task.'),
+        research: freeObject('Research findings gathered so far (root cause, sources).'),
+        plan: { description: 'The plan, if one exists: rich HTML / markdown / { steps, diagram } / { blocks }.' },
+        artifacts: {
+          type: 'array',
+          items: freeObject('An artifact: { kind, title, key, content } — HTML preferred (rendered in a sandbox).'),
+          description: 'Visual artifacts to seed (RCA / diagram / finding / suggestion / verification).',
+        },
+        refs: freeObject('Output references already produced (e.g. { pr, branch }).'),
+        severity: { type: 'string', description: 'Priority: low | medium | high (default medium).' },
+        handoff: { type: 'boolean', description: 'If true, enqueue a wake so the board agent continues the work (default false).' },
+      },
+      required: ['title'],
+      additionalProperties: false,
+    },
+    handler: (db, ctx, args) => {
+      let projectId = null;
+      if (args.projectKey) {
+        const p = getProjectByKey(db, args.projectKey);
+        if (!p) throw new Error('NO_PROJECT'); // link the repo first: `be10x link`
+        projectId = p.id;
+      }
+      const task = importTask(
+        db,
+        {
+          title: args.title,
+          type: args.type,
+          scope: args.scope,
+          projectId,
+          teamId: args.teamId,
+          severity: args.severity,
+          summary: args.summary,
+          symptom: args.symptom,
+          content: args.content,
+          research: args.research,
+          plan: args.plan,
+          artifacts: args.artifacts,
+          refs: args.refs,
+          phase: args.phase,
+          source: 'agent-adopt',
+        },
+        ctx.userId
+      );
+      let handoff = false;
+      if (args.handoff) {
+        const reason = handoffReasonForPhase(args.phase || 'idea');
+        if (reason) {
+          enqueueWake(db, task.id, reason);
+          handoff = true;
+        }
+      }
+      return { task, boardPath: `/t/${task.id}/full`, handoff };
+    },
   },
   {
     name: 'gfa_post_artifact',

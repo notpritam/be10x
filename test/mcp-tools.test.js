@@ -7,6 +7,8 @@ import { createUser } from '../src/auth/users.js';
 import { createToken, verifyToken } from '../src/auth/tokens.js';
 import { transition, getTask } from '../src/tasks/tasks.js';
 import { getOpenInputRequest } from '../src/tasks/input_requests.js';
+import { registerProject } from '../src/projects/projects.js';
+import { listPendingWakes } from '../src/executor/wake.js';
 import { TOOLS } from '../src/mcp/tools.js';
 
 // Invoke a tool the way the server would: find it in TOOLS by name, call its handler.
@@ -25,13 +27,14 @@ function seed() {
   return { db, owner, reviewer, tok, ctx };
 }
 
-test('TOOLS registers exactly the 16 be10x front-door tools, all well-formed', () => {
+test('TOOLS registers exactly the 17 be10x front-door tools, all well-formed', () => {
   const names = TOOLS.map((t) => t.name).sort();
   assert.deepEqual(names, [
     'gfa_answer_input',
     'gfa_claim_task',
     'gfa_create_task',
     'gfa_get_task',
+    'gfa_import_task',
     'gfa_list_tasks',
     'gfa_mark_ready',
     'gfa_plan_task',
@@ -146,6 +149,44 @@ test('gfa_update_progress, gfa_submit_output and gfa_rate_task record onto the t
 
   const rated = call(db, ctx, 'gfa_rate_task', { id: t.id, rating: { score: 0.9 } });
   assert.deepEqual(rated.rating, { score: 0.9 });
+});
+
+test('gfa_import_task adopts a session into a project at the given phase and can hand off', () => {
+  const { db, ctx } = seed();
+  const p = registerProject(db, { key: 'acme', name: 'Acme', rootPath: '/tmp/acme' });
+  const res = call(db, ctx, 'gfa_import_task', {
+    title: 'From my terminal',
+    type: 'code-issue',
+    symptom: 'crash on boot',
+    projectKey: 'acme',
+    phase: 'ready',
+    plan: '<b>the plan</b>',
+    artifacts: [{ key: 'rca', kind: 'rca', content: '<i>root cause</i>' }],
+    handoff: true,
+  });
+  assert.equal(res.task.status, 'ready_to_work');
+  assert.equal(res.task.projectId, p.id);
+  assert.equal(res.task.scope, 'project');
+  assert.equal(res.task.artifacts.length, 1);
+  assert.equal(res.boardPath, '/t/' + res.task.id + '/full');
+  assert.equal(res.handoff, true);
+  // handoff on a "ready" task enqueues an execute wake for the board runner.
+  assert.ok(listPendingWakes(db, res.task.id).some((w) => w.reason === 'execute'));
+});
+
+test('gfa_import_task without a project files a personal idea in the backlog (no handoff)', () => {
+  const { db, ctx } = seed();
+  const res = call(db, ctx, 'gfa_import_task', { title: 'just an idea', phase: 'idea' });
+  assert.equal(res.task.status, 'backlog');
+  assert.equal(res.task.scope, 'personal');
+  assert.equal(res.task.projectId, null);
+  assert.equal(res.handoff, false);
+  assert.equal(listPendingWakes(db, res.task.id).length, 0);
+});
+
+test('gfa_import_task rejects an unknown projectKey', () => {
+  const { db, ctx } = seed();
+  assert.throws(() => call(db, ctx, 'gfa_import_task', { title: 'x', projectKey: 'nope' }), /NO_PROJECT/);
 });
 
 test('gfa_post_artifact posts a visual artifact and upserts by key', () => {

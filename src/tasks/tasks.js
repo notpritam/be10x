@@ -151,6 +151,83 @@ export function rateTask(db, id, rating, actor) {
   return getTask(db, id);
 }
 
+// The phases an external/CLI ("trajectory") session can be in when it's adopted onto the board, and the
+// lifecycle path to walk a fresh backlog task to each. 'idea' just lands in the backlog; later phases mean
+// the session already has more (research, a plan, work in flight) so we attach it and advance the task.
+const IMPORT_PHASE_PATH = {
+  idea: [],
+  backlog: [],
+  researching: ['researching'],
+  plan_review: ['researching', 'plan_review'],
+  ready: ['ready_to_work'],
+  in_progress: ['ready_to_work', 'in_progress'],
+};
+export const IMPORT_PHASES = ['idea', 'researching', 'plan_review', 'ready', 'in_progress'];
+
+// If the human wants the board to CONTINUE the adopted work (handoff), the wake reason that matches the
+// phase. plan_review returns null: a plan awaiting review is the human's turn, so we never auto-wake there.
+export function handoffReasonForPhase(phase) {
+  switch (phase) {
+    case 'ready':
+      return 'execute';
+    case 'in_progress':
+      return 'pick_up_now';
+    case 'plan_review':
+      return null;
+    default:
+      return 'plan'; // idea | researching | backlog | unknown → (re)start planning
+  }
+}
+
+// Adopt an in-flight session (typically a terminal/CLI Claude run) onto the board as ONE task, filed in a
+// project at the phase it's actually in. Creates the task, attaches whatever the session already produced
+// (summary/symptom content, research, plan, artifacts, output refs), and walks the lifecycle to the target
+// phase. This is the counterpart to "sessions disposable, state durable": one call turns loose terminal
+// work into a durable, board-controllable task. Content is shaped for the type so createTask's validation
+// passes; a missing required field falls back to the title.
+export function importTask(db, spec = {}, actor) {
+  const {
+    title,
+    type = 'general',
+    projectId = null,
+    teamId = null,
+    severity = 'medium',
+    summary = null,
+    symptom = null,
+    content = {},
+    research = null,
+    plan = null,
+    artifacts = null,
+    refs = null,
+    phase = 'idea',
+    source = 'cli-adopt',
+  } = spec;
+  if (!title || typeof title !== 'string') throw new Error('MISSING_FIELD:title');
+
+  const scope = spec.scope || (projectId ? 'project' : teamId ? 'team' : 'personal');
+  // Shape the type's required content field; any extra fields passed in `content` are preserved.
+  const base = { ...(content && typeof content === 'object' ? content : {}) };
+  if (type === 'code-issue') base.symptom = base.symptom ?? symptom ?? summary ?? title;
+  else base.summary = base.summary ?? summary ?? title;
+
+  const created = createTask(db, { type, scope, title, ownerId: actor, content: base, teamId, projectId, severity });
+  const id = created.id;
+  appendEvent(db, id, actor, 'imported', { source, phase });
+
+  // Attach whatever the session already has — each is optional and independently useful.
+  if (research != null) setResearch(db, id, research, actor);
+  if (plan != null) setPlan(db, id, plan, actor);
+  if (Array.isArray(artifacts)) for (const a of artifacts) postArtifact(db, id, a, actor);
+  if (refs != null) setRefs(db, id, refs, actor);
+
+  // Walk to the target phase. plan_review needs a plan to review; without one, stop at researching.
+  let path = IMPORT_PHASE_PATH[phase] ?? [];
+  if (phase === 'plan_review' && plan == null) path = ['researching'];
+  for (const to of path) transition(db, id, to, actor);
+
+  return getTask(db, id);
+}
+
 export function setRefs(db, id, refs, actor) {
   const now = Date.now();
   db.prepare('UPDATE tasks SET refs_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(refs), now, id);

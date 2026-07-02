@@ -16,6 +16,7 @@ import {
   Package,
   GitPullRequestArrow,
   Sparkles,
+  Import,
   Dot,
   type LucideIcon,
 } from "lucide-react";
@@ -37,6 +38,18 @@ export function describe(event: TaskEvent): { icon: LucideIcon; phrase: ReactNod
   switch (event.kind) {
     case "created":
       return { icon: Plus, phrase: <>created this task</> };
+    case "imported": {
+      const phase = asString(p.phase);
+      return {
+        icon: Import,
+        phrase: (
+          <>
+            adopted this from a session{phase ? <> at <b className="font-semibold text-foreground">{phase}</b></> : null}
+          </>
+        ),
+        tone: "accent",
+      };
+    }
     case "status": {
       const to = p.to as Status | undefined;
       return {
