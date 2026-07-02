@@ -135,10 +135,11 @@ function safeTransition(db, taskId, to, actor, meta) {
   }
 }
 
-// Drive an already-claimed wake with a resolved executor. The scheduler owns only the lifecycle *claims*
-// (hand-off, checkout, verify hand-back); the agent owns plan/progress/review via the gfa_* tools. A
-// failing run records a blocked note and returns { wake, error } — one bad wake never kills the loop.
-async function driveWake(db, { wake, task, workerId, execute }) {
+// Pre-run half of a wake: do the scheduler-owned lifecycle claim (hand-off / checkout), resolve the
+// executor mode, gather the delta (unseen comments) and record the "woken" note. Returns what execute()
+// needs. Shared by the in-process runner (driveWake) and the board's HTTP `claim` endpoint, so a wake is
+// staged identically whether the agent runs on this host or on a member's machine.
+export function prepareWake(db, { wake, task, workerId = 'runner' }) {
   const mode = modeForWake(wake, task);
 
   // Scheduler-owned lifecycle claims (optimistic; guarded by current status):
@@ -149,25 +150,19 @@ async function driveWake(db, { wake, task, workerId, execute }) {
   const staged = getTask(db, task.id);
   const comments = unseenComments(db, task.id);
   recordProgress(db, task.id, { state: 'working', step: 'woken', message: `woken to ${mode} (${wake.reason})` }, workerId);
+  return { mode, staged, comments };
+}
 
-  let summary;
-  try {
-    // Context policy (resume vs fresh) is owned by the executor per mode — don't force it here, EXCEPT on a
-    // retry, where we resume the saved session so the agent continues where it died instead of restarting.
-    summary = await execute(staged, {
-      mode,
-      wakeContext: wake.context,
-      comments,
-      resume: wake.context?.retry ? true : undefined,
-    });
-  } catch (error) {
-    recordProgress(db, task.id, { state: 'blocked', step: 'error', message: String(error?.message ?? error) }, workerId);
-    return { wake, task: staged, error };
-  }
+// Post-run half of a wake: apply the durability tail. On a run-level ENVIRONMENTAL failure (lost auth /
+// network blip / process death) auto-retry from durable state with backoff — the core of "sessions
+// disposable, state durable"; a genuine error (kind 'other') is left for the human. On success, hand a
+// finished `execute` to verifying and wake a FRESH verify pass. `comments` is the exact set delivered to
+// the run, so a retry re-delivers them (left unseen) and a terminal outcome consumes them — settleWake
+// only reads each comment's `id`, so the board's `report` endpoint can pass `[{ id }]` stubs. `mode`
+// falls back to the executor-stamped `summary.mode`. Shared by driveWake and the HTTP `report` endpoint.
+export function settleWake(db, { wake, task, workerId = 'runner', mode, comments = [], summary } = {}) {
+  const runMode = mode ?? summary?.mode;
 
-  // A run-level failure (the executor resolves with ok:false rather than throwing): auto-retry an
-  // ENVIRONMENTAL failure (lost auth / network blip / process death) from durable state — the core of
-  // "sessions disposable, state durable". A genuine error (kind 'other') is left for the human.
   if (summary && summary.ok === false) {
     const kind = summary.failureKind || classifyFailure(summary.error);
     const attempt = (Number(wake.context?.attempt) || 0) + 1;
@@ -210,11 +205,36 @@ async function driveWake(db, { wake, task, workerId, execute }) {
 
   // A successful implementation pass hands the task to verifying, then wakes a FRESH agent to
   // self-verify the diff against the plan (it reports; the human still does final sign-off).
-  if (mode === 'execute' && summary && summary.done && getTask(db, task.id).status === 'in_progress') {
+  if (runMode === 'execute' && summary && summary.done && getTask(db, task.id).status === 'in_progress') {
     safeTransition(db, task.id, 'verifying', workerId, { wake: wake.reason });
     enqueueWake(db, task.id, 'verify');
   }
   return { wake, task: getTask(db, task.id), summary };
+}
+
+// Drive an already-claimed wake with a resolved executor (the in-process runner path). The scheduler owns
+// only the lifecycle *claims* (via prepareWake/settleWake); the agent owns plan/progress/review via the
+// gfa_* tools. A failing run records a blocked note and returns { wake, error } — one bad wake never kills
+// the loop.
+async function driveWake(db, { wake, task, workerId, execute }) {
+  const { mode, staged, comments } = prepareWake(db, { wake, task, workerId });
+
+  let summary;
+  try {
+    // Context policy (resume vs fresh) is owned by the executor per mode — don't force it here, EXCEPT on a
+    // retry, where we resume the saved session so the agent continues where it died instead of restarting.
+    summary = await execute(staged, {
+      mode,
+      wakeContext: wake.context,
+      comments,
+      resume: wake.context?.retry ? true : undefined,
+    });
+  } catch (error) {
+    recordProgress(db, task.id, { state: 'blocked', step: 'error', message: String(error?.message ?? error) }, workerId);
+    return { wake, task: staged, error };
+  }
+
+  return settleWake(db, { wake, task: staged, workerId, mode, comments, summary });
 }
 
 // Claim one wake for a single project and drive it (used by `be10x work` inside one repo).

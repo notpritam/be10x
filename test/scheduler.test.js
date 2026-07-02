@@ -6,7 +6,8 @@ import { addComment, unseenComments } from '../src/tasks/comments.js';
 import { enqueueWake, listPendingWakes } from '../src/executor/wake.js';
 import { createRun, getRun, markRunning, setRunPid } from '../src/executor/runs.js';
 import { registerProject } from '../src/projects/projects.js';
-import { runWakeOnce, runAnyWakeOnce, recoverOrphans } from '../src/runner/runner.js';
+import { runWakeOnce, runAnyWakeOnce, recoverOrphans, prepareWake, settleWake } from '../src/runner/runner.js';
+import { claimNextWake } from '../src/executor/wake.js';
 
 function seed() {
   const db = openDb(':memory:');
@@ -234,4 +235,69 @@ test('durability: recoverOrphans({ rewake:true }) does NOT resume a done/termina
   markRunning(db, run.id);
   assert.equal(recoverOrphans(db, { rewake: true }), 1);
   assert.equal(listPendingWakes(db, 't1').length, 0);
+});
+
+// prepareWake + settleWake are the split halves driveWake now composes, AND the shared contract the
+// board's HTTP claim/report endpoints reuse (the agent runs on a member's machine in between). These
+// exercise them directly the way the endpoints will — claim (prepare) here, run elsewhere, report (settle).
+
+test('prepareWake claims the lifecycle and returns the mode + delta the way the board claim endpoint will', () => {
+  const { db, mk } = seed();
+  mk('t1', 'ready_to_work');
+  addComment(db, 't1', { author: 'u1', body: 'steer' });
+  enqueueWake(db, 't1', 'execute');
+  const claimed = claimNextWake(db, { projectId: 'p1' });
+
+  const { mode, staged, comments } = prepareWake(db, { wake: claimed, task: getTask(db, 't1') });
+
+  assert.equal(mode, 'execute');
+  assert.equal(staged.status, 'in_progress'); // pre-transition happened
+  assert.equal(comments.length, 1);
+  assert.equal(unseenComments(db, 't1').length, 1); // NOT marked seen yet (a failed run must re-deliver)
+});
+
+test('settleWake with id-stub comments (as the board report endpoint passes) marks exactly those seen and hands execute→verifying', () => {
+  const { db, mk } = seed();
+  mk('t1', 'in_progress');
+  const c = addComment(db, 't1', { author: 'u1', body: 'delivered' });
+  enqueueWake(db, 't1', 'execute');
+  const wake = claimNextWake(db, { projectId: 'p1' }); // the board claims the wake before the run
+
+  // The report endpoint reconstructs comments from the claimed ids as { id } stubs (no bodies over the wire).
+  const res = settleWake(db, {
+    wake,
+    task: getTask(db, 't1'),
+    mode: 'execute',
+    comments: [{ id: c.id }],
+    summary: { done: true, mode: 'execute' },
+  });
+
+  assert.equal(getTask(db, 't1').status, 'verifying');
+  const pending = listPendingWakes(db, 't1');
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].reason, 'verify');
+  assert.equal(unseenComments(db, 't1').length, 0); // the delivered comment was consumed
+  assert.ok(res.summary.done);
+});
+
+test('settleWake auto-retries a network failure and keeps the delivered comments unseen for re-delivery', () => {
+  const { db, mk } = seed();
+  mk('t1', 'in_progress');
+  const c = addComment(db, 't1', { author: 'u1', body: 'still needed on retry' });
+  enqueueWake(db, 't1', 'execute');
+  const wake = claimNextWake(db, { projectId: 'p1' }); // the board claims the wake before the run
+
+  const res = settleWake(db, {
+    wake,
+    task: getTask(db, 't1'),
+    mode: 'execute',
+    comments: [{ id: c.id }],
+    summary: { ok: false, failureKind: 'network', error: 'ECONNRESET', mode: 'execute' },
+  });
+
+  assert.equal(res.retrying.kind, 'network');
+  const pending = listPendingWakes(db, 't1');
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].context.retry, true);
+  assert.equal(unseenComments(db, 't1').length, 1); // the retry must re-deliver it
 });
