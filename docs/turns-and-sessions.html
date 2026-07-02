@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>be10x — turns vs. sessions</title>
+<style>
+  :root {
+    --bg: #f6f5f1;
+    --panel: #fffffe;
+    --ink: #1b1e23;
+    --muted: #6c7178;
+    --faint: #9aa0a6;
+    --line: #e4e2db;
+    --line-strong: #cfccc3;
+    --accent: #1f7a74;
+    --accent-soft: #e6f0ef;
+    --accent-line: #bfd8d5;
+    --local: #3d5a80;
+    --local-soft: #e8edf3;
+    --local-line: #c4d0df;
+    --blocked: #b3413e;
+    --blocked-soft: #f7e6e5;
+    --blocked-line: #e0bcba;
+    --policy: #a3791f;
+    --policy-soft: #f6efdf;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 56px 24px 96px; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 0.92em; }
+  code { background: #eceae3; padding: 0.08em 0.36em; border-radius: 5px; color: #2b2f36; }
+
+  header.hero { margin-bottom: 8px; }
+  .kicker { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+  h1 { font-size: 38px; line-height: 1.08; letter-spacing: -0.02em; margin: 10px 0 8px; font-weight: 800; }
+  .lede { font-size: 17px; color: var(--muted); max-width: 66ch; }
+  .lede b { color: var(--ink); font-weight: 600; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 22px 0 4px; font-size: 12.5px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; border: 1.5px solid; }
+  .dot.state { background: var(--accent-soft); border-color: var(--accent); }
+  .dot.machine { background: var(--local-soft); border-color: var(--local); }
+  .dot.blocked { background: var(--blocked-soft); border-color: var(--blocked); }
+
+  section { margin-top: 52px; }
+  .num { font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--accent); font-weight: 700; }
+  h2 { font-size: 24px; letter-spacing: -0.01em; margin: 6px 0 6px; font-weight: 750; }
+  section > p { color: #34383f; max-width: 68ch; margin: 10px 0; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+    margin-top: 18px;
+    box-shadow: 0 1px 0 rgba(27,30,35,0.02), 0 8px 24px -18px rgba(27,30,35,0.25);
+  }
+  figure { margin: 0; }
+  figcaption { font-size: 12.5px; color: var(--faint); margin-top: 12px; text-align: center; }
+  svg { width: 100%; height: auto; display: block; }
+  .svg-b { font-family: ui-sans-serif, system-ui, sans-serif; }
+  .b-title { font-weight: 700; font-size: 15px; fill: var(--ink); }
+  .b-sub { font-size: 11.5px; fill: var(--muted); }
+  .edge-lbl { font-size: 11px; fill: var(--muted); }
+
+  .check { color: var(--accent); font-weight: 800; }
+  .cross { color: var(--blocked); font-weight: 800; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 13.5px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; }
+  .pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .pill.yes { background: var(--accent-soft); color: #14514c; }
+  .pill.policy { background: var(--policy-soft); color: var(--policy); }
+  .pill.transport { background: var(--local-soft); color: var(--local); }
+  .pill.blocked { background: var(--blocked-soft); color: var(--blocked); }
+
+  .callout { border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 10px 10px 0; padding: 14px 16px; margin-top: 18px; font-size: 14.5px; color: #274b48; }
+  .callout.blocked { border-left-color: var(--blocked); background: var(--blocked-soft); color: #6a2422; }
+  .callout.pending { border-left-color: var(--policy); background: var(--policy-soft); color: #5c4413; }
+  .callout b { color: inherit; }
+
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 4px; }
+  @media (max-width: 760px) { .twocol { grid-template-columns: 1fr; } h1 { font-size: 30px; } .wrap { padding: 40px 18px 72px; } }
+  .colbox { border-radius: 10px; padding: 16px 18px; }
+  .colbox.ok { background: var(--accent-soft); border: 1px solid var(--accent-line); }
+  .colbox.no { background: var(--blocked-soft); border: 1px solid var(--blocked-line); }
+  .colbox h3 { margin: 0 0 8px; font-size: 14px; }
+  .colbox.ok h3 { color: #14514c; }
+  .colbox.no h3 { color: #6a2422; }
+  .colbox ul { margin: 0; padding-left: 18px; font-size: 13px; color: #34383f; }
+  .colbox li { margin: 6px 0; }
+
+  footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--faint); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="kicker">be10x · turns vs. sessions</div>
+    <h1>Is it a new session every message — or the same one, resumed?</h1>
+    <p class="lede">Every step spawns a brand-new <code>claude</code> process. That sounds like "starts over," but it doesn't — the conversation is <b>resumed</b>, not restarted. Here's exactly how that works, and precisely where it stops being enough.</p>
+    <div class="legend">
+      <span><i class="dot state"></i> Durable — lives in the DB / Claude's session store</span>
+      <span><i class="dot machine"></i> Ephemeral — one OS process, dies when the step ends</span>
+      <span><i class="dot blocked"></i> Not available in Claude Code itself — confirmed via official docs</span>
+    </div>
+  </header>
+
+  <!-- 1 -->
+  <section id="onemessage">
+    <div class="num">01</div>
+    <h2>One message, start to finish</h2>
+    <p>This is what actually happens when you hit send in the interaction panel. Nothing here is a long-lived process — it's five durable writes, stitched together by one queue.</p>
+    <div class="card">
+      <figure>
+        <svg viewBox="0 0 960 250" class="svg-b" role="img" aria-label="One message flow: send, queued, claimed, agent runs, board updated">
+          <defs><marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#1f7a74"/></marker></defs>
+          <g>
+            <rect x="18" y="60" width="150" height="72" rx="10" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="34" y="88" class="b-sub" font-weight="700" fill="#1b1e23">1 · You send it</text>
+            <text x="34" y="107" class="b-sub">composer →</text>
+            <text x="34" y="123" class="b-sub">POST /comments</text>
+
+            <rect x="200" y="60" width="150" height="72" rx="10" fill="#fff" stroke="var(--line-strong)"/>
+            <text x="216" y="88" class="b-sub" font-weight="700" fill="#1b1e23">2 · Queued</text>
+            <text x="216" y="107" class="b-sub"><tspan class="mono">seen_at: null</tspan></text>
+            <text x="216" y="123" class="b-sub">badge shows amber</text>
+
+            <rect x="382" y="60" width="150" height="72" rx="10" fill="var(--local-soft)" stroke="var(--local)" stroke-width="1.5"/>
+            <text x="398" y="88" class="b-sub" font-weight="700" fill="#1b1e23">3 · Runner claims</text>
+            <text x="398" y="107" class="b-sub">atomic — oldest</text>
+            <text x="398" y="123" class="b-sub">unclaimed wake first</text>
+
+            <rect x="564" y="60" width="190" height="72" rx="10" fill="var(--local-soft)" stroke="var(--local)" stroke-width="1.5"/>
+            <text x="580" y="88" class="b-sub" font-weight="700" fill="#1b1e23">4 · Agent runs</text>
+            <text x="580" y="107" class="b-sub"><tspan class="mono">-p --resume &lt;id&gt;</tspan></text>
+            <text x="580" y="123" class="b-sub">prompt via stdin, then closed</text>
+
+            <rect x="786" y="60" width="156" height="72" rx="10" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="802" y="88" class="b-sub" font-weight="700" fill="#1b1e23">5 · Board updated</text>
+            <text x="802" y="107" class="b-sub">progress streams in,</text>
+            <text x="802" y="123" class="b-sub">badge → "Picked up"</text>
+          </g>
+          <line x1="168" y1="96" x2="198" y2="96" stroke="#1f7a74" stroke-width="1.6" marker-end="url(#m1)"/>
+          <line x1="350" y1="96" x2="380" y2="96" stroke="#1f7a74" stroke-width="1.6" marker-end="url(#m1)"/>
+          <line x1="532" y1="96" x2="562" y2="96" stroke="#1f7a74" stroke-width="1.6" marker-end="url(#m1)"/>
+          <line x1="754" y1="96" x2="784" y2="96" stroke="#1f7a74" stroke-width="1.6" marker-end="url(#m1)"/>
+          <path d="M864 132 C 864 200, 90 200, 90 133" fill="none" stroke="#1f7a74" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#m1)"/>
+          <text x="470" y="196" class="edge-lbl" fill="var(--accent)" text-anchor="middle">your next message → same 5 steps → a brand-new process, the same sessionId</text>
+        </svg>
+      </figure>
+      <figcaption>Board server: src/http/server.js · src/tasks/comments.js. Runner: src/runner/runner.js · src/executor/wake.js. Agent: src/executor/executor.js · src/executor/claude-adapter.js.</figcaption>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="wherelives">
+    <div class="num">02</div>
+    <h2>Where the conversation actually lives</h2>
+    <p>Step 4 above is a fresh OS process <b>every single time</b> — different pid, starts cold, no memory of its own. What carries the conversation forward is one value: <code>sessionId</code>. It's captured once, stored in our DB, and handed back to Claude Code on every later run so it can restore its own session.</p>
+    <div class="card">
+      <figure>
+        <svg viewBox="0 0 960 300" class="svg-b" role="img" aria-label="Three ephemeral processes, one persistent sessionId">
+          <defs><marker id="m2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#8a9096"/></marker></defs>
+
+          <rect x="30" y="30" width="270" height="110" rx="12" fill="var(--local-soft)" stroke="var(--local)" stroke-width="1.5" stroke-dasharray="4 4"/>
+          <text x="48" y="58" class="b-title" font-size="14">Run 1 · new pid</text>
+          <text x="48" y="80" class="b-sub">spawn → work → exit</text>
+          <text x="48" y="98" class="b-sub" fill="var(--faint)">captures session_id from</text>
+          <text x="48" y="114" class="b-sub" fill="var(--faint)">the stream-json init event</text>
+
+          <rect x="345" y="30" width="270" height="110" rx="12" fill="var(--local-soft)" stroke="var(--local)" stroke-width="1.5" stroke-dasharray="4 4"/>
+          <text x="363" y="58" class="b-title" font-size="14">Run 2 · new pid</text>
+          <text x="363" y="80" class="b-sub">spawn → work → exit</text>
+          <text x="363" y="98" class="b-sub" fill="var(--faint)">started with</text>
+          <text x="363" y="114" class="b-sub" fill="var(--faint)"><tspan class="mono">--resume sess_abc</tspan></text>
+
+          <rect x="660" y="30" width="270" height="110" rx="12" fill="var(--local-soft)" stroke="var(--local)" stroke-width="1.5" stroke-dasharray="4 4"/>
+          <text x="678" y="58" class="b-title" font-size="14">Run 3 · new pid</text>
+          <text x="678" y="80" class="b-sub">spawn → work → exit</text>
+          <text x="678" y="98" class="b-sub" fill="var(--faint)">started with</text>
+          <text x="678" y="114" class="b-sub" fill="var(--faint)"><tspan class="mono">--resume sess_abc</tspan></text>
+
+          <rect x="30" y="220" width="900" height="56" rx="12" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="480" y="244" class="b-title" font-size="14" text-anchor="middle">sess_abc — persists in Claude Code's own session store</text>
+          <text x="480" y="263" class="b-sub" text-anchor="middle">our DB just keeps a pointer to it on the task row, so the next run knows which id to pass</text>
+
+          <line x1="165" y1="140" x2="165" y2="218" stroke="#8a9096" stroke-width="1.5" marker-end="url(#m2)"/>
+          <line x1="480" y1="140" x2="480" y2="218" stroke="#8a9096" stroke-width="1.5" marker-end="url(#m2)"/>
+          <line x1="795" y1="140" x2="795" y2="218" stroke="#8a9096" stroke-width="1.5" marker-end="url(#m2)"/>
+        </svg>
+      </figure>
+      <figcaption>session_id capture + --resume: src/executor/claude-adapter.js, src/executor/executor.js.</figcaption>
+    </div>
+    <div class="callout"><b>What this is not:</b> a single process kept running in the background, listening for more input. Every box above dies. What's persistent is the pointer, not the process — which is also why a crashed machine loses zero conversation history.</div>
+  </section>
+
+  <!-- 3 -->
+  <section id="cliboundary">
+    <div class="num">03</div>
+    <h2>The hard boundary — straight from Claude Code's own docs</h2>
+    <p>This part isn't a choice this codebase made. It's confirmed directly against Claude Code's official CLI reference: there is no flag, mode, or supported pattern for keeping one process open and feeding it multiple turns.</p>
+    <div class="twocol">
+      <div class="colbox ok">
+        <h3><span class="check">✓</span> What Claude Code supports</h3>
+        <ul>
+          <li>One prompt in, one full turn out, then the process exits — this is <code>-p</code> / print mode.</li>
+          <li><code>--output-format stream-json</code> — real-time streaming <em>of that one turn</em> as it's generated.</li>
+          <li><code>--resume &lt;sessionId&gt;</code> on the <em>next</em> process — full conversation history restored, cold start, different pid.</li>
+        </ul>
+      </div>
+      <div class="colbox no">
+        <h3><span class="cross">✕</span> What it doesn't expose</h3>
+        <ul>
+          <li>No <code>--input-format</code> / streaming-input mode — nothing keeps stdin open across turns.</li>
+          <li>No way to write a second message to a process that's still mid-turn.</li>
+          <li>No live "steer it while it's working" primitive — not in the CLI, not in the Agent SDK either.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout blocked"><b>So, for headless mode specifically:</b> "type into it while it's actively working" isn't available through the transport this app uses today — no process driven by <code>-p</code> + piped stdio can do this, confirmed against code.claude.com/docs. That's not the whole story, though — see §07, where this gets tested for real.</div>
+  </section>
+
+  <!-- 4 -->
+  <section id="mapped">
+    <div class="num">04</div>
+    <h2>Your three asks, mapped precisely</h2>
+    <p>Not one thing — three, and they land in three different places.</p>
+    <div class="card" style="padding-top:8px">
+      <table>
+        <thead><tr><th>What you asked for</th><th>Status</th><th>What it actually takes</th></tr></thead>
+        <tbody>
+          <tr><td>Stop, and later resume from exactly where it left off</td><td><span class="pill yes">built today</span></td><td>Already how every step runs — <code>--resume sessionId</code></td></tr>
+          <tr><td>Keep working toward done without me triggering every step</td><td><span class="pill policy">policy change</span></td><td>Auto-enqueue the next wake when a step ends and the task isn't done — same ephemeral-per-step model, just who triggers it</td></tr>
+          <tr><td>See the raw output live, not on a 3s poll</td><td><span class="pill transport">transport change</span></td><td>Push instead of poll — a WebSocket/SSE layer over the same stream-json events already being produced</td></tr>
+          <tr><td>Type into it while it's actively mid-turn</td><td><span class="pill transport">pty confirmed</span></td><td>Not through headless mode — but interactive mode under a real pty, tested live in §07: works, resumes correctly</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout"><b>Confirmed:</b> exactly one auto-chain exists today — <code>execute → verify</code>, fully automatic, no human or agent trigger involved (runner.js:166-169). It's the only precedent in the codebase for "keeps going without a human," and it's built entirely inside the existing ephemeral-per-step model — no long-lived process required to do it.</div>
+  </section>
+
+  <!-- 5 -->
+  <section id="gaps">
+    <div class="num">05</div>
+    <h2>Three gaps a session-based model would have to solve — confirmed absent today</h2>
+    <p>Not opinions — grepped and read line by line. These are exactly the problems "make it session-based" would inherit if nothing else changes.</p>
+    <div class="colbox no" style="margin-top:18px">
+      <h3><span class="cross">✕</span> Confirmed missing</h3>
+      <ul>
+        <li><b>No way to stop a run once it starts.</b> Not a route in <code>server.js</code>, not a button in the web app, not an MCP tool — zero matches across all three. The only way a run ends is by finishing on its own, or a person manually killing the OS process outside this app entirely.</li>
+        <li><b>"Crash-safe recovery" only cleans up bookkeeping.</b> When a runner dies mid-step, the sweep (runner.js:221-235) marks that one <code>runs</code> row <code>failed</code> so the UI stops showing a dead process as alive — it never touches <code>wake_queue</code> and never resumes the task. A human still has to act again to get it moving.</li>
+        <li><b>No concurrency guard per task.</b> Two wakes for the same task can be claimed by two different runner processes at the same moment, each spawning its own agent into the same git worktree. <code>monitor-task.mjs</code> only notices this after the fact and logs a warning — nothing in the code prevents it.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section id="priordecision">
+    <div class="num">06</div>
+    <h2>This exact question was already raised once</h2>
+    <p>Worth knowing before overriding it: the current shape isn't an oversight nobody examined. It's two separate, already-recorded decisions — one closed, one still open.</p>
+    <div class="twocol">
+      <div class="colbox no">
+        <h3><span class="cross">✕</span> Already rejected — always-live sessions</h3>
+        <p style="margin:0 0 8px;font-size:13px;color:#5c2622">Orchestration v2 design doc, stated core principle:</p>
+        <p style="margin:0;font-size:13px;font-style:italic;color:#6a2422">"event-woken, ephemeral, resumable — NOT always-live … 'staying on a task' is re-waking from durable state, not a process held open."</p>
+        <p style="margin:10px 0 0;font-size:12px;color:var(--faint)">Mirrored today as a comment at runner.js:108-111.</p>
+      </div>
+      <div class="colbox ok">
+        <h3><span class="check">✓</span> Already planned — stop/abort a run</h3>
+        <p style="margin:0 0 8px;font-size:13px;color:#14514c">Same design doc's data model sketched:</p>
+        <p style="margin:0;font-size:13px;font-style:italic;color:#14514c">"register pid/pgid for kill; graceful CancellationToken-then-SIGKILL of the whole group" — plus a <code>runs.status</code> of <code>'killed'</code>.</p>
+        <p style="margin:10px 0 0;font-size:12px;color:var(--faint)">Never built: schema.sql today has only starting/running/done/failed and a bare pid, no pgid.</p>
+      </div>
+    </div>
+    <div class="callout"><b>So:</b> extending the one existing auto-chain, and building the abort control, both continue intent that's already on record. Making sessions always-live means consciously reversing a principle the team already wrote down and reasoned through — not filling a gap nobody thought about.</div>
+  </section>
+
+  <!-- 7 -->
+  <section id="ptytest">
+    <div class="num">07</div>
+    <h2>Tested it live — a real pty is the missing piece, and it works</h2>
+    <p>Not inferred this time — actually run, three times, in this environment. A trivial session was created (<code>claude -p "Reply with exactly: OK"</code>), then resumed by <code>sessionId</code> two different ways.</p>
+    <div class="twocol">
+      <div class="colbox no">
+        <h3><span class="cross">✕</span> Plain pipe — today's transport</h3>
+        <p style="margin:0;font-size:13px;color:#34383f"><code>claude --resume &lt;id&gt;</code> with stdin from <code>/dev/null</code> — exactly what <code>child_process.spawn</code> gives you today:</p>
+        <p style="margin:10px 0 0;font-size:12px;font-family:ui-monospace,monospace;background:#fff;border:1px solid var(--blocked-line);border-radius:6px;padding:8px 10px;color:#6a2422">Error: No deferred tool marker found in the resumed session … Provide a prompt to continue the conversation.</p>
+        <p style="margin:10px 0 0;font-size:12px;color:var(--faint)">Exits immediately. No UI, no prompt, no way to type into it.</p>
+      </div>
+      <div class="colbox ok">
+        <h3><span class="check">✓</span> Real pty — identical command, same session id</h3>
+        <p style="margin:0;font-size:13px;color:#274b48">Same call, wrapped so the child gets an actual pty instead of a pipe:</p>
+        <p style="margin:10px 0 0;font-size:13px;color:#14514c">Full interactive UI renders. The resumed transcript shows the exact prior exchange — <code>"Reply with exactly: OK"</code> → <code>"OK"</code> — restored correctly, then sits live at a <code>❯</code> prompt waiting for input.</p>
+        <p style="margin:10px 0 0;font-size:12px;color:var(--faint)">This is what node-pty would give a WebSocket-backed browser terminal.</p>
+      </div>
+    </div>
+    <div class="callout"><b>What this settles:</b> the "not available" verdict in §03 was specific to headless (<code>-p</code>) mode's plain-pipe transport — confirmed true, that path really doesn't exist. But genuine interactive mode, under a real pty, does exactly what the original idea needed: live rendering, and a session resumed with full history intact.</div>
+    <div class="callout pending"><b>Not yet tested:</b> whether <code>--mcp-config</code> (the <span class="mono">gfa_*</span> board tools) actually loads and works inside this interactive+pty mode — this run didn't pass that flag. That's the next thing to check before this becomes a real design, since board integration depends on it.</div>
+  </section>
+
+  <footer>
+    be10x · generated from live findings in this conversation — file paths cited above are from the current codebase, the Claude Code CLI behavior in §03/§07 is cited to code.claude.com/docs and to live tests run in this environment.
+  </footer>
+
+</div>
+</body>
+</html>
