@@ -1,7 +1,7 @@
 // ABOUTME: be10x service worker — makes the board installable (PWA) and gives the app shell an offline
 // fallback. Deliberately conservative: it NEVER touches /api (auth + live data always hit the network),
 // serves navigations network-first, and treats Vite's hashed /assets as immutable (cache-first).
-const VERSION = 'be10x-v1';
+const VERSION = 'be10x-v2';
 const SHELL = ['/', '/icon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
