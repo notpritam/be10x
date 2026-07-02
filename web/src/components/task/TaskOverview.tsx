@@ -126,7 +126,7 @@ export function TaskOverview({
           )}
 
           {/* The agent's implementation task list + status. */}
-          <TaskChecklist todos={task.agent?.todos} />
+          <TaskChecklist todos={task.agent?.todos} active={run?.status === "running" || run?.status === "starting"} />
 
           {/* Plans over time */}
           <Section title={`Plans over time${versions.length ? ` · ${versions.length}` : ""}`}>

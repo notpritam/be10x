@@ -126,7 +126,34 @@ export function rateTask(db, id, rating, actor) {
 }
 
 export function setRefs(db, id, refs, actor) {
-  db.prepare('UPDATE tasks SET refs_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(refs), Date.now(), id);
+  const now = Date.now();
+  db.prepare('UPDATE tasks SET refs_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(refs), now, id);
+  // Submitting output means the implementation is done — reconcile the checklist so it can't be left with
+  // a stale in-progress step (which happens if the agent stops right after shipping without a final
+  // progress update). Any 'in_progress' todo is flipped to 'done'; pending items are left as-is.
+  const row = db.prepare('SELECT agent_json FROM tasks WHERE id = ?').get(id);
+  if (row && row.agent_json) {
+    try {
+      const agent = JSON.parse(row.agent_json);
+      if (Array.isArray(agent.todos) && agent.todos.length) {
+        const ACTIVE = new Set(['in_progress', 'in-progress', 'working', 'active', 'doing', 'started']);
+        let changed = false;
+        agent.todos = agent.todos.map((t) => {
+          if (t && typeof t === 'object' && typeof t.status === 'string' && ACTIVE.has(t.status.toLowerCase())) {
+            changed = true;
+            return { ...t, status: 'done' };
+          }
+          return t;
+        });
+        if (changed) {
+          agent.updatedAt = now;
+          db.prepare('UPDATE tasks SET agent_json = ? WHERE id = ?').run(JSON.stringify(agent), id);
+        }
+      }
+    } catch {
+      // a malformed agent block never blocks shipping
+    }
+  }
   appendEvent(db, id, actor, 'ship', { refs });
   return getTask(db, id);
 }

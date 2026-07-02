@@ -53,6 +53,8 @@ export function DeepDivePanel({
   const { detail, refresh, onMove } = ctrl;
   const task = detail?.task;
   const isStale = task && taskId !== task.id;
+  const lastRun = detail?.runs?.length ? detail.runs[detail.runs.length - 1] : null;
+  const agentActive = lastRun?.status === "running" || lastRun?.status === "starting";
   // Which right-rail panel is open (null = collapsed to just the icon strip).
   // "discussion" is the merged Interaction panel (comments + activity in one timeline).
   const [rightPanel, setRightPanel] = useState<"discussion" | "info" | "debug" | null>("discussion");
@@ -62,31 +64,43 @@ export function DeepDivePanel({
   const [interactionBarOpen, setInteractionBarOpen] = useState(true);
   const [overviewOpen, setOverviewOpen] = useState(false);
 
-  // Right-panel width — draggable and remembered across sessions. Default a touch wider than before.
+  // Right-panel width — draggable and remembered. The drag binds window-level listeners on pointerdown
+  // and removes them on pointerup, so it can't get stuck: there's no reliance on pointer-capture staying
+  // on a thin handle, and moving the mouse when NOT dragging never resizes. Delta-based from the width at
+  // grab time (dragging toward the main column widens; away narrows), clamped to [320, min(760, 70vw)].
   const asideRef = useRef<HTMLElement>(null);
-  const dragRight = useRef<number | null>(null);
   const [panelWidth, setPanelWidth] = useState<number>(() => {
     if (typeof window === "undefined") return 420;
     const saved = Number(localStorage.getItem("gfa.rightPanelWidth"));
     return saved >= 320 && saved <= 900 ? saved : 420;
   });
   const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
-    const rect = asideRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    dragRight.current = rect.right; // the fixed right edge; width = right - pointerX
-    e.currentTarget.setPointerCapture(e.pointerId);
     e.preventDefault();
-  };
-  const onResize = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragRight.current == null) return;
-    const max = Math.min(760, Math.round(window.innerWidth * 0.7));
-    setPanelWidth(Math.max(320, Math.min(max, dragRight.current - e.clientX)));
-  };
-  const endResize = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragRight.current == null) return;
-    dragRight.current = null;
-    e.currentTarget.releasePointerCapture(e.pointerId);
-    localStorage.setItem("gfa.rightPanelWidth", String(panelWidth));
+    const startX = e.clientX;
+    const startWidth = asideRef.current?.getBoundingClientRect().width ?? panelWidth;
+    const maxW = () => Math.min(760, Math.round(window.innerWidth * 0.7));
+    let latest = startWidth;
+    const onMove = (ev: PointerEvent) => {
+      latest = Math.max(320, Math.min(maxW(), Math.round(startWidth + (startX - ev.clientX))));
+      setPanelWidth(latest);
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      try {
+        localStorage.setItem("gfa.rightPanelWidth", String(latest));
+      } catch {
+        /* non-fatal */
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
   };
 
   function move(to: Status) {
@@ -146,8 +160,9 @@ export function DeepDivePanel({
 
                 <AgentActions task={task} onDone={refresh} />
 
-                {/* The agent's live implementation task list — what it's working on, what's done/left. */}
-                <TaskChecklist todos={task.agent?.todos} />
+                {/* The agent's live implementation task list — what it's working on, what's done/left.
+                    When the agent isn't active, an in-progress step shows as paused (not a live spinner). */}
+                <TaskChecklist todos={task.agent?.todos} active={agentActive} />
 
                 {/* Plan first — the artifact under review. Copy its content or expand it full-screen. */}
                 {task.plan != null && (
@@ -254,14 +269,12 @@ export function DeepDivePanel({
                 >
                   <div
                     onPointerDown={startResize}
-                    onPointerMove={onResize}
-                    onPointerUp={endResize}
                     role="separator"
                     aria-orientation="vertical"
                     title="Drag to resize"
-                    className="group absolute inset-y-0 left-0 z-20 flex w-2 cursor-col-resize touch-none items-stretch justify-center"
+                    className="group absolute inset-y-0 left-0 z-20 flex w-2.5 cursor-col-resize touch-none items-stretch justify-start"
                   >
-                    <span className="w-px bg-transparent transition-colors group-hover:bg-primary/40" />
+                    <span className="w-0.5 bg-border/60 transition-colors group-hover:bg-primary/60" />
                   </div>
                   <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
                     <h3 className="text-[12.5px] font-semibold text-foreground">

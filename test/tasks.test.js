@@ -106,6 +106,22 @@ test('rateTask and setRefs attach data and log events', () => {
   assert.deepEqual(setRefs(db, t.id, { pr: 'http://x/1' }, 'agent').refs, { pr: 'http://x/1' });
 });
 
+test('setRefs reconciles the checklist: shipping flips an in-progress step to done (no stale spinner)', () => {
+  const db = openDb(':memory:');
+  const uid = owner(db);
+  const t = createTask(db, { type: 'code-issue', scope: 'personal', title: 'Bug', ownerId: uid, content: { symptom: 'x' } });
+  // Simulate the agent's last checklist: one step still in-progress when it ships.
+  const agent = { state: 'working', step: 'ship', message: 'submitting', todos: [
+    { text: 'implement', status: 'done' },
+    { text: 'submit output', status: 'in_progress' },
+  ], updatedAt: 1 };
+  db.prepare('UPDATE tasks SET agent_json = ? WHERE id = ?').run(JSON.stringify(agent), t.id);
+
+  const after = setRefs(db, t.id, { pr: 'http://x/1' }, 'agent');
+  assert.equal(after.agent.todos[1].status, 'done', 'the in-progress step is completed on ship');
+  assert.equal(after.agent.todos[0].status, 'done');
+});
+
 test('DoD: a task walks the full legal lifecycle and records every event', () => {
   const db = openDb(':memory:');
   const uid = owner(db);
