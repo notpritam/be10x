@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { openDb } from '../src/db/db.js';
 import { getTask } from '../src/tasks/tasks.js';
 import { addComment, unseenComments } from '../src/tasks/comments.js';
-import { enqueueWake } from '../src/executor/wake.js';
+import { enqueueWake, listPendingWakes } from '../src/executor/wake.js';
 import { createRun, getRun, markRunning } from '../src/executor/runs.js';
 import { registerProject } from '../src/projects/projects.js';
 import { runWakeOnce, runAnyWakeOnce, recoverOrphans } from '../src/runner/runner.js';
@@ -45,7 +45,9 @@ test('a plan wake advances backlog→researching and runs the agent fresh in pla
   assert.equal(getTask(db, 't1').status, 'researching');
   assert.equal(exec.calls.length, 1);
   assert.equal(exec.calls[0].opts.mode, 'plan');
-  assert.equal(exec.calls[0].opts.resume, false);
+  // The scheduler no longer forces a resume flag — the executor owns resume-vs-fresh per mode
+  // (plan is always fresh). See src/executor/executor.js FRESH_MODES.
+  assert.equal(exec.calls[0].opts.resume, undefined);
   assert.equal(r.summary.done, true);
 });
 
@@ -58,8 +60,14 @@ test('an execute wake claims ready_to_work→in_progress and, on success, hands 
   await runWakeOnce(db, { projectId: 'p1', execute: exec });
 
   assert.equal(exec.calls[0].opts.mode, 'execute');
-  assert.equal(exec.calls[0].opts.resume, true);
+  // Execute is a FRESH session (clean hand-off from the plan, not the planning transcript); the
+  // scheduler no longer forces resume — the executor owns that. See executor.js FRESH_MODES.
+  assert.equal(exec.calls[0].opts.resume, undefined);
   assert.equal(getTask(db, 't1').status, 'verifying');
+  // A successful build hands off to a fresh self-verify pass against the plan.
+  const pending = listPendingWakes(db, 't1');
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].reason, 'verify');
 });
 
 test('a revise wake delivers unseen comments and marks them seen (delta-only next time)', async () => {

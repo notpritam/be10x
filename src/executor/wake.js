@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 
 // Known wake reasons → the executor mode each maps to lives in the scheduler; these are the vocabulary.
-export const WAKE_REASONS = ['plan', 'revise', 'input_answer', 'execute', 'pick_up_now', 'follow_up'];
+export const WAKE_REASONS = ['plan', 'revise', 'input_answer', 'execute', 'pick_up_now', 'follow_up', 'verify'];
 
 function hydrate(row) {
   return row

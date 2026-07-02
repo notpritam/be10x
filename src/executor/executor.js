@@ -53,7 +53,22 @@ const MODE_DIRECTIVE = {
   follow_up: 'Continue this task from its saved state using the gfa_* tools.',
   chat:
     'CHAT MODE. This is a conversational task, not a build. Read the discussion below and reply to the human by calling gfa_reply with { taskId: <the task db id above>, message: "..." }. Be conversational and helpful; do NOT write a plan or implement anything. If the human asks you to create a task, call gfa_create_task and then tell them what you made. Reply once, then stop until they write again.',
+  verify:
+    'VERIFY MODE. The implementation is done and this is a FRESH session — you do NOT have the build transcript, only the approved plan below and the code in this worktree. Review the changes on this branch (run `git diff` and `git log` against the base) against the plan, and check each part was implemented correctly. Report your findings by calling gfa_update_progress with a todos list of verification checks — each { text, status } where status is "done" (verified) or "pending" (a gap/concern) — plus a short summary message. Do NOT change any code and do NOT move the task; the human does the final sign-off. If you find gaps, spell them out clearly via gfa_reply so the human can decide.',
 };
+
+// Modes that start a FRESH session (no --resume), seeded from durable state rather than the prior
+// transcript: `plan` is a clean start; `execute` is a clean handoff from the APPROVED PLAN (the planning
+// session is deliberately not carried over); `verify` is a clean read of the diff. Everything else
+// (revise, input_answer, follow_up, chat) resumes the same session for tight, stateful iteration.
+const FRESH_MODES = new Set(['plan', 'execute', 'verify']);
+// Fresh modes whose prompt must carry the approved plan (they don't inherit it from a resumed session).
+const PLAN_MODES = new Set(['execute', 'verify']);
+
+function planText(plan) {
+  if (plan == null) return '';
+  return typeof plan === 'string' ? plan : JSON.stringify(plan, null, 2);
+}
 
 // The prompt delivered on stdin: task identity (so the agent addresses the gfa_* tools correctly), the
 // details, the mode directive, and any delta (unseen comments + the triggering context) for this wake.
@@ -66,7 +81,11 @@ export function buildPrompt(task, { mode = 'plan', comments = [], wakeContext = 
     ? '\n\nNew human comments to address:\n' + comments.map((c, i) => `${i + 1}. [${c.anchor}] ${c.body}`).join('\n')
     : '';
   const ctxBlock = wakeContext ? `\n\nContext for this wake:\n${JSON.stringify(wakeContext)}` : '';
-  return `${header}${bodyBlock}\n\n${directive}${commentBlock}${ctxBlock}`;
+  const planBlock =
+    PLAN_MODES.has(mode) && task.plan != null
+      ? `\n\nApproved plan (build/verify against THIS — the planning session is not carried over):\n${planText(task.plan)}`
+      : '';
+  return `${header}${bodyBlock}${planBlock}\n\n${directive}${commentBlock}${ctxBlock}`;
 }
 
 // Write the be10x system prompt to a unique temp file for a fresh run; returns its path (or null on a
@@ -115,8 +134,9 @@ export function makeClaudeExecutor(db, project, opts = {}) {
     const mode = runOpts.mode || 'plan';
     const comments = runOpts.comments || [];
     const wakeContext = runOpts.wakeContext || null;
-    // Fresh on a first plan; resume the prior session on every follow-up wake (override per run if needed).
-    const wantResume = runOpts.resume !== undefined ? runOpts.resume : resume || mode !== 'plan';
+    // Context policy: fresh session for plan/execute/verify (clean start / clean handoff from the plan /
+    // clean read of the diff), resume for revise/input_answer/follow_up/chat. Override per run if needed.
+    const wantResume = runOpts.resume !== undefined ? runOpts.resume : resume || !FRESH_MODES.has(mode);
 
     const branch = worktreeBranch(task.humanId, task.title);
     // Per-task isolation (set at create time): 'worktree' (default) cuts a fresh isolated checkout;

@@ -79,7 +79,24 @@ test('buildPrompt: carries task identity + the mode directive + comment deltas',
   assert.match(revise, /tighten step 2/);
 });
 
-test('execute mode resumes the prior session (--resume, no fresh system prompt)', async () => {
+test('execute starts a FRESH session (no --resume) — a clean handoff from the plan, not the planning transcript', async () => {
+  const db = seed();
+  const prior = createRun(db, { taskId: 't1' });
+  setRunSession(db, prior.id, 'sess-prev');
+  const spawn = fakeSpawn({
+    stdout: ['{"type":"result","subtype":"success","session_id":"sess-new","result":"done"}'],
+    exitCode: 0,
+  });
+  const execute = makeClaudeExecutor(db, PROJECT, { spawn, ensureWorktree: fakeEnsure() });
+
+  await execute(TASK, { mode: 'execute' });
+
+  const args = spawn.calls[0].args;
+  assert.ok(!args.includes('--resume'), 'execute does not resume the planning session');
+  assert.ok(args.includes('--append-system-prompt-file'), 'a fresh run carries the system prompt');
+});
+
+test('revise mode resumes the prior session (--resume, no fresh system prompt)', async () => {
   const db = seed();
   const prior = createRun(db, { taskId: 't1' });
   setRunSession(db, prior.id, 'sess-prev');
@@ -89,7 +106,7 @@ test('execute mode resumes the prior session (--resume, no fresh system prompt)'
   });
   const execute = makeClaudeExecutor(db, PROJECT, { spawn, ensureWorktree: fakeEnsure() });
 
-  await execute(TASK, { mode: 'execute' });
+  await execute(TASK, { mode: 'revise' });
 
   const args = spawn.calls[0].args;
   assert.ok(args.includes('--resume'));

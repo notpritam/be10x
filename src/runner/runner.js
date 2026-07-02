@@ -4,7 +4,7 @@ import { getType } from '../tasks/types.js';
 import { getTask, transition } from '../tasks/tasks.js';
 import { appendEvent } from '../tasks/events.js';
 import { recordProgress } from '../worker/worker.js';
-import { claimNextWake, claimNextWakeAny } from '../executor/wake.js';
+import { claimNextWake, claimNextWakeAny, enqueueWake } from '../executor/wake.js';
 import { unseenComments, markCommentsSeen } from '../tasks/comments.js';
 import { finishRun } from '../executor/runs.js';
 import { getProject } from '../projects/projects.js';
@@ -110,7 +110,7 @@ export function workLoop(db, { projectId, workerId = 'runner', intervalMs = 3000
 // them and drives an ephemeral, resumed agent per wake. "Staying on a task" is re-waking from durable
 // state, never a live process.
 
-const REASON_MODE = { plan: 'plan', revise: 'revise', input_answer: 'input_answer', execute: 'execute', follow_up: 'follow_up' };
+const REASON_MODE = { plan: 'plan', revise: 'revise', input_answer: 'input_answer', execute: 'execute', follow_up: 'follow_up', verify: 'verify' };
 
 // The executor mode a wake maps to. pick_up_now is contextual — it means "do the useful next thing",
 // which depends on where the task currently sits.
@@ -151,7 +151,8 @@ async function driveWake(db, { wake, task, workerId, execute }) {
 
   let summary;
   try {
-    summary = await execute(staged, { mode, wakeContext: wake.context, comments, resume: mode !== 'plan' });
+    // Context policy (resume vs fresh) is owned by the executor per mode — don't force it here.
+    summary = await execute(staged, { mode, wakeContext: wake.context, comments });
   } catch (error) {
     recordProgress(db, task.id, { state: 'blocked', step: 'error', message: String(error?.message ?? error) }, workerId);
     return { wake, task: staged, error };
@@ -160,9 +161,11 @@ async function driveWake(db, { wake, task, workerId, execute }) {
   // Deltas consumed → mark them seen so the next wake stays delta-only.
   markCommentsSeen(db, comments.map((c) => c.id));
 
-  // A successful implementation pass hands the task to verifying for human sign-off.
+  // A successful implementation pass hands the task to verifying, then wakes a FRESH agent to
+  // self-verify the diff against the plan (it reports; the human still does final sign-off).
   if (mode === 'execute' && summary && summary.done && getTask(db, task.id).status === 'in_progress') {
     safeTransition(db, task.id, 'verifying', workerId, { wake: wake.reason });
+    enqueueWake(db, task.id, 'verify');
   }
   return { wake, task: getTask(db, task.id), summary };
 }
