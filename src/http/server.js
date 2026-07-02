@@ -10,6 +10,7 @@ import { createUser, getUserByEmail, getUserById, searchUsers, recentCollaborato
 import { verifyPassword } from '../auth/passwords.js';
 import { createSession, getSession, deleteSession } from '../auth/sessions.js';
 import { createToken, listTokens, revokeToken, getTokenOwner, verifyToken } from '../auth/tokens.js';
+import { createDeviceCode, getByUserCode, approveDeviceCode, denyDeviceCode, pollDeviceToken } from '../auth/device.js';
 import { getTool } from '../mcp/tools.js';
 import { createTeam, deleteTeam } from '../teams/teams.js';
 import { listMembers, addMember, setRole, removeMember } from '../teams/memberships.js';
@@ -72,6 +73,15 @@ function currentUser(db, req) {
   if (!sid) return null;
   const s = getSession(db, sid);
   return s ? getUserById(db, s.userId) : null;
+}
+
+// The board's own public origin, honoring a TLS-terminating proxy (Render/Caddy set x-forwarded-*). Used to
+// build the `be10x login` approve URL so the CLI opens the right host (e.g. https://be10x.notpritam.in),
+// whether the board runs on localhost or behind a proxy.
+function originOf(req) {
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+  return proto + '://' + host;
 }
 
 // Bearer-token auth for the agent/runner API (/api/agent/*). An agent running on a MEMBER's own machine
@@ -379,6 +389,44 @@ const ROUTES = [
     revokeToken(db, params.id);
     send(res, 200, { ok: true });
   }],
+  // --- device authorization (`be10x login`) ---------------------------------------------------------------
+  // The CLI mints a code (public — it has no session yet); the user approves the short code in the board UI
+  // (session-authed, so the token binds to their account); the CLI polls for the token holding the
+  // unguessable device_code. Mirrors OAuth device flow so login is a paste-free browser round-trip.
+  ['POST', '/api/device/code', false, async ({ db, req, res, body }) => {
+    const { deviceCode, userCode, expiresAt, interval } = createDeviceCode(db, {
+      label: body.label ? String(body.label).slice(0, 80) : null,
+    });
+    const origin = originOf(req);
+    send(res, 200, {
+      deviceCode,
+      userCode,
+      interval,
+      expiresIn: Math.max(0, Math.round((expiresAt - Date.now()) / 1000)),
+      verificationUri: origin + '/connect',
+      verificationUriComplete: origin + '/connect?code=' + encodeURIComponent(userCode),
+    });
+  }],
+  ['POST', '/api/device/token', false, async ({ db, res, body }) => {
+    if (!body.deviceCode) throw new Error('MISSING_FIELD:deviceCode');
+    send(res, 200, pollDeviceToken(db, String(body.deviceCode)));
+  }],
+  // The approve screen fetches this to show WHAT is asking (machine label) before the user authorizes.
+  ['GET', '/api/device/pending', true, async ({ db, req, res }) => {
+    const code = new URL(req.url, 'http://x').searchParams.get('code') || '';
+    const row = getByUserCode(db, code);
+    if (!row) throw new Error('NOT_FOUND');
+    send(res, 200, {
+      userCode: row.user_code,
+      label: row.label,
+      status: row.expires_at < Date.now() ? 'expired' : row.status,
+      createdAt: row.created_at,
+    });
+  }],
+  ['POST', '/api/device/approve', true, async ({ db, res, body, user }) =>
+    send(res, 200, approveDeviceCode(db, { userCode: body.code || body.userCode, userId: user.id }))],
+  ['POST', '/api/device/deny', true, async ({ db, res, body, user }) =>
+    send(res, 200, denyDeviceCode(db, { userCode: body.code || body.userCode, userId: user.id }))],
   ['GET', '/api/agent-config', true, async ({ res }) => send(res, 200, { mcpServerPath: MCP_SERVER_PATH, dbPath: process.env.GFA_DB_PATH || './gfa.db' })],
 ];
 
