@@ -12,7 +12,7 @@ A human + agent task board. **Sessions are disposable; state is durable** — th
 
 ```bash
 npm install
-npm test                       # 188 tests
+npm test                       # 227 tests
 npm run --prefix web build     # build the UI into public/  (only needed after web changes)
 node bin/be10x.js serve        # board at http://localhost:4610
 ```
@@ -73,11 +73,35 @@ Everything durable is on the `be10x-data` volume (the SQLite DB + worktrees). Sn
 
 ---
 
+## Connect your machine — run the agent on each teammate's computer
+
+The hosting above is **single-host** (board + agent on one server). The other model — teammates running the agent on **their own** machines against a **shared hosted board** — is the **connector**. The board holds all state; each member links their machine to it and runs the agent locally, on their own repos, with their own Claude login. **Nothing runs on the server.**
+
+**On the board (once):** host it as above (Render with a disk, a small VM, Fly, …). No `ANTHROPIC_API_KEY` needed — the baked-in runner just idles when there are no local repos; the connectors do the work.
+
+**On each member's machine:**
+
+```bash
+# 1. Get the be10x CLI (clone the repo + npm install) and your own Claude Code login.
+# 2. Mint a token on the board:  Settings → Connect your machine  (or `be10x token`).
+# 3. Link this machine to the board and serve your repos:
+node bin/be10x.js connect \
+  --board https://your-board.example.com \
+  --token gfa_xxxxxxxx \
+  --repos ~/code/app,~/code/api
+```
+
+That saves the setup to `~/.be10x/connect.json` (so a bare `be10x connect` works next time), registers each repo with the board, writes each a board-pointing MCP config, and starts the loop: it claims wakes for your repos, spawns **your** `claude` in each repo's worktree, and streams the plan / progress / output back to the board over HTTPS — where the whole team reviews and comments. Create a task for one of those repos on the board and your machine picks it up.
+
+Under the hood: the agent's `gfa_*` tools reach the board through an HTTP MCP transport (`src/mcp/http-server.js` → `POST /api/agent/rpc`), and the runner claims/reports via `POST /api/agent/{claim,report}` — all authenticated with your personal token. The board owns every durability decision (auto-retry, verify hand-off), exactly as the in-process runner does. See [`docs/superpowers/specs/2026-07-02-distributed-runner-design.md`](docs/superpowers/specs/2026-07-02-distributed-runner-design.md).
+
+---
+
 ## Honest status — what's built vs. not
 
-- ✅ **Built & tested:** board, auth, teams/roles, tasks, plans, HTML artifacts, agent orchestration, share links, adopt-to-board, crash recovery, PWA (installable). 188 tests.
-- ⚠️ **This deploy is single-host:** the board + agents run on one server. Fine for a team hosting one board.
-- 🔜 **Not yet:** teammates running agents on **their own machines** (distributed runners over HTTPS), and a hosted-managed Claude login. Until then, agents run on the host with the credentials above.
+- ✅ **Built & tested:** board, auth, teams/roles, tasks, plans, HTML artifacts, agent orchestration, share links, adopt-to-board, crash recovery, **distributed runners (teammates run the agent on their own machines over HTTPS)**, PWA (installable). 227 tests.
+- **Two ways to run the agent:** single-host (board + agent on the server, credentials above) **or** the connector (each teammate runs it locally — see "Connect your machine").
+- 🔜 **Not yet:** a hosted-managed Claude login (each member brings their own), and team-scoped tokens on the agent API — any valid token can drive tasks today, which is fine for a trusted team.
 
 ---
 
