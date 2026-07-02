@@ -4,14 +4,11 @@
 import type { ReactNode } from "react";
 import { Bot, GitBranch, GitCommitHorizontal, Package } from "lucide-react";
 import type { Run, Task } from "@/lib/types";
+import { AgentOutput } from "./AgentOutput";
 
 interface GitMeta {
   commits?: { sha: string; subject: string }[];
   stat?: string;
-}
-
-function isUrl(v: unknown): v is string {
-  return typeof v === "string" && /^https?:\/\//.test(v);
 }
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -110,22 +107,10 @@ export function WorkSection({ task, runs }: { task: Task; runs: Run[] }) {
 
       {refs && Object.keys(refs).length > 0 && (
         <div className="border-t border-border/50 pt-3">
-          <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
+          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
             <Package className="size-3.5" /> Output
           </p>
-          <dl className="space-y-1.5">
-            {Object.entries(refs).map(([k, v]) => (
-              <Row key={k} label={k.replace(/_/g, " ")}>
-                {isUrl(v) ? (
-                  <a href={v} target="_blank" rel="noreferrer" className="break-all text-primary underline underline-offset-2">
-                    {v}
-                  </a>
-                ) : (
-                  <span className="break-all">{typeof v === "string" ? v : JSON.stringify(v)}</span>
-                )}
-              </Row>
-            ))}
-          </dl>
+          <AgentOutput refs={refs} />
         </div>
       )}
     </div>

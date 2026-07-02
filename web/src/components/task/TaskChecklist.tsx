@@ -42,6 +42,16 @@ export function TaskChecklist({ todos, active = true }: { todos: unknown; active
         {stalled && (
           <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">paused</span>
         )}
+        {done === items.length && (
+          <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600">all done</span>
+        )}
+      </div>
+      {/* Progress indicator for remaining work at a glance. */}
+      <div className="mb-2 h-1 w-full overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full bg-emerald-500/70 transition-all"
+          style={{ width: `${items.length ? Math.round((done / items.length) * 100) : 0}%` }}
+        />
       </div>
       <ul className="space-y-1.5 rounded-[8px] border border-border/60 bg-card p-3">
         {items.map((it, i) => {

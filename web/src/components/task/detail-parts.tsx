@@ -2,10 +2,10 @@
 // renderer, agent block and the header icon button. Extracted from DetailPanel so the slide-over and
 // the full-screen deep-dive render byte-for-byte identical, on-brand pieces.
 import type { ReactNode } from "react";
-import { Bot, Loader2 } from "lucide-react";
+import { Bot, CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
 import { legalMoves, STATUS_META } from "@/lib/lifecycle";
 import type { Status, Task } from "@/lib/types";
-import { humanizeKey, isRecord } from "@/lib/utils";
+import { cn, humanizeKey, isRecord } from "@/lib/utils";
 
 export function ownerName(
   task: Task,
@@ -92,17 +92,75 @@ export function TaskContent({ task }: { task: Task }) {
   );
 }
 
+const URL_RE = /^https?:\/\//;
+const DONE_STATUS = new Set(["done", "completed", "complete", "closed", "passed", "pass", "ok", "verified"]);
+const ACTIVE_STATUS = new Set(["in_progress", "in-progress", "working", "active", "doing", "started"]);
+
+// An array of { text|title, status } items — render it as a checklist rather than bullets.
+function isChecklist(arr: unknown[]): boolean {
+  return (
+    arr.length > 0 &&
+    arr.every((x) => isRecord(x) && (typeof (x as { text?: unknown }).text === "string" || typeof (x as { title?: unknown }).title === "string"))
+  );
+}
+
+// A general renderer for the agent's free-form values (research, output fields, extra content) that shows
+// INDICATORS instead of raw JSON: booleans as ✓/✗, {text,status} arrays as checklists, URLs as links,
+// other arrays as bullets, and nested objects as labelled, recursed sections.
 export function DataValue({ value }: { value: unknown }): ReactNode {
   if (value == null) return null;
-  if (typeof value === "string") {
+  if (typeof value === "boolean") {
     return (
-      <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-foreground/90">{value}</p>
+      <span className={cn("inline-flex items-center gap-1 text-[13px] font-medium", value ? "text-emerald-600" : "text-red-600")}>
+        {value ? <CheckCircle2 className="size-3.5" /> : <XCircle className="size-3.5" />}
+        {value ? "Yes" : "No"}
+      </span>
     );
   }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return <p className="text-[13.5px] text-foreground/90">{String(value)}</p>;
+  if (typeof value === "number") {
+    return <span className="text-[13.5px] tabular-nums text-foreground/90">{value}</span>;
+  }
+  if (typeof value === "string") {
+    if (URL_RE.test(value)) {
+      return (
+        <a href={value} target="_blank" rel="noreferrer" className="break-all text-primary underline underline-offset-2">
+          {value}
+        </a>
+      );
+    }
+    return <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-foreground/90">{value}</p>;
   }
   if (Array.isArray(value)) {
+    if (value.length === 0) return <p className="text-[13px] text-muted-foreground/70">None</p>;
+    if (isChecklist(value)) {
+      return (
+        <ul className="space-y-1">
+          {value.map((it, i) => {
+            const o = it as Record<string, unknown>;
+            const text = String(o.text ?? o.title ?? "");
+            const s = String(o.status ?? "").toLowerCase();
+            const done = DONE_STATUS.has(s);
+            const active = ACTIVE_STATUS.has(s);
+            return (
+              <li key={i} className="flex items-start gap-2 text-[13px]">
+                <span className="mt-0.5 shrink-0">
+                  {done ? (
+                    <CheckCircle2 className="size-4 text-emerald-600" />
+                  ) : active ? (
+                    <Loader2 className="size-4 animate-spin text-primary" />
+                  ) : (
+                    <Circle className="size-4 text-muted-foreground/40" />
+                  )}
+                </span>
+                <span className={cn("min-w-0 leading-snug", done ? "text-muted-foreground line-through" : "text-foreground/90")}>
+                  {text}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      );
+    }
     return (
       <ul className="ml-4 list-disc space-y-1 text-[13.5px] leading-relaxed text-foreground/90 marker:text-muted-foreground/50">
         {value.map((v, i) => (
@@ -115,13 +173,11 @@ export function DataValue({ value }: { value: unknown }): ReactNode {
   }
   if (isRecord(value)) {
     return (
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {Object.entries(value).map(([k, v]) => (
-          <div key={k} className="text-[13px]">
-            <span className="font-medium text-muted-foreground">{humanizeKey(k)}: </span>
-            <span className="text-foreground/90">
-              {typeof v === "string" ? v : JSON.stringify(v)}
-            </span>
+          <div key={k}>
+            <p className="mb-0.5 text-[11.5px] font-medium text-muted-foreground">{humanizeKey(k)}</p>
+            <DataValue value={v} />
           </div>
         ))}
       </div>
