@@ -3,7 +3,20 @@
 // shared detail controller + parts so it stays in lockstep with the slide-over. Collapse (or Escape)
 // returns to the slide-over; close returns to the board.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Bug, ChevronUp, Copy, History, Info, Layers, Maximize2, MessageSquare, Share2, X } from "lucide-react";
+import {
+  Bug,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  History,
+  Info,
+  Layers,
+  Maximize2,
+  MessageSquare,
+  PanelRightClose,
+  Share2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import type { Status } from "@/lib/types";
 import { useApp } from "@/state/app-store";
@@ -33,6 +46,13 @@ import {
   Section,
   TaskContent,
 } from "./detail-parts";
+
+// Panel sizing: the right panel has no fixed max — it can grow until the MAIN task content would drop
+// below MIN_CONTENT. So it's "as wide as you want" while the content stays readable. NAV_W is the fixed
+// icon rail to the panel's right.
+const MIN_PANEL = 320;
+const MIN_CONTENT = 360;
+const NAV_W = 48;
 
 export function DeepDivePanel({
   taskId,
@@ -70,18 +90,23 @@ export function DeepDivePanel({
   // grab time (dragging toward the main column widens; away narrows), clamped to [320, min(760, 70vw)].
   const asideRef = useRef<HTMLElement>(null);
   const [panelWidth, setPanelWidth] = useState<number>(() => {
-    if (typeof window === "undefined") return 420;
+    if (typeof window === "undefined") return 460;
     const saved = Number(localStorage.getItem("gfa.rightPanelWidth"));
-    return saved >= 320 && saved <= 900 ? saved : 420;
+    return saved >= MIN_PANEL ? saved : 460;
   });
+  // The only ceiling is "don't crush the content": max = the row width minus the icon rail minus the
+  // content minimum. No fixed cap, so the panel expands as far as the user drags while content stays ≥ min.
+  const maxPanelWidth = () => {
+    const row = asideRef.current?.parentElement?.clientWidth;
+    return row ? Math.max(MIN_PANEL, row - NAV_W - MIN_CONTENT) : Number.POSITIVE_INFINITY;
+  };
   const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     const startX = e.clientX;
     const startWidth = asideRef.current?.getBoundingClientRect().width ?? panelWidth;
-    const maxW = () => Math.min(760, Math.round(window.innerWidth * 0.7));
     let latest = startWidth;
     const onMove = (ev: PointerEvent) => {
-      latest = Math.max(320, Math.min(maxW(), Math.round(startWidth + (startX - ev.clientX))));
+      latest = Math.max(MIN_PANEL, Math.min(maxPanelWidth(), Math.round(startWidth + (startX - ev.clientX))));
       setPanelWidth(latest);
     };
     const stop = () => {
@@ -117,6 +142,23 @@ export function DeepDivePanel({
       .catch(() => toast.error("Copy failed."));
   }
 
+  // Keep the panel within the available space when the window resizes or the panel (re)opens, so it can
+  // never crowd the content below its minimum after a layout change.
+  useEffect(() => {
+    const clamp = () => setPanelWidth((w) => Math.min(w, maxPanelWidth()));
+    clamp();
+    window.addEventListener("resize", clamp);
+    return () => window.removeEventListener("resize", clamp);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rightPanel]);
+
+  // Plan expansion: auto-open during planning, auto-collapsed once work moves on (the current-step recap
+  // leads instead). null = follow that rule; true/false = the user's explicit toggle. Reset per task.
+  const [planOverride, setPlanOverride] = useState<boolean | null>(null);
+  useEffect(() => {
+    setPlanOverride(null);
+  }, [taskId]);
+
   // Escape steps back to the slide-over (overlay mode only; as an inline tab page there's nowhere to go).
   useEffect(() => {
     if (!open || !onCollapse) return;
@@ -128,6 +170,11 @@ export function DeepDivePanel({
   }, [open, onCollapse]);
 
   if (!open) return null;
+
+  // Plan auto-expands while we're still planning; once work has moved on it collapses (CurrentStep is the
+  // recap). The user's explicit toggle (planOverride) always wins.
+  const planningStage = task ? ["backlog", "researching", "plan_review"].includes(task.status) : false;
+  const planOpen = planOverride ?? planningStage;
 
   return (
     <div
@@ -168,7 +215,18 @@ export function DeepDivePanel({
                 {task.plan != null && (
                   <section>
                     <div className="mb-2 flex items-center gap-2">
-                      <h3 className="text-[12px] font-semibold text-muted-foreground/80">Plan</h3>
+                      <button
+                        type="button"
+                        onClick={() => setPlanOverride(!planOpen)}
+                        title={planOpen ? "Collapse plan" : "Expand plan"}
+                        className="flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <ChevronDown className={cn("size-4 transition-transform", !planOpen && "-rotate-90")} />
+                        <h3 className="text-[12px] font-semibold text-muted-foreground/80">Plan</h3>
+                      </button>
+                      {!planOpen && (
+                        <span className="text-[11.5px] text-muted-foreground/70">· approved — expand to view</span>
+                      )}
                       <div className="ml-auto flex items-center gap-0.5">
                         <button
                           type="button"
@@ -202,8 +260,8 @@ export function DeepDivePanel({
                         </button>
                       </div>
                     </div>
-                    {showHistory && <PlanVersions taskId={task.id} onRestored={refresh} />}
-                    <PlanView plan={task.plan} />
+                    {planOpen && showHistory && <PlanVersions taskId={task.id} onRestored={refresh} />}
+                    {planOpen && <PlanView plan={task.plan} />}
                   </section>
                 )}
 
@@ -288,6 +346,15 @@ export function DeepDivePanel({
                       ) : (
                         <AgentLiveStatus task={task} runs={detail.runs} compact />
                       ))}
+                    <button
+                      type="button"
+                      onClick={() => setRightPanel(null)}
+                      title="Collapse panel"
+                      aria-label="Collapse panel"
+                      className="ml-auto grid size-6 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                      <PanelRightClose className="size-4" />
+                    </button>
                   </div>
                   {/* Discussion fills the panel as a chat (input pinned at the foot); the others scroll. */}
                   {rightPanel === "discussion" ? (
