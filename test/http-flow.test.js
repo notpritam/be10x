@@ -52,6 +52,23 @@ test('hand-to-agent moves backlog→researching and enqueues a plan wake', async
   });
 });
 
+test('GET /wakes exposes pending wakes for the queued-work indicator', async () => {
+  await withServerDb(async (base) => {
+    const c = await signup(base);
+    const t = await newTask(base, c);
+    // Nothing queued yet.
+    const empty = await api(base, 'GET', '/api/tasks/' + t.id + '/wakes', { cookie: c });
+    assert.equal(empty.status, 200);
+    assert.deepEqual(empty.json.wakes, []);
+    // Handing to the agent enqueues a plan wake, which the endpoint now surfaces as pending.
+    await api(base, 'POST', '/api/tasks/' + t.id + '/hand-to-agent', { cookie: c });
+    const r = await api(base, 'GET', '/api/tasks/' + t.id + '/wakes', { cookie: c });
+    assert.equal(r.json.wakes.length, 1);
+    assert.equal(r.json.wakes[0].reason, 'plan');
+    assert.equal(r.json.wakes[0].pending, true);
+  });
+});
+
 test('a comment on a plan_review task enqueues a revise wake and appears in the thread', async () => {
   await withServerDb(async (base, db) => {
     const c = await signup(base);

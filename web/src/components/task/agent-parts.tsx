@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Activity, Bot, ChevronDown, ChevronRight, Copy, SendHorizontal } from "lucide-react";
 import { toast } from "sonner";
-import type { Comment, Run, Task, TaskEvent } from "@/lib/types";
+import type { Comment, Run, Task, TaskEvent, WakeEntry } from "@/lib/types";
 import { api } from "@/lib/api";
 import { useApp } from "@/state/app-store";
 import { cn, relativeTime } from "@/lib/utils";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { describe } from "./ActivityFeed";
 import { AgentLiveStatus } from "./AgentLiveStatus";
+import { PendingWork } from "./PendingWork";
 
 // Actor ids that mean "the agent" (mirrors app-store's resolveActor) — used to color/label its bubbles.
 const AGENT_ACTORS = new Set(["agent", "worker", "runner"]);
@@ -257,6 +258,7 @@ export function CommentThread({
   events = [],
   task,
   runs,
+  wakes,
   resolveActor,
   onPosted,
 }: {
@@ -265,6 +267,8 @@ export function CommentThread({
   events?: TaskEvent[];
   task: Task;
   runs: Run[];
+  /** Queued (unclaimed) wakes — a message you posted shows here as "queued" until the agent picks it up. */
+  wakes?: WakeEntry[];
   resolveActor: (id: string) => string;
   onPosted: () => void;
 }) {
@@ -401,6 +405,14 @@ export function CommentThread({
           </div>
         )}
       </div>
+
+      {/* Queued indicator — a message you posted (or any unclaimed wake) shows here until the agent picks
+          it up on its next run, so you're never left wondering whether it landed. */}
+      {wakes && wakes.length > 0 && (
+        <div className="shrink-0 px-3 pt-2">
+          <PendingWork wakes={wakes} agentActive={agentActive} compact />
+        </div>
+      )}
 
       {/* Composer — input + send as one component, pinned at the foot. Enter sends, Shift+Enter newlines. */}
       <div className="shrink-0 border-t border-border/60 p-3">
