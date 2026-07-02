@@ -67,7 +67,10 @@ export function AgentLiveStatus({
   if (active) {
     const quiet = staleMs > QUIET_MS;
     tone = quiet ? "quiet" : "live";
-    label = run?.status === "starting" ? "Agent starting" : quiet ? "Agent running · quiet" : "Agent running";
+    label = run?.status === "starting" ? "Agent starting" : quiet ? "Agent working · quiet" : "Agent working";
+  } else if (task.status === "needs_input") {
+    tone = "quiet";
+    label = "Waiting for your input";
   } else if (run?.status === "failed") {
     tone = "failed";
     label = "Agent stopped";
@@ -110,14 +113,36 @@ export function AgentLiveStatus({
   // Header mode: just the pill, one line. (The full activity line lives in the body's Agent section.)
   if (compact) return pill;
 
+  // Full mode: a readable status CARD — state, model, elapsed, and the current step/message wrapped over
+  // a couple of lines (not truncated to an unreadable sliver). This is the "what's it doing right now" card.
   return (
-    <div className="inline-flex max-w-full flex-col gap-1">
-      {pill}
-      {active && message && (
-        <span className="max-w-[42ch] truncate pl-1 text-[11.5px] text-muted-foreground" title={message}>
-          {agent?.step ? `${agent.step}: ` : ""}
-          {message}
+    <div
+      className={cn(
+        "rounded-lg border px-3 py-2.5",
+        tone === "live" && "border-emerald-500/25 bg-emerald-500/[0.06]",
+        tone === "quiet" && "border-amber-500/25 bg-amber-500/[0.06]",
+        tone === "failed" && "border-red-500/25 bg-red-500/[0.06]",
+        tone === "idle" && "border-border/70 bg-card",
+      )}
+    >
+      <div className="flex items-center gap-2 text-[12.5px]">
+        <span className="relative flex size-2 shrink-0">
+          {active && <span className={cn("absolute inline-flex size-full animate-ping rounded-full opacity-75", DOT[tone])} />}
+          <span className={cn("relative inline-flex size-2 rounded-full", DOT[tone])} />
         </span>
+        <span className={cn("font-semibold", TEXT[tone])}>{label}</span>
+        {run?.model && (
+          <span className="rounded bg-background/70 px-1.5 py-px font-mono text-[10px] font-medium text-muted-foreground">
+            {run.model}
+          </span>
+        )}
+        {updatedAt && <span className="ml-auto shrink-0 text-[11px] font-normal text-muted-foreground">{ago(staleMs)}</span>}
+      </div>
+      {message && (
+        <p className="mt-1.5 text-[12px] leading-snug text-foreground/80 line-clamp-3">
+          {agent?.step ? <b className="font-semibold text-foreground/90">{agent.step}: </b> : null}
+          {message}
+        </p>
       )}
     </div>
   );

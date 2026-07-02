@@ -27,10 +27,23 @@ export function claimNextReadyTask(db, workerId = 'worker') {
   return null;
 }
 
-// Stream progress / agent status onto a task (the changes-watcher data sink). Overwrites the latest
-// agent block and appends a progress event so the board shows real movement, not just a spinner.
-export function recordProgress(db, taskId, { state = 'working', step = '', message = '', todos = [], changes = null } = {}, actor = 'agent') {
-  const agent = { state, step, message, todos, changes, updatedAt: Date.now() };
+// Stream progress / agent status onto a task (the changes-watcher data sink). Updates the latest agent
+// block and appends a progress event so the board shows real movement, not just a spinner.
+//
+// todos/changes are PRESERVED when an update doesn't carry them: a plain progress note (from the executor
+// stream or the runner's "woken" note) must not wipe the agent's implementation checklist. Only an update
+// that actually provides todos/changes replaces them — that's why the task list used to vanish mid-run.
+export function recordProgress(db, taskId, { state = 'working', step = '', message = '', todos, changes } = {}, actor = 'agent') {
+  const prevRow = db.prepare('SELECT agent_json FROM tasks WHERE id = ?').get(taskId);
+  const prev = prevRow && prevRow.agent_json ? JSON.parse(prevRow.agent_json) : {};
+  const agent = {
+    state,
+    step,
+    message,
+    todos: todos !== undefined ? todos : prev.todos ?? [],
+    changes: changes !== undefined ? changes : prev.changes ?? null,
+    updatedAt: Date.now(),
+  };
   db.prepare('UPDATE tasks SET agent_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(agent), Date.now(), taskId);
   appendEvent(db, taskId, actor, 'progress', { step, message, changes });
   return getTask(db, taskId);

@@ -1,15 +1,30 @@
 // ABOUTME: Shared agent-interaction blocks used by both the slide-over and the deep-dive: the hand-off /
 // pick-up-now action row, and the comment thread the agent reads on its next wake.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Copy, SendHorizontal } from "lucide-react";
+import { Activity, Bot, ChevronDown, ChevronRight, Copy, SendHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import type { Comment, Run, Task, TaskEvent } from "@/lib/types";
 import { api } from "@/lib/api";
+import { useApp } from "@/state/app-store";
 import { cn, relativeTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { describe } from "./ActivityFeed";
 import { AgentLiveStatus } from "./AgentLiveStatus";
+
+// Actor ids that mean "the agent" (mirrors app-store's resolveActor) — used to color/label its bubbles.
+const AGENT_ACTORS = new Set(["agent", "worker", "runner"]);
+// Events worth surfacing on their own line (never hidden in a collapsed activity cluster) — the things a
+// human acts on: the agent's questions, your answers, and review verdicts/requests.
+const IMPORTANT_KINDS = new Set(["input_request", "input_answer", "review", "review_requested"]);
+
+// A stable key for de-duplicating consecutive routine events (the repeated "working…" progress notes).
+function eventKey(e: TaskEvent): string {
+  const p = e.payload ?? {};
+  if (e.kind === "progress") return `progress|${(p.step as string) ?? ""}|${(p.message as string) ?? ""}`;
+  if (e.kind === "status") return `status|${(p.to as string) ?? ""}`;
+  return e.kind;
+}
 
 // A discussion message collapses to a precise 160px; if it's taller, a Show more/less toggle reveals the
 // rest. Keeps long agent replies and pasted context from flooding the thread while staying one click away.
@@ -35,6 +50,117 @@ function ActivityLine({ event, actorName }: { event: TaskEvent; actorName: strin
         <b className="font-medium text-foreground/75">{actorName}</b> {phrase}
         <span className="ml-1.5 text-[10.5px] text-muted-foreground/60">{relativeTime(event.createdAt)}</span>
       </span>
+    </li>
+  );
+}
+
+// A run of routine activity between two messages, collapsed to one "N updates" line you can expand.
+// Consecutive duplicate notes (the repeated "working…") are de-duped so it reads cleanly; a single event
+// renders as a plain line (no collapse chrome). The live "what's it doing now" card is separate (foot).
+function ActivityCluster({ events, resolveActor }: { events: TaskEvent[]; resolveActor: (id: string) => string }) {
+  const [open, setOpen] = useState(false);
+  const deduped = useMemo(() => {
+    const out: TaskEvent[] = [];
+    let lastKey = "";
+    for (const e of events) {
+      const k = eventKey(e);
+      if (k !== lastKey) out.push(e);
+      lastKey = k;
+    }
+    return out;
+  }, [events]);
+
+  if (deduped.length <= 1) {
+    return deduped[0] ? <ActivityLine event={deduped[0]} actorName={resolveActor(deduped[0].actor)} /> : null;
+  }
+
+  const last = deduped[deduped.length - 1];
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-1.5 px-1 text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ChevronRight className={cn("size-3.5 shrink-0 transition-transform", open && "rotate-90")} />
+        <Activity className="size-3.5 shrink-0 text-muted-foreground/60" />
+        <span className="shrink-0 font-medium">{deduped.length} updates</span>
+        {!open && <span className="min-w-0 flex-1 truncate text-left text-muted-foreground/70">· {describe(last).phrase}</span>}
+      </button>
+      {open && (
+        <ul className="mt-1 space-y-1 border-l border-border/50 pl-3">
+          {deduped.map((e) => (
+            <ActivityLine key={e.id} event={e} actorName={resolveActor(e.actor)} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+// An important event (the agent's question, your answer, a review verdict) — always shown, accented, so
+// the things you need to act on never get buried in a collapsed cluster.
+function ImportantEvent({ event, actorName }: { event: TaskEvent; actorName: string }) {
+  const { icon: Icon, phrase } = describe(event);
+  return (
+    <li className="flex items-start gap-2 rounded-lg border border-primary/20 border-l-2 border-l-primary/50 bg-primary/[0.04] px-2.5 py-1.5 text-[12px] leading-snug">
+      <span className="mt-[3px] shrink-0 text-primary">
+        <Icon className="size-3.5" />
+      </span>
+      <span className="min-w-0">
+        <b className="font-medium text-foreground/80">{actorName}</b> {phrase}
+        <span className="ml-1.5 text-[10.5px] text-muted-foreground/60">{relativeTime(event.createdAt)}</span>
+      </span>
+    </li>
+  );
+}
+
+// One message, styled by who sent it: you (right, accent), the agent (left, faint-accent + bot mark), or
+// another person (left, neutral) — three distinct colors so the back-and-forth reads at a glance.
+function CommentBubble({
+  c,
+  mine,
+  isAgent,
+  actorName,
+}: {
+  c: Comment;
+  mine: boolean;
+  isAgent: boolean;
+  actorName: string;
+}) {
+  return (
+    <li className={cn("group flex flex-col gap-1", mine && "items-end")}>
+      <div className={cn("flex items-center gap-2 px-1 text-[11px] text-muted-foreground", mine && "flex-row-reverse")}>
+        <span className={cn("inline-flex items-center gap-1 font-medium", isAgent ? "text-primary" : "text-foreground/80")}>
+          {isAgent && <Bot className="size-3" />}
+          {mine ? "You" : actorName}
+        </span>
+        {c.anchor !== "general" && (
+          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">{c.anchor}</span>
+        )}
+        <span className="tabular-nums">{relativeTime(c.createdAt)}</span>
+        <button
+          type="button"
+          onClick={() => copyText(c.body)}
+          title="Copy message"
+          aria-label="Copy message"
+          className="grid size-5 place-items-center rounded text-muted-foreground/70 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+        >
+          <Copy className="size-3" />
+        </button>
+      </div>
+      <div
+        className={cn(
+          "max-w-[86%] px-3 py-2 shadow-card",
+          mine
+            ? "rounded-lg rounded-tr-sm border border-primary/25 bg-primary/10"
+            : isAgent
+              ? "rounded-lg rounded-tl-sm border border-primary/15 bg-primary/[0.04]"
+              : "rounded-lg rounded-tl-sm border border-border/60 bg-card",
+        )}
+      >
+        <CommentBody text={c.body} />
+      </div>
     </li>
   );
 }
@@ -142,6 +268,7 @@ export function CommentThread({
   resolveActor: (id: string) => string;
   onPosted: () => void;
 }) {
+  const { user } = useApp();
   const [comments, setComments] = useState<Comment[]>([]);
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
@@ -190,25 +317,47 @@ export function CommentThread({
     }
   }
 
-  // One interaction timeline: comments (as bubbles) + activity events (compact step lines), oldest first.
-  // The 'comment' event kind is dropped — comments already render as bubbles.
-  const items = useMemo(() => {
-    const merged: (
-      | { kind: "comment"; at: number; c: Comment }
-      | { kind: "event"; at: number; e: TaskEvent }
-    )[] = [
-      ...comments.map((c) => ({ kind: "comment" as const, at: c.createdAt, c })),
-      ...events.filter((e) => e.kind !== "comment").map((e) => ({ kind: "event" as const, at: e.createdAt, e })),
-    ];
-    merged.sort((a, b) => a.at - b.at);
-    return merged;
+  // One interaction timeline, oldest first: your/agent messages as bubbles, the important events
+  // (questions, answers, reviews) on their own accented lines, and routine activity grouped into
+  // collapsible clusters between messages. The 'comment' event kind is dropped (comments are bubbles).
+  type Row =
+    | { kind: "comment"; c: Comment }
+    | { kind: "important"; e: TaskEvent }
+    | { kind: "cluster"; events: TaskEvent[] };
+  const rows = useMemo<Row[]>(() => {
+    const merged = [
+      ...comments.map((c) => ({ at: c.createdAt, comment: c as Comment | null, event: null as TaskEvent | null })),
+      ...events
+        .filter((e) => e.kind !== "comment")
+        .map((e) => ({ at: e.createdAt, comment: null as Comment | null, event: e as TaskEvent | null })),
+    ].sort((a, b) => a.at - b.at);
+
+    const out: Row[] = [];
+    let cluster: TaskEvent[] = [];
+    const flush = () => {
+      if (cluster.length) out.push({ kind: "cluster", events: cluster });
+      cluster = [];
+    };
+    for (const m of merged) {
+      if (m.comment) {
+        flush();
+        out.push({ kind: "comment", c: m.comment });
+      } else if (m.event && IMPORTANT_KINDS.has(m.event.kind)) {
+        flush();
+        out.push({ kind: "important", e: m.event });
+      } else if (m.event) {
+        cluster.push(m.event);
+      }
+    }
+    flush();
+    return out;
   }, [comments, events]);
 
   // Keep the view pinned to the newest message/activity while the user is at the bottom.
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [items, agentActive]);
+  }, [rows, agentActive]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -219,44 +368,34 @@ export function CommentThread({
         className="min-h-0 flex-1 overflow-y-auto scroll-thin px-4 py-4"
         style={{ minHeight: 200 }}
       >
-        {items.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="grid h-full place-items-center px-4 text-center text-[12.5px] text-muted-foreground">
             No interaction yet — say something to steer the agent.
           </p>
         ) : (
           <ul className="space-y-3">
-            {items.map((it) =>
-              it.kind === "comment" ? (
-                <li key={`c-${it.c.id}`} className="group flex flex-col gap-1">
-                  <div className="flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
-                    <span className="font-medium text-foreground/80">{resolveActor(it.c.author)}</span>
-                    {it.c.anchor !== "general" && (
-                      <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">{it.c.anchor}</span>
-                    )}
-                    <span className="ml-auto tabular-nums">{relativeTime(it.c.createdAt)}</span>
-                    <button
-                      type="button"
-                      onClick={() => copyText(it.c.body)}
-                      title="Copy message"
-                      aria-label="Copy message"
-                      className="grid size-5 place-items-center rounded text-muted-foreground/70 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                    >
-                      <Copy className="size-3" />
-                    </button>
-                  </div>
-                  <div className="rounded-lg rounded-tl-sm border border-border/60 bg-card px-3 py-2 shadow-card">
-                    <CommentBody text={it.c.body} />
-                  </div>
-                </li>
-              ) : (
-                <ActivityLine key={`e-${it.e.id}`} event={it.e} actorName={resolveActor(it.e.actor)} />
-              ),
-            )}
+            {rows.map((row, i) => {
+              if (row.kind === "comment") {
+                return (
+                  <CommentBubble
+                    key={`c-${row.c.id}`}
+                    c={row.c}
+                    mine={row.c.author === user.id}
+                    isAgent={AGENT_ACTORS.has(row.c.author)}
+                    actorName={resolveActor(row.c.author)}
+                  />
+                );
+              }
+              if (row.kind === "important") {
+                return <ImportantEvent key={`e-${row.e.id}`} event={row.e} actorName={resolveActor(row.e.actor)} />;
+              }
+              return <ActivityCluster key={`cl-${i}`} events={row.events} resolveActor={resolveActor} />;
+            })}
           </ul>
         )}
-        {/* Live "agent is running" pulse at the foot of the timeline, so you know it's working even
-            between event updates. */}
-        {agentActive && (
+        {/* Live "what's it doing now" card at the foot — shown while the agent is working OR while it's
+            waiting on you. It never collapses (unlike the activity clusters above it). */}
+        {(agentActive || task.status === "needs_input") && (
           <div className="mt-3 px-1">
             <AgentLiveStatus task={task} runs={runs} />
           </div>

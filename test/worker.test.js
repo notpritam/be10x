@@ -45,3 +45,28 @@ test('recordProgress writes the agent status block and logs a progress event', (
   assert.equal(t.agent.step, 'writing the failing test');
   assert.deepEqual(t.agent.changes, { files: ['a.js'] });
 });
+
+test('recordProgress preserves the todo list (and changes) across a note that omits them', () => {
+  const db = openDb(':memory:');
+  const uid = createUser(db, { email: 'o@b.co', displayName: 'O', password: 'pw12345' }).id;
+  ready(db, uid, 'code-issue', { symptom: 'x' });
+  const claimed = claimNextReadyTask(db, 'w1');
+
+  // The agent reports its implementation checklist.
+  const todos = [
+    { text: 'write the test', status: 'done' },
+    { text: 'implement', status: 'in_progress' },
+  ];
+  recordProgress(db, claimed.id, { step: 'plan', message: 'broke down the work', todos, changes: { files: ['a.js'] } });
+
+  // A later plain progress note (executor stream / runner) carries NO todos — they must NOT be wiped.
+  const t = recordProgress(db, claimed.id, { state: 'working', step: 'agent', message: 'editing a.js' });
+  assert.deepEqual(t.agent.todos, todos, 'the checklist survives a progress note without todos');
+  assert.deepEqual(t.agent.changes, { files: ['a.js'] }, 'changes survive too');
+  assert.equal(t.agent.step, 'agent');
+
+  // An explicit new list DOES replace the old one.
+  const t2 = recordProgress(db, claimed.id, { step: 'done', message: 'shipped', todos: [{ text: 'implement', status: 'done' }] });
+  assert.equal(t2.agent.todos.length, 1);
+  assert.equal(t2.agent.todos[0].status, 'done');
+});
