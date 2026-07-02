@@ -80,6 +80,16 @@ export function TaskOverview({
     [events],
   );
 
+  // "At a glance" figures — the whole state in one row so you get the gist without reading the page.
+  const todos = Array.isArray(task.agent?.todos)
+    ? (task.agent!.todos as unknown[]).map((t) =>
+        typeof t === "string" ? { text: t, status: "pending" } : (t as { text?: string; status?: string }),
+      )
+    : [];
+  const doneCount = todos.filter((t) => t?.status === "done").length;
+  const commitCount = git?.commits?.length ?? 0;
+  const statusMeta = STATUS_META[task.status];
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
       <header className="flex shrink-0 items-center gap-2 border-b border-border/60 px-5 py-3">
@@ -99,6 +109,14 @@ export function TaskOverview({
 
       <div className="min-h-0 flex-1 overflow-y-auto scroll-thin">
         <div className="mx-auto w-full max-w-[900px] space-y-6 px-8 py-8">
+          {/* At a glance — status, progress, commits, changes in one scannable row. */}
+          <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Stat label="Step" value={statusMeta?.label ?? task.status} dot={statusMeta?.color} />
+            <Stat label="Work" value={todos.length ? `${doneCount}/${todos.length} done` : "—"} />
+            <Stat label="Commits" value={commitCount ? String(commitCount) : "—"} />
+            <Stat label="Changes" value={git?.stat ? shortStat(git.stat) : "—"} />
+          </section>
+
           {/* The ask */}
           {prompt && (
             <section>
@@ -272,4 +290,32 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
       <dd className="min-w-0 flex-1 text-foreground/90">{children}</dd>
     </div>
   );
+}
+
+// One figure in the "at a glance" row.
+function Stat({ label, value, dot }: { label: string; value: string; dot?: string }) {
+  return (
+    <div className="rounded-[8px] border border-border/60 bg-card px-3 py-2">
+      <p className="text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground/70">{label}</p>
+      <p className="mt-0.5 flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
+        {dot && <span className="size-1.5 shrink-0 rounded-full" style={{ background: dot }} />}
+        <span className="truncate" title={value}>
+          {value}
+        </span>
+      </p>
+    </div>
+  );
+}
+
+// Compact a `git diff --shortstat` line ("3 files changed, 40 insertions(+), 5 deletions(-)") to
+// "3 files · +40 · -5" so it fits a stat card.
+function shortStat(stat: string): string {
+  const files = stat.match(/(\d+) files? changed/);
+  const ins = stat.match(/(\d+) insertion/);
+  const del = stat.match(/(\d+) deletion/);
+  const parts: string[] = [];
+  if (files) parts.push(`${files[1]} file${files[1] === "1" ? "" : "s"}`);
+  if (ins) parts.push(`+${ins[1]}`);
+  if (del) parts.push(`-${del[1]}`);
+  return parts.join(" · ") || stat;
 }

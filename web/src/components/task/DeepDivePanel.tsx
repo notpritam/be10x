@@ -2,7 +2,7 @@
 // full-viewport panel with a roomy two-column layout (main column + activity/comments rail). Reuses the
 // shared detail controller + parts so it stays in lockstep with the slide-over. Collapse (or Escape)
 // returns to the slide-over; close returns to the board.
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Bug, ChevronUp, Copy, History, Info, Layers, Maximize2, MessageSquare, Share2, X } from "lucide-react";
 import { toast } from "sonner";
 import type { Status } from "@/lib/types";
@@ -60,6 +60,33 @@ export function DeepDivePanel({
   const [showHistory, setShowHistory] = useState(false);
   const [interactionBarOpen, setInteractionBarOpen] = useState(true);
   const [overviewOpen, setOverviewOpen] = useState(false);
+
+  // Right-panel width — draggable and remembered across sessions. Default a touch wider than before.
+  const asideRef = useRef<HTMLElement>(null);
+  const dragRight = useRef<number | null>(null);
+  const [panelWidth, setPanelWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return 420;
+    const saved = Number(localStorage.getItem("gfa.rightPanelWidth"));
+    return saved >= 320 && saved <= 900 ? saved : 420;
+  });
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    const rect = asideRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    dragRight.current = rect.right; // the fixed right edge; width = right - pointerX
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+  const onResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRight.current == null) return;
+    const max = Math.min(760, Math.round(window.innerWidth * 0.7));
+    setPanelWidth(Math.max(320, Math.min(max, dragRight.current - e.clientX)));
+  };
+  const endResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRight.current == null) return;
+    dragRight.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    localStorage.setItem("gfa.rightPanelWidth", String(panelWidth));
+  };
 
   function move(to: Status) {
     void onMove(to);
@@ -213,9 +240,25 @@ export function DeepDivePanel({
               )}
               </div>
 
-              {/* Right panel — the active section; collapses to just the icon strip. */}
+              {/* Right panel — the active section; collapses to just the icon strip. Drag its left edge to
+                  resize (width is remembered). */}
               {rightPanel && (
-                <aside className="flex w-[340px] shrink-0 flex-col overflow-hidden border-l border-border/60 bg-muted/70">
+                <aside
+                  ref={asideRef}
+                  style={{ width: panelWidth }}
+                  className="relative flex shrink-0 flex-col overflow-hidden border-l border-border/60 bg-muted/70"
+                >
+                  <div
+                    onPointerDown={startResize}
+                    onPointerMove={onResize}
+                    onPointerUp={endResize}
+                    role="separator"
+                    aria-orientation="vertical"
+                    title="Drag to resize"
+                    className="group absolute inset-y-0 left-0 z-20 flex w-2 cursor-col-resize touch-none items-stretch justify-center"
+                  >
+                    <span className="w-px bg-transparent transition-colors group-hover:bg-primary/40" />
+                  </div>
                   <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
                     <h3 className="text-[12.5px] font-semibold text-foreground">
                       {rightPanel === "discussion" ? "Interaction" : rightPanel === "debug" ? "Debug" : "Info"}
