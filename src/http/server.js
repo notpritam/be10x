@@ -30,6 +30,10 @@ const PUBLIC = join(here, '..', '..', 'public');
 const MCP_SERVER_PATH = resolve(here, '..', 'mcp', 'server.js');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 
+// Append "; Secure" to the session cookie in HTTPS deploys (behind a TLS-terminating proxy like Caddy).
+// Off by default so http://localhost dev keeps working; set GFA_SECURE_COOKIES=1 in any hosted deploy.
+const SECURE_COOKIE = process.env.GFA_SECURE_COOKIES ? '; Secure' : '';
+
 function send(res, status, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -107,20 +111,20 @@ const ROUTES = [
   ['POST', '/api/auth/signup', false, async ({ db, res, body }) => {
     const user = createUser(db, { email: body.email, displayName: body.displayName, password: body.password });
     const s = createSession(db, user.id);
-    res.setHeader('Set-Cookie', `gfa_sid=${s.id}; HttpOnly; SameSite=Lax; Path=/`);
+    res.setHeader('Set-Cookie', `gfa_sid=${s.id}; HttpOnly; SameSite=Lax; Path=/${SECURE_COOKIE}`);
     send(res, 200, { user });
   }],
   ['POST', '/api/auth/login', false, async ({ db, res, body }) => {
     const row = getUserByEmail(db, body.email || '');
     if (!row || !verifyPassword(body.password || '', row.passwordHash)) throw new Error('BAD_CREDENTIALS');
     const s = createSession(db, row.id);
-    res.setHeader('Set-Cookie', `gfa_sid=${s.id}; HttpOnly; SameSite=Lax; Path=/`);
+    res.setHeader('Set-Cookie', `gfa_sid=${s.id}; HttpOnly; SameSite=Lax; Path=/${SECURE_COOKIE}`);
     send(res, 200, { user: { id: row.id, email: row.email, displayName: row.displayName } });
   }],
   ['POST', '/api/auth/logout', false, async ({ db, req, res }) => {
     const sid = cookies(req).gfa_sid;
     if (sid) deleteSession(db, sid);
-    res.setHeader('Set-Cookie', 'gfa_sid=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
+    res.setHeader('Set-Cookie', `gfa_sid=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${SECURE_COOKIE}`);
     send(res, 200, { ok: true });
   }],
   ['GET', '/api/me', true, async ({ res, user }) => send(res, 200, { user })],

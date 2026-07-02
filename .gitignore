@@ -3,6 +3,12 @@ node_modules/
 .DS_Store
 *.log
 *.tmp
+
+# Local deploy secrets + databases (never commit these; .env.example is the template)
+.env
+*.db
+*.db-shm
+*.db-wal
 .render-check*.png
 .board*.png
 reference/

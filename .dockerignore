@@ -1,0 +1,15 @@
+# Keep the build context (and image) lean: only what `be10x serve` needs at runtime.
+node_modules
+**/node_modules
+web
+.git
+.gitignore
+*.db
+*.db-*
+**/*.db
+.be10x
+reference
+scripts
+docs
+.DS_Store
+npm-debug.log*

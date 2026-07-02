@@ -1,0 +1,36 @@
+# be10x — one-command hosted deploy: the board server behind Caddy (automatic HTTPS).
+# 1. Copy .env.example to .env and set DOMAIN (+ optional ANTHROPIC_API_KEY).
+# 2. Point your domain's DNS A record at this server.
+# 3. docker compose up -d --build
+services:
+  be10x:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - be10x-data:/data # SQLite DB + agent worktrees — the durable state.
+      # To let the agent WORK your repos, mount them and run `be10x link` inside each (see README):
+      # - /srv/repos:/repos
+      # Agent auth Mode B (instead of ANTHROPIC_API_KEY): mount your logged-in Claude credentials:
+      # - ~/.claude:/root/.claude:ro
+    expose:
+      - "4610" # internal only — Caddy terminates TLS and proxies to it.
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [be10x]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # TLS certificates — persist so you don't re-issue on restart.
+      - caddy-config:/config
+
+volumes:
+  be10x-data:
+  caddy-data:
+  caddy-config:

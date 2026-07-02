@@ -1,0 +1,6 @@
+# Automatic HTTPS (Let's Encrypt) for your domain, reverse-proxied to the be10x server.
+# DOMAIN comes from .env. Requires public ports 80 + 443 and a DNS A record pointing here.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy be10x:4610
+}
