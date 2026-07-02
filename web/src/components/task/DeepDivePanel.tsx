@@ -41,6 +41,7 @@ import { InputRequestPanel } from "./InputRequestPanel";
 import type { useTaskDetail } from "./useTaskDetail";
 import {
   AgentStatusBlock,
+  CollapsibleSection,
   DataValue,
   MoveButtons,
   PanelLoading,
@@ -271,18 +272,18 @@ export function DeepDivePanel({
                   </section>
                 )}
 
-                <Section title="Details">
+                <CollapsibleSection title="Details" storageKey="gfa.sec.details">
                   <TaskContent task={task} />
-                </Section>
+                </CollapsibleSection>
 
-                <Section title="Work">
+                <CollapsibleSection title="Work" storageKey="gfa.sec.work">
                   <WorkSection task={task} runs={detail.runs} />
-                </Section>
+                </CollapsibleSection>
 
                 {task.research != null && (
-                  <Section title="Research">
+                  <CollapsibleSection title="Research" storageKey="gfa.sec.research">
                     <DataValue value={task.research} />
-                  </Section>
+                  </CollapsibleSection>
                 )}
 
                 <Section title="Agent">

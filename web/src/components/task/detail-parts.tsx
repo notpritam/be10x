@@ -1,11 +1,12 @@
 // ABOUTME: Shared presentational atoms for the task views — the meta bits, move buttons, content
 // renderer, agent block and the header icon button. Extracted from DetailPanel so the slide-over and
 // the full-screen deep-dive render byte-for-byte identical, on-brand pieces.
-import type { ReactNode } from "react";
-import { Bot, CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Bot, CheckCircle2, ChevronDown, Circle, Loader2, XCircle } from "lucide-react";
 import { legalMoves, STATUS_META } from "@/lib/lifecycle";
 import type { Status, Task } from "@/lib/types";
 import { cn, humanizeKey, isRecord } from "@/lib/utils";
+import { HtmlBlock, Markdown, looksLikeHtml, parseStructured } from "./rich-content";
 
 export function ownerName(
   task: Task,
@@ -22,6 +23,62 @@ export function Section({ title, children }: { title: string; children: ReactNod
     <section>
       <h3 className="mb-2 text-[12px] font-semibold text-muted-foreground/80">{title}</h3>
       {children}
+    </section>
+  );
+}
+
+// A Section whose body folds away, so a long section (Details, Work/changes, Research) can be collapsed to
+// make room for the rest of the page. The open/closed state is remembered per `storageKey` across visits.
+export function CollapsibleSection({
+  title,
+  children,
+  count,
+  defaultOpen = true,
+  storageKey,
+}: {
+  title: string;
+  children: ReactNode;
+  count?: number;
+  defaultOpen?: boolean;
+  storageKey?: string;
+}) {
+  const [open, setOpen] = useState(() => {
+    if (storageKey && typeof window !== "undefined") {
+      const v = localStorage.getItem(storageKey);
+      if (v === "0") return false;
+      if (v === "1") return true;
+    }
+    return defaultOpen;
+  });
+  const toggle = () =>
+    setOpen((o) => {
+      const next = !o;
+      if (storageKey) {
+        try {
+          localStorage.setItem(storageKey, next ? "1" : "0");
+        } catch {
+          /* private mode / quota — non-fatal, just don't persist */
+        }
+      }
+      return next;
+    });
+  return (
+    <section>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        title={open ? `Collapse ${title}` : `Expand ${title}`}
+        className="group mb-2 flex w-full items-center gap-1.5 text-left"
+      >
+        <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !open && "-rotate-90")} />
+        <h3 className="text-[12px] font-semibold text-muted-foreground/80 transition-colors group-hover:text-foreground">{title}</h3>
+        {count != null && (
+          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">{count}</span>
+        )}
+        {!open && <span className="text-[11.5px] text-muted-foreground/60">· hidden</span>}
+      </button>
+      {open && children}
     </section>
   );
 }
@@ -78,9 +135,9 @@ export function TaskContent({ task }: { task: Task }) {
   return (
     <div className="space-y-3.5">
       {primary && (
-        <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-foreground/90">
-          {String(primary[1])}
-        </p>
+        <div className="text-[14px] leading-relaxed text-foreground/90">
+          <Markdown text={String(primary[1])} />
+        </div>
       )}
       {rest.map(([k, v]) => (
         <div key={k}>
@@ -121,14 +178,21 @@ export function DataValue({ value }: { value: unknown }): ReactNode {
     return <span className="text-[13.5px] tabular-nums text-foreground/90">{value}</span>;
   }
   if (typeof value === "string") {
-    if (URL_RE.test(value)) {
+    // A string that's really JSON → render it as structure, not braces.
+    const structured = parseStructured(value);
+    if (structured != null) return <DataValue value={structured} />;
+    const trimmed = value.trim();
+    // A bare URL → a link; a URL inside prose is autolinked by the markdown renderer instead.
+    if (URL_RE.test(trimmed) && !/\s/.test(trimmed)) {
       return (
-        <a href={value} target="_blank" rel="noreferrer" className="break-all text-primary underline underline-offset-2">
-          {value}
+        <a href={trimmed} target="_blank" rel="noreferrer" className="break-all text-primary underline underline-offset-2">
+          {trimmed}
         </a>
       );
     }
-    return <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-foreground/90">{value}</p>;
+    // Agent HTML runs sandboxed; everything else renders as markdown.
+    if (looksLikeHtml(value)) return <HtmlBlock html={value} />;
+    return <Markdown text={value} />;
   }
   if (Array.isArray(value)) {
     if (value.length === 0) return <p className="text-[13px] text-muted-foreground/70">None</p>;

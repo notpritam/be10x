@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PlanView } from "@/components/task/PlanView";
+import { Markdown } from "@/components/task/rich-content";
 import { TaskArtifacts } from "@/components/task/TaskArtifacts";
 
 const NAME_KEY = "be10x_share_author";
@@ -358,7 +359,7 @@ export function ShareReviewPage({ token }: { token: string }) {
                       <span className="text-[12.5px] font-semibold text-foreground">{c.author}</span>
                       <span className="text-[11px] text-muted-foreground">{relativeTime(c.createdAt)}</span>
                     </p>
-                    <p className="whitespace-pre-wrap text-[13px] leading-snug text-foreground/85">{c.body}</p>
+                    <Markdown text={c.body} />
                   </div>
                 </li>
               ))}

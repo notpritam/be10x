@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { describe } from "./ActivityFeed";
 import { AgentLiveStatus } from "./AgentLiveStatus";
+import { DataValue } from "./detail-parts";
 
 // Actor ids that mean "the agent" (mirrors app-store's resolveActor) — used to color/label its bubbles.
 const AGENT_ACTORS = new Set(["agent", "worker", "runner"]);
@@ -205,18 +206,20 @@ function CommentBody({ text }: { text: string }) {
   }, [text]);
 
   // Double-click anywhere on an expandable message toggles it — a quick way to close one you opened.
+  // The body renders through DataValue, so a message written in markdown reads as markdown, and one that
+  // is actually JSON/structured renders as structure — same rich rendering as the rest of the task view.
   return (
     <div onDoubleClick={() => overflows && setExpanded((v) => !v)}>
       <div className="relative">
-        <p
+        <div
           ref={ref}
           className={cn(
-            "whitespace-pre-wrap text-[13px] leading-snug text-foreground/90",
+            "text-[13px] leading-snug text-foreground/90",
             !expanded && overflows && "max-h-[160px] overflow-hidden",
           )}
         >
-          {text}
-        </p>
+          <DataValue value={text} />
+        </div>
         {overflows && !expanded && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-card to-transparent" />
         )}

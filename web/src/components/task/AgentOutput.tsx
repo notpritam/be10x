@@ -40,7 +40,8 @@ function Block({ label, text }: { label: string; text: string }) {
   return (
     <div>
       <Label>{label}</Label>
-      <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground/90">{text}</p>
+      {/* Summary / What-changed are usually markdown (bullets, bold, code) — render it, don't dump it. */}
+      <DataValue value={text} />
     </div>
   );
 }

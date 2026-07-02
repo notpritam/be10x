@@ -8,6 +8,7 @@ import type { Run, Task, TaskEvent } from "@/lib/types";
 import { STATUS_META } from "@/lib/lifecycle";
 import { cn, humanizeKey, relativeTime } from "@/lib/utils";
 import { PlanView } from "./PlanView";
+import { Markdown } from "./rich-content";
 import { TaskChecklist } from "./TaskChecklist";
 import { DataValue } from "./detail-parts";
 import { describe } from "./ActivityFeed";
@@ -121,7 +122,7 @@ export function TaskOverview({
           {prompt && (
             <section>
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">The ask</h3>
-              <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-foreground/90">{prompt}</p>
+              <Markdown text={prompt} />
             </section>
           )}
 
