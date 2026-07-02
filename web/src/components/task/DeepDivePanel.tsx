@@ -14,6 +14,7 @@ import { PlanVersions } from "./PlanVersions";
 import { TaskOverview } from "./TaskOverview";
 import { TaskChecklist } from "./TaskChecklist";
 import { CurrentStep } from "./CurrentStep";
+import { AgentConfigControl } from "./AgentConfigControl";
 import { WorkSection } from "./WorkSection";
 import { InfoPanel } from "./InfoPanel";
 import { AgentLiveStatus } from "./AgentLiveStatus";
@@ -136,6 +137,9 @@ export function DeepDivePanel({
 
                 {/* Lead with where we are + what's here — not the Move/Plan controls. */}
                 <CurrentStep task={task} runs={detail.runs} />
+
+                {/* The model + reasoning effort this task runs at — visible and togglable. */}
+                <AgentConfigControl task={task} onChanged={refresh} />
 
                 {/* Plan review sits here, in place — not pinned to the foot. */}
                 {task.status === "plan_review" && <ReviewActions taskId={task.id} onDone={refresh} />}

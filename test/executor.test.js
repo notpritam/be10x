@@ -115,6 +115,23 @@ test('revise mode resumes the prior session (--resume, no fresh system prompt)',
   assert.ok(!args.includes('--append-system-prompt-file'));
 });
 
+test('per-task model + effort (task.content) are passed to the CLI; an invalid effort is dropped', async () => {
+  const db = seed();
+  const spawn = fakeSpawn({ stdout: ['{"type":"result","subtype":"success","session_id":"s","result":"ok"}'], exitCode: 0 });
+  const execute = makeClaudeExecutor(db, PROJECT, { spawn, ensureWorktree: fakeEnsure() });
+
+  await execute({ ...TASK, content: { ...TASK.content, model: 'sonnet', effort: 'high' } }, { mode: 'execute' });
+  const args = spawn.calls[0].args;
+  assert.equal(args[args.indexOf('--model') + 1], 'sonnet');
+  assert.equal(args[args.indexOf('--effort') + 1], 'high');
+
+  // An out-of-range effort is silently ignored (no --effort), so the CLI never gets a bad value.
+  const spawn2 = fakeSpawn({ stdout: ['{"type":"result","subtype":"success","session_id":"s","result":"ok"}'], exitCode: 0 });
+  const execute2 = makeClaudeExecutor(db, PROJECT, { spawn: spawn2, ensureWorktree: fakeEnsure() });
+  await execute2({ ...TASK, content: { ...TASK.content, effort: 'bogus' } }, { mode: 'execute' });
+  assert.ok(!spawn2.calls[0].args.includes('--effort'));
+});
+
 test('the be10x MCP config is wired in when the repo has one', async () => {
   const db = seed();
   const repo = mkdtempSync(join(tmpdir(), 'be10x-mcp-'));

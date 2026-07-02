@@ -36,6 +36,7 @@ export function buildClaudeCommand({
   worktree,
   systemPromptPath,
   model,
+  effort,
   resumeSessionId,
   bin,
   permissionMode = 'bypassPermissions',
@@ -57,6 +58,11 @@ export function buildClaudeCommand({
 
   if (model) {
     args.push('--model', model);
+  }
+
+  // Reasoning effort for this session (low|medium|high|xhigh|max). The caller validates the value.
+  if (effort) {
+    args.push('--effort', effort);
   }
 
   // Resume and fresh-system-prompt are mutually exclusive: on a resume the instructions are already

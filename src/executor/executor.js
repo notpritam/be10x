@@ -20,6 +20,9 @@ import { recordProgress } from '../worker/worker.js';
 
 const BOARD_MSG_MAX = 280;
 
+// Valid reasoning-effort levels the CLI accepts (--effort). A per-task value outside this set is ignored.
+const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+
 // Clamp agent text to a board-friendly length (progress messages, not transcripts).
 function truncate(s, n = BOARD_MSG_MAX) {
   const t = String(s ?? '').trim();
@@ -113,6 +116,7 @@ function cleanup(path) {
 export function makeClaudeExecutor(db, project, opts = {}) {
   const {
     model,
+    effort = process.env.GFA_EFFORT || undefined,
     workerId = 'runner',
     resume = false,
     bin = process.env.GFA_CLAUDE_BIN || undefined,
@@ -176,11 +180,18 @@ export function makeClaudeExecutor(db, project, opts = {}) {
       baseRef: wt.baseRef,
     });
 
+    // Per-task overrides win over the executor default: the human can set a model/effort on the task
+    // (task.content.model / .effort) and it applies from the next run. An invalid effort is ignored.
+    const runModel = task.content?.model || model;
+    const rawEffort = task.content?.effort || effort;
+    const runEffort = EFFORTS.has(rawEffort) ? rawEffort : undefined;
+
     const systemPromptPath = writeSystemPrompt(!!resumeSessionId);
     const { command, args } = buildClaudeCommand({
       worktree: wt.path,
       systemPromptPath,
-      model,
+      model: runModel,
+      effort: runEffort,
       resumeSessionId,
       bin,
       permissionMode,
