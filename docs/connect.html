@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>be10x — connect your machine</title>
+<style>
+  :root {
+    --bg: #f6f5f1;
+    --panel: #fffffe;
+    --ink: #1b1e23;
+    --muted: #6c7178;
+    --faint: #9aa0a6;
+    --line: #e4e2db;
+    --line-strong: #cfccc3;
+    --accent: #1f7a74;       /* deep teal — the durable "board / state" colour */
+    --accent-soft: #e6f0ef;
+    --accent-line: #bfd8d5;
+    --plan: #b45b33;         /* terracotta — "not built yet / bring-your-own for now" */
+    --plan-soft: #f6e9e2;
+    --local: #3d5a80;        /* slate — the "runs on your machine" colour */
+    --local-soft: #e8edf3;
+    --local-line: #c4d0df;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 56px 24px 96px; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 0.92em; }
+  code { background: #eceae3; padding: 0.08em 0.36em; border-radius: 5px; color: #2b2f36; }
+
+  header.hero { margin-bottom: 8px; }
+  .kicker { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+  h1 { font-size: 40px; line-height: 1.05; letter-spacing: -0.02em; margin: 10px 0 8px; font-weight: 800; }
+  .lede { font-size: 17px; color: var(--muted); max-width: 64ch; }
+  .lede b { color: var(--ink); font-weight: 600; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 22px 0 4px; font-size: 12.5px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; border: 1.5px solid; }
+  .dot.state { background: var(--accent-soft); border-color: var(--accent); }
+  .dot.machine { background: var(--local-soft); border-color: var(--local); }
+  .dot.planned { background: var(--plan-soft); border-color: var(--plan); }
+
+  section { margin-top: 52px; }
+  .num { font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--accent); font-weight: 700; }
+  h2 { font-size: 24px; letter-spacing: -0.01em; margin: 6px 0 6px; font-weight: 750; }
+  section > p { color: #34383f; max-width: 68ch; margin: 10px 0; }
+  .sub { color: var(--muted); font-size: 15px; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+    margin-top: 18px;
+    box-shadow: 0 1px 0 rgba(27,30,35,0.02), 0 8px 24px -18px rgba(27,30,35,0.25);
+  }
+  figure { margin: 0; }
+  figcaption { font-size: 12.5px; color: var(--faint); margin-top: 12px; text-align: center; }
+  svg { width: 100%; height: auto; display: block; }
+  .svg-b { font-family: ui-sans-serif, system-ui, sans-serif; }
+  .b-title { font-weight: 700; font-size: 15px; fill: var(--ink); }
+  .b-sub { font-size: 11.5px; fill: var(--muted); }
+  .b-mono { font-family: ui-monospace, monospace; font-size: 11px; fill: var(--muted); }
+  .b-tag { font-size: 10px; font-weight: 800; letter-spacing: 0.07em; }
+  .edge-lbl { font-size: 11px; fill: var(--muted); }
+  .edge-lbl.strong { fill: var(--local); font-weight: 700; }
+
+  @media (max-width: 760px) { h1 { font-size: 32px; } .wrap { padding: 40px 18px 72px; } }
+
+  ul.tight { margin: 8px 0 0; padding-left: 18px; }
+  ul.tight li { margin: 5px 0; color: #34383f; }
+  ul.tight li b { color: var(--ink); }
+
+  /* numbered setup steps */
+  .steps { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; counter-reset: step; }
+  .step { display: flex; gap: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; box-shadow: 0 1px 0 rgba(27,30,35,0.02), 0 8px 24px -20px rgba(27,30,35,0.22); }
+  .step .n { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: #fff; font-weight: 800; font-size: 14px; display: grid; place-items: center; }
+  .step .body { min-width: 0; flex: 1; }
+  .step h3 { margin: 3px 0 4px; font-size: 15.5px; font-weight: 700; }
+  .step p { margin: 0; color: #34383f; font-size: 14px; }
+  .step .hint { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+
+  /* terminal command block (light, matches the board's own copy blocks) */
+  .cmd { margin-top: 11px; background: #fbfaf7; border: 1px solid var(--line-strong); border-radius: 10px; padding: 12px 14px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.7; color: #2b2f36; overflow-x: auto; white-space: pre; }
+  .cmd .p { color: var(--faint); user-select: none; }
+  .cmd .f { color: var(--accent); font-weight: 600; }
+  .cmd .v { color: var(--plan); }
+  .cmd .c { color: var(--faint); }
+
+  /* task loop strip */
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin-top: 8px; }
+  .fstep { flex: 1 1 150px; border-radius: 11px; padding: 12px 13px; border: 1px solid; display: flex; flex-direction: column; gap: 3px; }
+  .fstep .fk { font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+  .fstep b { font-size: 13px; }
+  .fstep span { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+  .fstep.state { background: var(--accent-soft); border-color: var(--accent-line); }
+  .fstep.state .fk { color: #14514c; }
+  .fstep.machine { background: var(--local-soft); border-color: var(--local-line); }
+  .fstep.machine .fk { color: var(--local); }
+  .farrow { align-self: center; color: var(--faint); font-size: 18px; }
+  @media (max-width: 760px) { .farrow { transform: rotate(90deg); } }
+
+  /* table */
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 13.5px; }
+  th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; }
+  td.role { font-weight: 700; white-space: nowrap; }
+  td .where { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .where.state { background: var(--accent-soft); color: #14514c; }
+  .where.machine { background: var(--local-soft); color: var(--local); }
+  .where.any { background: #efeee9; color: var(--faint); }
+
+  /* status */
+  .status { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; }
+  @media (max-width: 760px) { .status { grid-template-columns: 1fr; } }
+  .statcol { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .statcol h3 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .statcol.built h3 { color: var(--accent); }
+  .statcol.soon h3 { color: var(--plan); }
+  .statlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+  .statlist li { display: flex; gap: 10px; font-size: 13.5px; color: #34383f; align-items: flex-start; }
+  .mk { flex: 0 0 auto; width: 18px; height: 18px; border-radius: 6px; display: grid; place-items: center; font-size: 11px; font-weight: 800; margin-top: 1px; }
+  .mk.y { background: var(--accent-soft); color: #14514c; }
+  .mk.n { background: var(--plan-soft); color: var(--plan); }
+  .statlist li b { color: var(--ink); }
+
+  .callout { border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 10px 10px 0; padding: 14px 16px; margin-top: 18px; font-size: 14.5px; color: #274b48; }
+  .callout.plan { border-left-color: var(--plan); background: var(--plan-soft); color: #6a3a24; }
+  .callout b { color: inherit; }
+
+  footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--faint); }
+  footer code { background: #eceae3; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="kicker">be10x · connect your machine</div>
+    <h1>Run the agent on your own computer</h1>
+    <p class="lede">The board is <b>hosted once</b> and holds all the state. The Claude agent runs on <b>each teammate's own machine</b> — their repos, their <code>claude</code> login — linked to the board over HTTPS. <b>Nothing runs on the server.</b> This is the whole flow: what you host, what a new member installs, and what's built.</p>
+    <div class="legend">
+      <span><i class="dot state"></i> Board &amp; state — <b>hosted once</b></span>
+      <span><i class="dot machine"></i> Runs on your machine — repo + your claude</span>
+      <span><i class="dot planned"></i> Bring-your-own / not built yet</span>
+    </div>
+  </header>
+
+  <!-- 1 — the shape -->
+  <section id="shape">
+    <div class="num">01</div>
+    <h2>The shape</h2>
+    <p>The board lives on a host (Render, a small VM, Fly…). Teammates use it in a <b>browser</b> to review and steer. But the agent runs where the repo and the CLI are — on <b>each member's own machine</b>, linked to the board with a personal token.</p>
+    <div class="card">
+      <figure>
+        <svg viewBox="0 0 960 380" class="svg-b" role="img" aria-label="Hosted board connected over HTTPS to a teammate's browser and their own machine">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#8a9096"/></marker>
+          </defs>
+
+          <!-- board -->
+          <rect x="210" y="24" width="540" height="108" rx="14" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+          <rect x="586" y="40" width="150" height="21" rx="10.5" fill="var(--accent)"/>
+          <text x="661" y="54.5" text-anchor="middle" class="b-tag" fill="#fff">STATE · HOST ONCE</text>
+          <text x="236" y="60" class="b-title">Hosted board</text>
+          <text x="236" y="83" class="b-sub">web UI · REST · SQLite — tasks, plans, comments, review</text>
+          <text x="236" y="103" class="b-mono">/api/agent/rpc · claim · report · projects  (token-auth)</text>
+
+          <!-- browser -->
+          <rect x="66" y="256" width="300" height="96" rx="12" fill="var(--panel)" stroke="var(--line-strong)" stroke-width="1.3"/>
+          <text x="90" y="292" class="b-title">Teammate's browser</text>
+          <text x="90" y="314" class="b-sub">review · comment · approve the plan</text>
+          <text x="90" y="333" class="b-sub">— just open the URL</text>
+
+          <!-- machine -->
+          <rect x="566" y="248" width="328" height="112" rx="12" fill="var(--local-soft)" stroke="var(--local)" stroke-width="1.5"/>
+          <rect x="792" y="262" width="86" height="21" rx="10.5" fill="var(--local)"/>
+          <text x="835" y="276.5" text-anchor="middle" class="b-tag" fill="#fff">AGENT</text>
+          <text x="590" y="286" class="b-title">Your machine</text>
+          <text x="590" y="308" class="b-sub"><tspan class="mono" fill="#2b2f36">be10x connect</tspan> → spawns your claude</text>
+          <text x="590" y="327" class="b-sub">in your own repo &amp; worktree</text>
+          <text x="590" y="346" class="b-sub">your login never leaves your box</text>
+
+          <!-- edges -->
+          <path d="M320 132 L245 256" fill="none" stroke="#8a9096" stroke-width="1.6" marker-start="url(#ar)" marker-end="url(#ar)"/>
+          <text x="298" y="196" class="edge-lbl">HTTPS</text>
+          <text x="288" y="211" class="edge-lbl">use the board</text>
+
+          <path d="M642 132 L716 248" fill="none" stroke="#8a9096" stroke-width="1.6" marker-start="url(#ar)" marker-end="url(#ar)"/>
+          <text x="656" y="190" class="edge-lbl strong">HTTPS + token</text>
+          <text x="654" y="205" class="edge-lbl">claim · report · gfa_*</text>
+        </svg>
+        <figcaption>One board, any number of machines. The wire between them is HTTPS + a personal token — never a shared database.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 2 — what a new member does -->
+  <section id="join">
+    <div class="num">02</div>
+    <h2>What a new member does to connect</h2>
+    <p>Four steps, once. After this a bare <code>be10x connect</code> just works — the setup is remembered in <code>~/.be10x/connect.json</code>.</p>
+    <div class="steps">
+
+      <div class="step">
+        <div class="n">1</div>
+        <div class="body">
+          <h3>Get the CLI &amp; your own Claude login</h3>
+          <p>Install the be10x CLI on your machine and sign in to Claude Code as you normally would. The agent uses <b>your</b> login — the board never sees it.</p>
+          <div class="cmd"><span class="c"># clone the be10x repo, then</span>
+npm install</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="n">2</div>
+        <div class="body">
+          <h3>Mint a token on the board</h3>
+          <p>Open the hosted board in your browser → <b>Connect your machine</b> → <b>Create token</b>. Copy it once — it's your machine's key to the board.</p>
+          <p class="hint">The dialog shows the exact command below with your board URL and token already filled in.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="n">3</div>
+        <div class="body">
+          <h3>Link this machine &amp; serve your repos</h3>
+          <p>Point <code>--repos</code> at the checkouts you want to work here. This registers them with the board, writes each a board-pointing MCP config, and starts the loop.</p>
+          <div class="cmd"><span class="p">$</span> be10x connect <span class="c">\</span>
+    <span class="f">--board</span> <span class="v">https://your-board.notpritam.in</span> <span class="c">\</span>
+    <span class="f">--token</span> <span class="v">gfa_xxxxxxxxxxxx</span> <span class="c">\</span>
+    <span class="f">--repos</span> <span class="v">~/code/app,~/code/api</span></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="n">4</div>
+        <div class="body">
+          <h3>Create a task — your machine picks it up</h3>
+          <p>On the board, make a task for one of those repos and hand it to the agent. Your machine claims it, runs Claude locally, and streams the plan and progress back for the team to review.</p>
+        </div>
+      </div>
+
+    </div>
+    <div class="callout"><b>That's the whole link:</b> a token + the <code>be10x connect</code> daemon. No server-side CLI, no shared keys, no repo ever uploaded.</div>
+  </section>
+
+  <!-- 3 — the per-task loop -->
+  <section id="loop">
+    <div class="num">03</div>
+    <h2>What happens on each task</h2>
+    <p>Every task step is the same short loop. <b>State</b> steps happen on the board; <b>machine</b> steps happen on yours. The board keeps every durability decision — so a dropped laptop or a network blip just retries.</p>
+    <div class="card">
+      <div class="flow">
+        <div class="fstep state"><span class="fk">Board</span><b>You create a task</b><span>for a repo you serve, and hand it to the agent</span></div>
+        <div class="farrow">→</div>
+        <div class="fstep machine"><span class="fk">Your machine</span><b>Claims the wake</b><span>the connector asks the board for the next job</span></div>
+        <div class="farrow">→</div>
+        <div class="fstep machine"><span class="fk">Your machine</span><b>Claude runs locally</b><span>in a fresh worktree, using your login</span></div>
+        <div class="farrow">→</div>
+        <div class="fstep state"><span class="fk">Board</span><b>Plan &amp; progress stream back</b><span>via the gfa_* tools over HTTPS — team reviews</span></div>
+        <div class="farrow">→</div>
+        <div class="fstep state"><span class="fk">Board</span><b>Report &amp; durability</b><span>retry on failure, hand-off to verify on success</span></div>
+      </div>
+    </div>
+    <p class="sub">The agent process is disposable — it can die and be re-run from the board's saved state. That's the one rule the whole system keeps: <b>sessions disposable, state durable.</b></p>
+  </section>
+
+  <!-- 4 — who does what -->
+  <section id="roles">
+    <div class="num">04</div>
+    <h2>Who does what</h2>
+    <p>Three roles, and only one of them is a one-time setup.</p>
+    <div class="card" style="padding:6px 8px;">
+      <table>
+        <thead><tr><th>Role</th><th>Does</th><th>Runs where</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="role">Operator<br><span class="sub" style="font-weight:400">(once)</span></td>
+            <td>Hosts the board with a persistent disk and shares the URL. No Claude key needed.</td>
+            <td><span class="where state">the host</span></td>
+          </tr>
+          <tr>
+            <td class="role">Member</td>
+            <td>Runs <code>be10x connect</code> with their token, serving their own repos. Their machine does the actual agent work.</td>
+            <td><span class="where machine">their machine</span></td>
+          </tr>
+          <tr>
+            <td class="role">Reviewer</td>
+            <td>Opens the URL, reads plans and progress, comments, approves. Nothing to install.</td>
+            <td><span class="where any">a browser</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 5 — status -->
+  <section id="status">
+    <div class="num">05</div>
+    <h2>Status — what's built</h2>
+    <p>The distributed flow above is built and tested end-to-end (<b>228 tests</b>). It's additive — single-host <code>be10x serve</code> is unchanged.</p>
+    <div class="status">
+      <div class="statcol built">
+        <h3>✓ Built &amp; live</h3>
+        <ul class="statlist">
+          <li><span class="mk y">✓</span><span><b>Agent gateway</b> — <code>/api/agent/rpc</code> exposes every gfa_* tool over HTTPS (token-auth), reusing the same registry as the local MCP.</span></li>
+          <li><span class="mk y">✓</span><span><b>Runner API</b> — <code>claim</code> · <code>report</code> · <code>projects</code>; the board keeps all retry/verify durability.</span></li>
+          <li><span class="mk y">✓</span><span><b>The connector</b> — <code>be10x connect</code> loop + saved config + board-pointing MCP.</span></li>
+          <li><span class="mk y">✓</span><span><b>Local executor</b> — spawns your own claude in your worktree, reports the outcome.</span></li>
+          <li><span class="mk y">✓</span><span><b>HTTP MCP transport</b> — the agent's tools reach a remote board.</span></li>
+          <li><span class="mk y">✓</span><span><b>Dashboard</b> — "Connect your machine" mints a token and shows the ready-to-run command.</span></li>
+        </ul>
+      </div>
+      <div class="statcol soon">
+        <h3>◇ Bring-your-own / next</h3>
+        <ul class="statlist">
+          <li><span class="mk n">◇</span><span><b>Managed Claude login</b> — each member brings their own for now (this is by design in V1).</span></li>
+          <li><span class="mk n">◇</span><span><b>Team-scoped tokens</b> — today any valid token can drive any task; fine for a trusted team, tightening is a small follow-up.</span></li>
+          <li><span class="mk n">◇</span><span><b>Personal / chat tasks remotely</b> — remote claim serves repo tasks; project-less tasks are handled on the host.</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout plan"><b>To go live:</b> host the board with a persistent disk, share the URL, and have each teammate run <code>be10x connect</code>. See the README's <em>“Connect your machine”</em> section for the hosting + deploy steps.</div>
+  </section>
+
+  <footer>
+    be10x · connect your machine — sessions disposable, state durable. Full design: <code>docs/superpowers/specs/2026-07-02-distributed-runner-design.md</code>.
+  </footer>
+
+</div>
+</body>
+</html>
