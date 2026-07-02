@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>be10x — how it works</title>
+<style>
+  :root {
+    --bg: #f6f5f1;
+    --panel: #fffffe;
+    --ink: #1b1e23;
+    --muted: #6c7178;
+    --faint: #9aa0a6;
+    --line: #e4e2db;
+    --line-strong: #cfccc3;
+    --accent: #1f7a74;       /* deep teal — the durable "board / state" colour */
+    --accent-soft: #e6f0ef;
+    --accent-line: #bfd8d5;
+    --plan: #b45b33;         /* terracotta — used ONLY to mark "planned, not built yet" */
+    --plan-soft: #f6e9e2;
+    --local: #3d5a80;        /* slate — the "runs on a machine" colour */
+    --local-soft: #e8edf3;
+    --local-line: #c4d0df;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 56px 24px 96px; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 0.92em; }
+  code { background: #eceae3; padding: 0.08em 0.36em; border-radius: 5px; color: #2b2f36; }
+
+  header.hero { margin-bottom: 8px; }
+  .kicker { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+  h1 { font-size: 40px; line-height: 1.05; letter-spacing: -0.02em; margin: 10px 0 8px; font-weight: 800; }
+  .lede { font-size: 17px; color: var(--muted); max-width: 62ch; }
+  .lede b { color: var(--ink); font-weight: 600; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 22px 0 4px; font-size: 12.5px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; border: 1.5px solid; }
+  .dot.state { background: var(--accent-soft); border-color: var(--accent); }
+  .dot.machine { background: var(--local-soft); border-color: var(--local); }
+  .dot.planned { background: var(--plan-soft); border-color: var(--plan); }
+
+  section { margin-top: 52px; }
+  .num { font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--accent); font-weight: 700; }
+  h2 { font-size: 24px; letter-spacing: -0.01em; margin: 6px 0 6px; font-weight: 750; }
+  section > p { color: #34383f; max-width: 68ch; margin: 10px 0; }
+  .sub { color: var(--muted); font-size: 15px; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+    margin-top: 18px;
+    box-shadow: 0 1px 0 rgba(27,30,35,0.02), 0 8px 24px -18px rgba(27,30,35,0.25);
+  }
+  figure { margin: 0; }
+  figcaption { font-size: 12.5px; color: var(--faint); margin-top: 12px; text-align: center; }
+  svg { width: 100%; height: auto; display: block; }
+  .svg-b { font-family: ui-sans-serif, system-ui, sans-serif; }
+  .b-title { font-weight: 700; font-size: 15px; fill: var(--ink); }
+  .b-sub { font-size: 11.5px; fill: var(--muted); }
+  .b-tag { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+  .edge-lbl { font-size: 11px; fill: var(--muted); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } h1 { font-size: 32px; } .wrap { padding: 40px 18px 72px; } }
+
+  ul.tight { margin: 8px 0 0; padding-left: 18px; }
+  ul.tight li { margin: 5px 0; color: #34383f; }
+  ul.tight li b { color: var(--ink); }
+
+  /* lifecycle strip */
+  .life { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+  .stage { display: inline-flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 999px; padding: 7px 13px; font-size: 13px; font-weight: 600; }
+  .stage .k { font-family: ui-monospace, monospace; font-size: 10px; color: var(--faint); }
+  .arrow { color: var(--faint); font-size: 15px; }
+  .stage.human { border-color: var(--accent-line); background: var(--accent-soft); color: #14514c; }
+  .stage.off { border-style: dashed; color: var(--muted); }
+
+  /* table */
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 13.5px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; }
+  td.role { font-weight: 700; }
+  .pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .pill.yes { background: var(--accent-soft); color: #14514c; }
+  .pill.no { background: #efeee9; color: var(--faint); }
+  .pill.planned { background: var(--plan-soft); color: var(--plan); }
+
+  .callout { border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 10px 10px 0; padding: 14px 16px; margin-top: 18px; font-size: 14.5px; color: #274b48; }
+  .callout.plan { border-left-color: var(--plan); background: var(--plan-soft); color: #6a3a24; }
+  .callout b { color: inherit; }
+
+  footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--faint); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="kicker">be10x · architecture</div>
+    <h1>How the whole thing works</h1>
+    <p class="lede">One rule holds the design together: <b>sessions are disposable, state is durable.</b> The board is the single source of truth; the agent that does the work is a throwaway process that can run on <b>any</b> machine — yours, a teammate's, or a server — and reports everything back to the board.</p>
+    <div class="legend">
+      <span><i class="dot state"></i> Board &amp; state — the part <b>you host</b></span>
+      <span><i class="dot machine"></i> Runs on a machine (repo + compute)</span>
+      <span><i class="dot planned"></i> Planned for remote/team — not built yet</span>
+    </div>
+  </header>
+
+  <!-- 1 -->
+  <section id="parts">
+    <div class="num">01</div>
+    <h2>Three moving parts</h2>
+    <p>Everything in be10x is one of three things. Keeping them separate is what lets the same system run on your laptop today and across a team tomorrow — only the <em>wire between them</em> changes.</p>
+    <div class="card">
+      <figure>
+        <svg viewBox="0 0 960 300" class="svg-b" role="img" aria-label="Three parts: board server, runner, ephemeral agent">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#8a9096"/></marker>
+          </defs>
+
+          <!-- Board server -->
+          <rect x="20" y="60" width="300" height="180" rx="12" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="40" y="90" class="b-title">Board server</text>
+          <text x="40" y="110" class="b-tag" fill="var(--accent)">YOU HOST THIS</text>
+          <rect x="40" y="124" width="260" height="34" rx="7" fill="#fff" stroke="var(--accent-line)"/>
+          <text x="52" y="145" class="b-sub"><tspan font-weight="700" fill="#1b1e23">HTTP API</tspan>  ·  auth, tasks, teams</text>
+          <rect x="40" y="164" width="260" height="34" rx="7" fill="#fff" stroke="var(--accent-line)"/>
+          <text x="52" y="185" class="b-sub"><tspan font-weight="700" fill="#1b1e23">SQLite</tspan>  ·  durable state (the truth)</text>
+          <rect x="40" y="204" width="260" height="26" rx="7" fill="#fff" stroke="var(--accent-line)"/>
+          <text x="52" y="221" class="b-sub"><tspan font-weight="700" fill="#1b1e23">Web UI</tspan>  ·  the board, served static</text>
+
+          <!-- Runner -->
+          <rect x="380" y="95" width="200" height="110" rx="12" fill="var(--local-soft)" stroke="var(--local)" stroke-width="1.5"/>
+          <text x="400" y="125" class="b-title">Runner</text>
+          <text x="400" y="146" class="b-sub">watches the wake queue,</text>
+          <text x="400" y="163" class="b-sub">claims a job, spawns the</text>
+          <text x="400" y="180" class="b-sub">agent for that one step</text>
+
+          <!-- Agent -->
+          <rect x="640" y="60" width="300" height="180" rx="12" fill="var(--local-soft)" stroke="var(--local)" stroke-width="1.5"/>
+          <text x="660" y="90" class="b-title">Agent · ephemeral</text>
+          <text x="660" y="110" class="b-sub">a throwaway <tspan class="mono" font-weight="700">claude</tspan> CLI per step</text>
+          <rect x="660" y="124" width="260" height="34" rx="7" fill="#fff" stroke="var(--local-line)"/>
+          <text x="672" y="145" class="b-sub"><tspan font-weight="700" fill="#1b1e23">git worktree</tspan>  ·  isolated per task</text>
+          <rect x="660" y="164" width="260" height="34" rx="7" fill="#fff" stroke="var(--local-line)"/>
+          <text x="672" y="185" class="b-sub"><tspan font-weight="700" fill="#1b1e23">be10x MCP</tspan>  ·  the <tspan class="mono">gfa_*</tspan> tools</text>
+          <text x="660" y="220" class="b-sub" fill="var(--faint)">dies when the step ends — nothing to clean up</text>
+
+          <!-- edges -->
+          <line x1="380" y1="150" x2="322" y2="150" stroke="#8a9096" stroke-width="1.5" marker-end="url(#ar)" marker-start="url(#ar)"/>
+          <text x="330" y="142" class="edge-lbl" text-anchor="middle">claims</text>
+          <line x1="580" y1="150" x2="638" y2="150" stroke="#8a9096" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="610" y="142" class="edge-lbl" text-anchor="middle">spawns</text>
+          <path d="M660 205 C 520 270, 460 270, 322 195" fill="none" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="490" y="268" class="edge-lbl" fill="var(--accent)" text-anchor="middle">writes plan · artifacts · progress → state</text>
+        </svg>
+      </figure>
+      <figcaption>The agent never owns anything permanent. It reads the plan from the board, does one step, writes results back, and exits.</figcaption>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="split">
+    <div class="num">02</div>
+    <h2>Today vs. the team &amp; remote model</h2>
+    <p>You asked whether the flow is “a hosted part + a part running on their system.” <b>Yes — that's exactly it.</b> The only difference between what runs today and the team version is the <em>wire</em> between the local agent and the board.</p>
+    <div class="grid2">
+      <div class="card">
+        <figure>
+          <svg viewBox="0 0 460 360" class="svg-b" role="img" aria-label="Today: everything on one machine">
+            <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#8a9096"/></marker></defs>
+            <rect x="14" y="46" width="432" height="300" rx="14" fill="none" stroke="var(--local)" stroke-width="1.5" stroke-dasharray="2 5"/>
+            <text x="30" y="34" class="b-title">Today — one machine</text>
+            <text x="30" y="72" class="b-tag" fill="var(--local)">YOUR LAPTOP / ONE HOST</text>
+
+            <rect x="34" y="88" width="392" height="96" rx="11" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="50" y="114" class="b-title" font-size="14">Board server</text>
+            <text x="50" y="134" class="b-sub"><tspan class="mono" font-weight="700">be10x serve</tspan> → HTTP + SQLite + Web</text>
+            <text x="50" y="154" class="b-sub">runner baked in (works every linked repo)</text>
+            <text x="50" y="172" class="b-sub" fill="var(--faint)">the browser talks here over localhost</text>
+
+            <rect x="34" y="212" width="392" height="112" rx="11" fill="var(--local-soft)" stroke="var(--local)" stroke-width="1.5"/>
+            <text x="50" y="238" class="b-title" font-size="14">Agent + worktree + local repo</text>
+            <text x="50" y="258" class="b-sub">spawned by the baked-in runner</text>
+            <text x="50" y="278" class="b-sub"><tspan class="mono" font-weight="700">gfa_*</tspan> MCP writes <tspan font-weight="700">directly</tspan> to the</text>
+            <text x="50" y="296" class="b-sub">same SQLite file (a shared file path)</text>
+
+            <line x1="230" y1="212" x2="230" y2="185" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ar2)" marker-start="url(#ar2)"/>
+            <text x="238" y="203" class="edge-lbl" fill="var(--accent)">same file</text>
+          </svg>
+        </figure>
+        <figcaption>Simple &amp; real today: one host, one SQLite file. Great for you solo; teammates can't reach it and can't run work in their own checkouts.</figcaption>
+      </div>
+
+      <div class="card">
+        <figure>
+          <svg viewBox="0 0 460 360" class="svg-b" role="img" aria-label="Team and remote: central board plus distributed local runners">
+            <defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#b45b33"/></marker></defs>
+            <text x="16" y="34" class="b-title">Team &amp; remote — target</text>
+
+            <!-- hosted cloud -->
+            <rect x="120" y="46" width="224" height="92" rx="12" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="136" y="72" class="b-title" font-size="14">Board server (hosted)</text>
+            <text x="136" y="91" class="b-sub">API + SQLite + Web — the truth</text>
+            <text x="136" y="110" class="b-sub" fill="var(--accent)" font-weight="700">the part you host, once</text>
+            <text x="136" y="128" class="b-sub" fill="var(--faint)">teammates open it in a browser</text>
+
+            <!-- member A -->
+            <rect x="20" y="214" width="190" height="120" rx="11" fill="var(--local-soft)" stroke="var(--local)" stroke-width="1.5"/>
+            <text x="34" y="240" class="b-title" font-size="13.5">Teammate A's machine</text>
+            <text x="34" y="260" class="b-sub">be10x runner (a daemon)</text>
+            <text x="34" y="279" class="b-sub">+ agent + <tspan font-weight="700">their</tspan> local repo</text>
+            <text x="34" y="303" class="b-sub" fill="var(--faint)">commands run HERE, in</text>
+            <text x="34" y="320" class="b-sub" fill="var(--faint)">their own checkout</text>
+
+            <!-- member B -->
+            <rect x="250" y="214" width="190" height="120" rx="11" fill="var(--local-soft)" stroke="var(--local)" stroke-width="1.5"/>
+            <text x="264" y="240" class="b-title" font-size="13.5">Your machine / a VM</text>
+            <text x="264" y="260" class="b-sub">be10x runner</text>
+            <text x="264" y="279" class="b-sub">+ agent + local repo</text>
+            <text x="264" y="303" class="b-sub" fill="var(--faint)">a runner can live on a</text>
+            <text x="264" y="320" class="b-sub" fill="var(--faint)">server too (remote session)</text>
+
+            <!-- links (planned = terracotta dashed) -->
+            <path d="M150 214 C 150 175, 175 165, 210 138" fill="none" stroke="var(--plan)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ar3)" marker-start="url(#ar3)"/>
+            <path d="M320 214 C 320 175, 300 165, 268 138" fill="none" stroke="var(--plan)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ar3)" marker-start="url(#ar3)"/>
+            <text x="232" y="192" class="b-tag" fill="var(--plan)">HTTPS + token</text>
+          </svg>
+        </figure>
+        <figcaption>Same three parts — but the agent's MCP talks to the hosted board over <b>HTTPS</b> instead of a local file. That one transport swap is the remaining work (the terracotta links).</figcaption>
+      </div>
+    </div>
+    <div class="callout plan"><b>The honest status:</b> the local model (left) is built and running. The team/remote model (right) is the same code with one change — the <span class="mono">gfa_*</span> MCP and runner speak to the board over HTTP instead of opening a local SQLite file. Nothing else in the design has to move.</div>
+    <div class="callout"><b>A shareable URL today, without waiting on that:</b> put the host behind a tunnel — Cloudflare Tunnel, ngrok, an app like <span class="mono">Tunnels</span> — pointed at <span class="mono">be10x serve</span>'s port. No code change: it's the same single-host board from the left panel, just reachable over a real <span class="mono">https://</span> link instead of <span class="mono">localhost</span>. That covers "thin teammates in the browser" today; distributed runners and a multi-writer hosted board are still the planned work above.</div>
+  </section>
+
+  <!-- 3 -->
+  <section id="loop">
+    <div class="num">03</div>
+    <h2>How one step actually runs</h2>
+    <p>Nothing is “always on.” A human action on the board drops a <b>wake</b> into a queue; a runner claims it, runs exactly one step, and the loop comes back to you. This is why a server restart or a closed laptop never loses work — the queue and the state are durable.</p>
+    <div class="card">
+      <figure>
+        <svg viewBox="0 0 960 250" class="svg-b" role="img" aria-label="The wake loop">
+          <defs><marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#1f7a74"/></marker></defs>
+          <!-- nodes -->
+          <g>
+            <rect x="18" y="60" width="150" height="72" rx="10" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="34" y="88" class="b-sub" font-weight="700" fill="#1b1e23">1 · Human acts</text>
+            <text x="34" y="107" class="b-sub">hand to agent,</text>
+            <text x="34" y="123" class="b-sub">approve, comment</text>
+
+            <rect x="200" y="60" width="150" height="72" rx="10" fill="#fff" stroke="var(--line-strong)"/>
+            <text x="216" y="88" class="b-sub" font-weight="700" fill="#1b1e23">2 · Wake queued</text>
+            <text x="216" y="107" class="b-sub">plan · execute ·</text>
+            <text x="216" y="123" class="b-sub">revise · verify …</text>
+
+            <rect x="382" y="60" width="150" height="72" rx="10" fill="var(--local-soft)" stroke="var(--local)" stroke-width="1.5"/>
+            <text x="398" y="88" class="b-sub" font-weight="700" fill="#1b1e23">3 · Runner claims</text>
+            <text x="398" y="107" class="b-sub">(atomic lock, so</text>
+            <text x="398" y="123" class="b-sub">only one takes it)</text>
+
+            <rect x="564" y="60" width="168" height="72" rx="10" fill="var(--local-soft)" stroke="var(--local)" stroke-width="1.5"/>
+            <text x="580" y="88" class="b-sub" font-weight="700" fill="#1b1e23">4 · Agent runs</text>
+            <text x="580" y="107" class="b-sub">fresh or resumed,</text>
+            <text x="580" y="123" class="b-sub">in a git worktree</text>
+
+            <rect x="764" y="60" width="178" height="72" rx="10" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="780" y="88" class="b-sub" font-weight="700" fill="#1b1e23">5 · Writes to board</text>
+            <text x="780" y="107" class="b-sub">plan, artifacts,</text>
+            <text x="780" y="123" class="b-sub">progress, output</text>
+          </g>
+          <!-- arrows -->
+          <line x1="168" y1="96" x2="198" y2="96" stroke="#1f7a74" stroke-width="1.6" marker-end="url(#ar4)"/>
+          <line x1="350" y1="96" x2="380" y2="96" stroke="#1f7a74" stroke-width="1.6" marker-end="url(#ar4)"/>
+          <line x1="532" y1="96" x2="562" y2="96" stroke="#1f7a74" stroke-width="1.6" marker-end="url(#ar4)"/>
+          <line x1="732" y1="96" x2="762" y2="96" stroke="#1f7a74" stroke-width="1.6" marker-end="url(#ar4)"/>
+          <!-- loop back -->
+          <path d="M853 132 C 853 200, 90 200, 90 133" fill="none" stroke="#1f7a74" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#ar4)"/>
+          <text x="470" y="196" class="edge-lbl" fill="var(--accent)" text-anchor="middle">you review the result on the board → the next action drops the next wake</text>
+        </svg>
+      </figure>
+      <figcaption>Each step is a <b>fresh, seeded</b> session where it matters (plan / execute / verify get a clean start from the approved plan) and a resume where continuity matters (answering a question). The board, not a long-lived process, carries the memory.</figcaption>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section id="lifecycle">
+    <div class="num">04</div>
+    <h2>Plans &amp; the task lifecycle</h2>
+    <p>A task walks a fixed set of states. Plans and findings are stored <b>on the task as HTML</b> (rendered safely in a sandbox), so they're readable by everyone with access — not trapped in someone's terminal. Two states are yours to hold (teal): the plan waits for your approval, and a question waits for your answer.</p>
+    <div class="card">
+      <div class="life">
+        <span class="stage"><span class="k">1</span> Backlog</span><span class="arrow">→</span>
+        <span class="stage"><span class="k">2</span> Researching</span><span class="arrow">→</span>
+        <span class="stage human"><span class="k">3</span> Plan review ✋</span><span class="arrow">→</span>
+        <span class="stage"><span class="k">4</span> Ready</span><span class="arrow">→</span>
+        <span class="stage"><span class="k">5</span> In progress</span><span class="arrow">→</span>
+        <span class="stage"><span class="k">6</span> Verifying</span><span class="arrow">→</span>
+        <span class="stage"><span class="k">7</span> Done</span>
+      </div>
+      <div class="life" style="margin-top:12px">
+        <span class="stage off">↳ Needs input ✋ (pauses mid-work for your answer)</span>
+        <span class="stage off">↳ Blocked</span>
+      </div>
+      <ul class="tight" style="margin-top:16px">
+        <li><b>Plan review</b> is the control point: the agent proposes, you approve or comment. A comment doesn't just chat — it drops a <em>revise</em> wake and the plan gets reworked.</li>
+        <li><b>Artifacts</b> (RCA, diagrams, findings, verification) hang off the task as HTML cards, so the “why” travels with the work and shows up for reviewers too.</li>
+        <li><b>Verify</b> is a deliberately fresh session that only sees the approved plan + the code — it checks the work honestly instead of trusting its own build transcript.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section id="team">
+    <div class="num">05</div>
+    <h2>Teams &amp; shared access</h2>
+    <p>Everyone authenticates against the one board. A <b>team</b> groups people and tasks; a <b>role</b> decides what they can do; a task's <b>scope</b> decides who can see it. Add teammates by searching the platform or picking recent collaborators.</p>
+    <div class="card" style="padding-top:8px">
+      <table>
+        <thead><tr><th>Role</th><th>See tasks</th><th>Comment / review</th><th>Run the agent</th><th>Manage members</th></tr></thead>
+        <tbody>
+          <tr><td class="role">Owner</td><td><span class="pill yes">yes</span></td><td><span class="pill yes">yes</span></td><td><span class="pill yes">yes</span></td><td><span class="pill yes">yes</span></td></tr>
+          <tr><td class="role">Admin</td><td><span class="pill yes">yes</span></td><td><span class="pill yes">yes</span></td><td><span class="pill yes">yes</span></td><td><span class="pill yes">yes</span></td></tr>
+          <tr><td class="role">Member</td><td><span class="pill yes">yes</span></td><td><span class="pill yes">yes</span></td><td><span class="pill yes">yes</span></td><td><span class="pill no">no</span></td></tr>
+          <tr><td class="role">Viewer</td><td><span class="pill yes">yes</span></td><td><span class="pill no">no</span></td><td><span class="pill no">no</span></td><td><span class="pill no">no</span></td></tr>
+        </tbody>
+      </table>
+      <ul class="tight" style="margin-top:16px">
+        <li><b>Scopes:</b> <span class="mono">personal</span> (just you) · <span class="mono">project</span> (a linked repo) · <span class="mono">team</span> (everyone in the team).</li>
+        <li><b>Share links</b> let someone <em>without an account</em> review a task through a token URL — read the plan &amp; artifacts, comment, leave a verdict, and (if the link permits) ask the agent to pick it up. This is your “review it to go live” path.</li>
+        <li><b>Access without a login</b> stays read-limited: a share link is <span class="mono">comment_only</span> or <span class="mono">run_agent</span> — never full board access.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section id="commands">
+    <div class="num">06</div>
+    <h2>Running commands on their system</h2>
+    <p>This is the part that surprises people, so it's worth stating plainly: <b>the agent runs wherever the runner that claimed the wake is running.</b> The board never reaches into anyone's machine — a machine <em>opts in</em> by running a runner and pulling work down.</p>
+    <div class="card">
+      <ul class="tight">
+        <li><b>Pull, not push.</b> A teammate's runner <em>asks</em> the board for the next wake for its projects and claims it. The board can't execute anything on a machine that isn't running a runner.</li>
+        <li><b>Where the commands land.</b> Whoever's runner claims the job runs the shell/edits/tests <em>in their own clone</em>, inside a fresh <b>git worktree</b> per task — so parallel tasks never collide, and the checkout is the safety boundary.</li>
+        <li><b>Two boundaries.</b> <em>Auth</em> = a personal token + team membership (who may claim what). <em>Safety</em> = the per-task worktree the agent is confined to, where it runs unattended.</li>
+        <li><b>Crash-safe.</b> If a runner dies mid-step, the board detects the dead process and can recover the task — the durable state and the queue survive; only the throwaway session is lost.</li>
+      </ul>
+      <div class="callout"><b>So, whose computer does the work?</b> The one whose runner took the job. Put a runner only on your host and everything runs there (thin teammates in the browser). Put a runner on each teammate's laptop and each person's work runs locally in their own repo. Put a runner on a VM and that's your <b>remote session</b>. Same board, your choice per machine.</div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section id="adopt">
+    <div class="num">07</div>
+    <h2>Remote sessions &amp; “adopt to the board”</h2>
+    <p>A runner on a server or VM <em>is</em> a remote session — it claims wakes and works exactly like a local one, and you steer it entirely from the board. The reverse direction exists too: pull an ad-hoc terminal session <b>onto</b> the board.</p>
+    <div class="card">
+      <ul class="tight">
+        <li><b>Adopt</b> (built): working in any terminal that has be10x linked, say “move this to the 10x board” (or run <span class="mono">/be10x-adopt</span> / <span class="mono">be10x adopt</span>). One MCP call files it as a task in the right project, at the phase it's really in — carrying whatever exists: title, summary, plan, findings-as-artifacts, refs.</li>
+        <li><b>Then the board owns it.</b> Optionally hand off, and a runner (yours or a teammate's or a VM's) continues the work; otherwise you drive it from the board.</li>
+        <li><b>The “key”</b> you asked for is exactly this: one trigger that lifts loose terminal work into durable, shared, controllable board state — and from then on you control it from the board.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section id="status">
+    <div class="num">08</div>
+    <h2>Built vs. planned — no hand-waving</h2>
+    <div class="card" style="padding-top:8px">
+      <table>
+        <thead><tr><th>Capability</th><th>Status</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr><td>Board: API + SQLite + Web + baked-in runner</td><td><span class="pill yes">built</span></td><td><span class="mono">be10x serve</span></td></tr>
+          <tr><td>Ephemeral agent per wake, git-worktree isolation</td><td><span class="pill yes">built</span></td><td>fresh/resume per step</td></tr>
+          <tr><td>Plans &amp; artifacts as sandboxed HTML on the task</td><td><span class="pill yes">built</span></td><td>the visual brief</td></tr>
+          <tr><td>Teams, roles, scopes, member search</td><td><span class="pill yes">built</span></td><td>owner/admin/member/viewer</td></tr>
+          <tr><td>Share links (no-account review + verdict)</td><td><span class="pill yes">built</span></td><td>comment_only / run_agent</td></tr>
+          <tr><td>Adopt a terminal session onto the board</td><td><span class="pill yes">built</span></td><td><span class="mono">gfa_import_task</span> / <span class="mono">/be10x-adopt</span></td></tr>
+          <tr><td>Crash-safe recovery of orphaned runs</td><td><span class="pill yes">built</span></td><td>dead-pid sweep</td></tr>
+          <tr><td>Distributed runners over HTTPS (each machine)</td><td><span class="pill planned">planned</span></td><td>MCP/runner → board over HTTP instead of local file</td></tr>
+          <tr><td>Hosted, multi-machine board (the cloud host)</td><td><span class="pill planned">planned</span></td><td>same code, remote transport + auth on the wire</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout"><b>The whole leap to team + remote</b> is one focused piece of work: give the <span class="mono">gfa_*</span> tools and the runner an HTTP transport to the board, so state stays central while execution happens on whichever machine holds the repo. Everything above it — lifecycle, plans, artifacts, teams, roles, share, adopt — already works and doesn't change.</div>
+  </section>
+
+  <footer>
+    be10x · sessions disposable, state durable · this document reflects the current codebase and the intended remote/team direction. Teal = board/state you host · Slate = runs on a machine · Terracotta = planned.
+  </footer>
+
+</div>
+</body>
+</html>
