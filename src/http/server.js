@@ -9,7 +9,8 @@ import { openDb } from '../db/db.js';
 import { createUser, getUserByEmail, getUserById, searchUsers, recentCollaborators } from '../auth/users.js';
 import { verifyPassword } from '../auth/passwords.js';
 import { createSession, getSession, deleteSession } from '../auth/sessions.js';
-import { createToken, listTokens, revokeToken, getTokenOwner } from '../auth/tokens.js';
+import { createToken, listTokens, revokeToken, getTokenOwner, verifyToken } from '../auth/tokens.js';
+import { getTool } from '../mcp/tools.js';
 import { createTeam, deleteTeam } from '../teams/teams.js';
 import { listMembers, addMember, setRole, removeMember } from '../teams/memberships.js';
 import { assertCan } from '../authz/authz.js';
@@ -70,6 +71,19 @@ function currentUser(db, req) {
   if (!sid) return null;
   const s = getSession(db, sid);
   return s ? getUserById(db, s.userId) : null;
+}
+
+// Bearer-token auth for the agent/runner API (/api/agent/*). An agent running on a MEMBER's own machine
+// authenticates with a personal access token (minted by `be10x token` / the dashboard) instead of the
+// human session cookie. Returns the auth ctx { userId, tokenId } — the same shape the stdio MCP server
+// hands each tool handler — or null.
+function bearerToken(req) {
+  const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '');
+  return m ? m[1].trim() : null;
+}
+function agentAuth(db, req) {
+  const tok = bearerToken(req);
+  return tok ? verifyToken(db, tok) : null;
 }
 
 function match(pattern, pathname) {
@@ -364,11 +378,41 @@ const ROUTES = [
   ['GET', '/api/agent-config', true, async ({ res }) => send(res, 200, { mcpServerPath: MCP_SERVER_PATH, dbPath: process.env.GFA_DB_PATH || './gfa.db' })],
 ];
 
+// The agent/runner API — token (Bearer) authenticated, transport-agnostic. This is how an agent running on
+// a MEMBER's OWN machine reaches a hosted board: the HTTP MCP transport (src/mcp/http-server.js) forwards
+// every gfa_* call to /rpc, and a `be10x connect` runner claims/reports wakes here. Each handler receives
+// { db, req, res, params, body, auth } where auth = { userId, tokenId }. Dispatched separately from the
+// human/session ROUTES above (see createApp).
+const AGENT_ROUTES = [
+  // The universal gfa_* gateway: dispatch { tool, args } through the SAME registry the stdio MCP server
+  // uses (src/mcp/tools.js), so every agent tool works over HTTP with zero duplication. Domain errors the
+  // handler throws (NO_TASK, MISSING_FIELD:*, …) propagate to createApp's catch and map to a status.
+  ['POST', '/api/agent/rpc', async ({ db, res, body, auth }) => {
+    const tool = getTool(body.tool);
+    if (!tool) throw new Error('UNKNOWN_TOOL');
+    const result = tool.handler(db, auth, body.args ?? {});
+    send(res, 200, { result: result ?? null });
+  }],
+];
+
 export function createApp(db) {
   return http.createServer(async (req, res) => {
     try {
       const pathname = new URL(req.url, 'http://x').pathname;
       if (!pathname.startsWith('/api/')) { if (req.method === 'GET') return serveStatic(req, res); res.writeHead(404); return res.end(); }
+      // Agent/runner API: token (Bearer) auth, dispatched before the human/session routes.
+      if (pathname.startsWith('/api/agent/')) {
+        for (const [method, pattern, handler] of AGENT_ROUTES) {
+          if (req.method !== method) continue;
+          const params = match(pattern, pathname);
+          if (!params) continue;
+          const auth = agentAuth(db, req);
+          if (!auth) return send(res, 401, { error: 'BAD_TOKEN' });
+          const body = method === 'GET' ? {} : await readJson(req);
+          return await handler({ db, req, res, params, body, auth });
+        }
+        return send(res, 404, { error: 'NOT_FOUND' });
+      }
       for (const [method, pattern, needsAuth, handler] of ROUTES) {
         if (req.method !== method) continue;
         const params = match(pattern, pathname);
