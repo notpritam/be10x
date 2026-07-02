@@ -84,19 +84,20 @@ The hosting above is **single-host** (board + agent on one server). The other mo
 **On each member's machine:**
 
 ```bash
-# 1. Install the CLI — one command, no clone (needs Node 18+) + sign in to Claude Code as usual:
+# 1. Install the CLI — one command, no clone (needs Node 18+):
 npm install -g github:notpritam/be10x
 
-# 2. Mint a token on the board:  Settings → Connect your machine  (or `be10x token`).
+# 2. Sign in — opens the board in your browser; click "Authorize". The token installs itself, no paste:
+be10x login https://your-board.example.com
 
-# 3. Link this machine to the board and serve your repos:
-be10x connect \
-  --board https://your-board.example.com \
-  --token gfa_xxxxxxxx \
-  --repos ~/code/app,~/code/api
+# 3. In each repo you want worked here, link it — then start the agent:
+cd ~/code/app && be10x link
+be10x connect
 ```
 
-That saves the setup to `~/.be10x/connect.json` (so a bare `be10x connect` works next time), registers each repo with the board, writes each a board-pointing MCP config, and starts the loop: it claims wakes for your repos, spawns **your** `claude` in each repo's worktree, and streams the plan / progress / output back to the board over HTTPS — where the whole team reviews and comments. Create a task for one of those repos on the board and your machine picks it up.
+`be10x login` uses a browser **device-authorization** flow (like `gh auth login`): the CLI shows a short code, opens the board's approve screen where you're already signed in, and collects a personal token over the back channel once you click **Authorize** — it never touches your clipboard. Everything is saved to `~/.be10x/connect.json`, so a bare `be10x connect` works next time. `be10x link` registers the repo with the board and writes it a board-pointing MCP config; `be10x connect` then claims wakes for your linked repos, spawns **your** `claude` in each repo's worktree, and streams the plan / progress / output back to the board over HTTPS — where the whole team reviews and comments. Create a task for one of those repos on the board and your machine picks it up.
+
+> Prefer no browser (CI, headless)? `be10x connect --board <url> --token <gfa_…> --repos a,b` still works — mint the token under **Connect your machine → Advanced**.
 
 Under the hood: the agent's `gfa_*` tools reach the board through an HTTP MCP transport (`src/mcp/http-server.js` → `POST /api/agent/rpc`), and the runner claims/reports via `POST /api/agent/{claim,report}` — all authenticated with your personal token. The board owns every durability decision (auto-retry, verify hand-off), exactly as the in-process runner does. See [`docs/superpowers/specs/2026-07-02-distributed-runner-design.md`](docs/superpowers/specs/2026-07-02-distributed-runner-design.md).
 

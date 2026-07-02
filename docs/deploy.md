@@ -89,19 +89,20 @@ Because the DB is on the disk, **restarts and redeploys keep all your data.** Wi
 Each person, once, on their own machine:
 
 ```bash
-# 1. Install the CLI (one command, no clone) + sign in to Claude Code as usual:
+# 1. Install the CLI (one command, no clone — needs Node 18+):
 npm install -g github:notpritam/be10x
 
-# 2. On the board:  Connect your machine → Create token → copy it.
+# 2. Sign in — opens the board in your browser; click "Authorize" (no token to copy):
+be10x login https://be10x.notpritam.in
 
-# 3. Link this machine and serve your repos:
-be10x connect \
-  --board https://be10x.notpritam.in \
-  --token gfa_xxxxxxxx \
-  --repos ~/code/app,~/code/api
+# 3. Link each repo you want worked here, then run the agent:
+cd ~/code/app && be10x link
+be10x connect
 ```
 
-Now anyone creates a task for one of those repos on the board, hands it to the agent, and **that person's machine** picks it up, runs Claude locally, and streams the plan/progress/output back for the team to review. Leave `be10x connect` running (or run it under `tmux`/`pm2`/a login item so it survives).
+`be10x login` opens the board's approve screen (you're already signed in there), you click **Authorize**, and the CLI collects a personal token over the back channel — saved to `~/.be10x/connect.json`, so a bare `be10x connect` works from then on. Now anyone creates a task for one of those repos on the board, hands it to the agent, and **that person's machine** picks it up, runs Claude locally, and streams the plan/progress/output back for the team to review. Leave `be10x connect` running (or run it under `tmux`/`pm2`/a login item so it survives).
+
+> Headless box or CI (no browser to click Authorize)? Mint a token under **Connect your machine → Advanced** and run `be10x connect --board https://be10x.notpritam.in --token gfa_… --repos ~/code/app`.
 
 > Installing from a **private** repo needs the teammate to have git access to it (they're your collaborators). If you'd rather they not need repo access, publish the CLI to npm and it becomes `npm i -g be10x` — see the README.
 

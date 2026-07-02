@@ -224,21 +224,20 @@
       <div class="step">
         <div class="n">2</div>
         <div class="body">
-          <h3>Mint a token on the board</h3>
-          <p>Open the hosted board in your browser → <b>Connect your machine</b> → <b>Create token</b>. Copy it once — it's your machine's key to the board.</p>
-          <p class="hint">The dialog shows the exact command below with your board URL and token already filled in.</p>
+          <h3>Sign in — approve the machine in your browser</h3>
+          <p>Run <code>be10x login</code> with your board's URL. It opens the board (where you're already signed in), you click <b>Authorize</b>, and the token installs itself — nothing to copy or paste.</p>
+          <div class="cmd"><span class="p">$</span> be10x login <span class="v">https://your-board.notpritam.in</span></div>
+          <p class="hint">A browser device-authorization flow, like <code>gh auth login</code>. The token never touches your clipboard.</p>
         </div>
       </div>
 
       <div class="step">
         <div class="n">3</div>
         <div class="body">
-          <h3>Link this machine &amp; serve your repos</h3>
-          <p>Point <code>--repos</code> at the checkouts you want to work here. This registers them with the board, writes each a board-pointing MCP config, and starts the loop.</p>
-          <div class="cmd"><span class="p">$</span> be10x connect <span class="c">\</span>
-    <span class="f">--board</span> <span class="v">https://your-board.notpritam.in</span> <span class="c">\</span>
-    <span class="f">--token</span> <span class="v">gfa_xxxxxxxxxxxx</span> <span class="c">\</span>
-    <span class="f">--repos</span> <span class="v">~/code/app,~/code/api</span></div>
+          <h3>Link a repo &amp; run the agent</h3>
+          <p>In each checkout you want worked here, run <code>be10x link</code> — it registers the repo with the board and writes it a board-pointing MCP config. Then start the loop with a bare <code>be10x connect</code>.</p>
+          <div class="cmd"><span class="p">$</span> cd <span class="v">~/code/app</span> &amp;&amp; be10x link
+<span class="p">$</span> be10x connect</div>
         </div>
       </div>
 
@@ -251,7 +250,7 @@
       </div>
 
     </div>
-    <div class="callout"><b>That's the whole link:</b> a token + the <code>be10x connect</code> daemon. No server-side CLI, no shared keys, no repo ever uploaded.</div>
+    <div class="callout"><b>That's the whole link:</b> a browser sign-in + the <code>be10x connect</code> daemon. No token to copy, no server-side CLI, no shared keys, no repo ever uploaded.</div>
   </section>
 
   <!-- 3 — the per-task loop -->
@@ -318,7 +317,7 @@
           <li><span class="mk y">✓</span><span><b>The connector</b> — <code>be10x connect</code> loop + saved config + board-pointing MCP.</span></li>
           <li><span class="mk y">✓</span><span><b>Local executor</b> — spawns your own claude in your worktree, reports the outcome.</span></li>
           <li><span class="mk y">✓</span><span><b>HTTP MCP transport</b> — the agent's tools reach a remote board.</span></li>
-          <li><span class="mk y">✓</span><span><b>Dashboard</b> — "Connect your machine" mints a token and shows the ready-to-run command.</span></li>
+          <li><span class="mk y">✓</span><span><b>Dashboard</b> — "Connect your machine" walks through <code>be10x login</code> + <code>link</code>, and the in-browser approve screen (<code>/connect?code=…</code>) authorizes the device.</span></li>
         </ul>
       </div>
       <div class="statcol soon">
