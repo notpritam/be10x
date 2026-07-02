@@ -11,6 +11,12 @@ import {
   saveConnectConfig,
   loadConnectConfig,
 } from '../src/connect/connect.js';
+import { openDb } from '../src/db/db.js';
+import { createApp } from '../src/http/server.js';
+import { createToken } from '../src/auth/tokens.js';
+import { registerProject } from '../src/projects/projects.js';
+import { enqueueWake, listPendingWakes } from '../src/executor/wake.js';
+import { getTask } from '../src/tasks/tasks.js';
 
 // A fake board client capturing claim/report calls; `claimResult` is what claim() returns.
 function fakeBoard(claimResult) {
@@ -149,4 +155,46 @@ test('connect config save/load roundtrips; a missing file loads as null', () => 
   assert.equal(loaded.board, 'b');
   assert.equal(loaded.repos[0].key, 'k');
   assert.equal(loadConnectConfig(join(dir, 'nope.json')), null);
+});
+
+// Capstone: the REAL connector board client driving the REAL HTTP board end-to-end (only the local claude
+// is faked). Proves the whole wire path — claim endpoint → board client → executor → report endpoint →
+// settleWake — actually talks, with real JSON serialization and token auth.
+test('end-to-end: the connector drives a real board over HTTP (claim → run → report → verifying)', async () => {
+  const db = openDb(':memory:');
+  const app = createApp(db);
+  await new Promise((r) => app.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + app.address().port;
+  try {
+    const now = Date.now();
+    db.prepare('INSERT INTO users (id,email,display_name,password_hash,created_at) VALUES (?,?,?,?,?)').run(
+      'u1', 'a@b.dev', 'A', 'x', now
+    );
+    const { token } = createToken(db, 'u1', 'laptop');
+    const project = registerProject(db, { key: 'github.com/acme/app', name: 'app', rootPath: null });
+    db.prepare(
+      'INSERT INTO tasks (id,human_id,type,scope,project_id,owner_id,title,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)'
+    ).run('t1', 't1', 'general', 'project', project.id, 'u1', 'T', 'ready_to_work', now, now);
+    enqueueWake(db, 't1', 'execute');
+
+    const board = makeBoardClient({ board: base, token });
+    const repos = [{ key: 'github.com/acme/app', path: '/local/app', defaultBranch: 'main' }];
+    const captured = [];
+    const makeExecutor = (repo) => async (task, runOpts) => {
+      captured.push({ repo, task, runOpts });
+      return { ok: true, done: true, mode: runOpts.mode, sessionId: 'sess-e2e' };
+    };
+
+    const res = await runConnectOnce({ board, repos, makeExecutor, workerId: 'connect:test' });
+
+    assert.equal(res.summary.sessionId, 'sess-e2e');
+    assert.equal(captured[0].runOpts.mode, 'execute', 'the board resolved execute mode over the wire');
+    assert.equal(captured[0].repo.path, '/local/app', 'ran in the member local checkout');
+    assert.equal(getTask(db, 't1').status, 'verifying', 'settleWake ran on the board after report');
+    const pending = listPendingWakes(db, 't1');
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].reason, 'verify');
+  } finally {
+    await new Promise((r) => app.close(r));
+  }
 });
