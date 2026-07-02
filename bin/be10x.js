@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { homedir, hostname } from 'node:os';
 import { spawn } from 'node:child_process';
 import { dirname, resolve, join, basename } from 'node:path';
-import { mkdirSync, writeFileSync, readFileSync, cpSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, cpSync, existsSync, rmSync } from 'node:fs';
 import { getUserByEmail } from '../src/auth/users.js';
 import { createToken } from '../src/auth/tokens.js';
 import { listTasks, importTask, IMPORT_PHASES, handoffReasonForPhase } from '../src/tasks/tasks.js';
@@ -16,6 +16,7 @@ import { enqueueWake } from '../src/executor/wake.js';
 import { wakeLoop, wakeLoopAll } from '../src/runner/runner.js';
 import { makeRemoteExecutor } from '../src/connect/remote-executor.js';
 import { makeBoardClient, connectLoop, writeMcpConfig, loadConnectConfig, saveConnectConfig, connectConfigPath, runDeviceLogin, upsertRepo } from '../src/connect/connect.js';
+import { buildLaunchdPlist, buildSystemdUnit, serviceEnvPath, servicePaths, isRemovablePath } from '../src/connect/service.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SIGNUP_HINT = 'Sign up on the board first: be10x serve → http://localhost:4610';
@@ -369,6 +370,108 @@ async function cmdConnect(args) {
   });
 }
 
+// service <install|uninstall|status|logs> — run `be10x connect` as an always-on background service that
+// starts on login/boot and restarts on crash (macOS launchd, Linux systemd --user). The set-and-forget way
+// to keep this machine listening without a terminal open. Run it from your GLOBAL install for a boot-safe path.
+async function cmdService(args) {
+  const sub = (args._[0] || 'install').toLowerCase();
+  const { execFileSync } = await import('node:child_process');
+  const home = homedir();
+  const { label, unit, logPath, plistPath, systemdPath } = servicePaths(home);
+  const node = process.execPath;
+  const cli = fileURLToPath(import.meta.url);
+
+  // Run a command, returning combined stdout+stderr and never throwing (we branch on the text/label instead).
+  const run = (cmd, a) => {
+    try {
+      return execFileSync(cmd, a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (e) {
+      return (e.stdout || '') + (e.stderr || '');
+    }
+  };
+  const tailLog = () => {
+    console.log(logPath);
+    console.log(existsSync(logPath) ? readFileSync(logPath, 'utf8').split('\n').slice(-40).join('\n') : '(no log yet)');
+  };
+
+  if (process.platform === 'darwin') {
+    if (sub === 'status') {
+      const line = run('launchctl', ['list']).split('\n').find((l) => l.includes(label));
+      console.log(line ? 'running (' + line.trim() + ')' : 'not installed — run: be10x service install');
+      return;
+    }
+    if (sub === 'logs') return tailLog();
+    if (sub === 'uninstall') {
+      run('launchctl', ['unload', plistPath]);
+      rmSync(plistPath, { force: true });
+      console.log('✓ Stopped and removed the be10x background service.');
+      return;
+    }
+    if (sub !== 'install') {
+      console.error('Usage: be10x service <install|uninstall|status|logs>');
+      process.exit(1);
+    }
+    if (isRemovablePath(cli)) {
+      console.error('This be10x CLI lives on a removable path:\n  ' + cli);
+      console.error("A boot service pointing here won't start until that drive is mounted. Install globally,");
+      console.error('then run service install from it:  npm install -g github:notpritam/be10x && be10x service install');
+      process.exit(1);
+    }
+    mkdirSync(dirname(plistPath), { recursive: true });
+    mkdirSync(dirname(logPath), { recursive: true });
+    const path = serviceEnvPath(dirname(node), process.env.PATH || '');
+    writeFileSync(plistPath, buildLaunchdPlist({ label, node, cli, home, logPath, path }));
+    run('launchctl', ['unload', plistPath]); // reload cleanly if already installed
+    const out = run('launchctl', ['load', '-w', plistPath]).trim();
+    if (out) console.log(out);
+    const running = run('launchctl', ['list']).split('\n').some((l) => l.includes(label));
+    console.log(running ? '✓ be10x connect is running in the background — and starts on every login.' : 'Installed. Check: be10x service status');
+    console.log('  logs:     be10x service logs');
+    console.log('  stop it:  be10x service uninstall');
+    return;
+  }
+
+  if (process.platform === 'linux') {
+    const sc = (a) => run('systemctl', ['--user', ...a]);
+    if (sub === 'status') {
+      console.log(sc(['status', unit, '--no-pager']).trim() || 'not installed — run: be10x service install');
+      return;
+    }
+    if (sub === 'logs') {
+      console.log(run('journalctl', ['--user', '-u', unit, '-n', '40', '--no-pager']).trim() || '(no log yet)');
+      return;
+    }
+    if (sub === 'uninstall') {
+      sc(['disable', '--now', unit]);
+      rmSync(systemdPath, { force: true });
+      sc(['daemon-reload']);
+      console.log('✓ Stopped and removed the be10x background service.');
+      return;
+    }
+    if (sub !== 'install') {
+      console.error('Usage: be10x service <install|uninstall|status|logs>');
+      process.exit(1);
+    }
+    if (isRemovablePath(cli)) {
+      console.error('This be10x CLI lives on a removable path (' + cli + ') — install globally, then run service install.');
+      process.exit(1);
+    }
+    mkdirSync(dirname(systemdPath), { recursive: true });
+    const path = serviceEnvPath(dirname(node), process.env.PATH || '');
+    writeFileSync(systemdPath, buildSystemdUnit({ node, cli, path }));
+    sc(['daemon-reload']);
+    sc(['enable', '--now', unit]);
+    run('loginctl', ['enable-linger', process.env.USER || '']); // survive logout / start at boot
+    console.log('✓ be10x connect is running in the background — and starts on boot.');
+    console.log('  logs:     be10x service logs');
+    console.log('  stop it:  be10x service uninstall');
+    return;
+  }
+
+  console.error('be10x service supports macOS and Linux. On Windows, add `be10x connect` to Task Scheduler at logon.');
+  process.exit(1);
+}
+
 // list — print registered projects and, for the cwd's project, its tasks grouped by status.
 async function cmdList() {
   const db = await openBoardDb();
@@ -512,6 +615,7 @@ const COMMANDS = {
   token: cmdToken,
   work: cmdWork,
   connect: cmdConnect,
+  service: cmdService,
   list: cmdList,
   adopt: cmdAdopt,
   'install-skill': cmdInstallSkill,
@@ -528,6 +632,7 @@ function usage() {
   console.log('  token [--name X] [--email E]     mint a personal access token (shown once)');
   console.log('  work  [--interval S] [--once]    run the agent runner for this repo');
   console.log('  connect --board URL --token T    link THIS machine to a hosted board + run the agent locally');
+  console.log('  service install|uninstall|status|logs   run `be10x connect` as a background service (auto-starts on boot)');
   console.log('  list                             list projects and this repo\'s tasks by status');
   console.log('  adopt --title T [--phase P] ...  move this session\'s work onto the board as a task');
   console.log('  install-skill                    install the /be10x-adopt skill into ~/.claude/skills');
