@@ -3,8 +3,9 @@
 // dispatches on it. Markdown/HTML rendering lives in ./rich-content (shared with comments, output, details,
 // every DataValue string). Extensible: add a block type = one case.
 import type { ReactNode } from "react";
-import { GitBranch, ListChecks } from "lucide-react";
+import { ListChecks } from "lucide-react";
 import { HtmlBlock, Markdown, looksLikeHtml } from "./rich-content";
+import { MermaidDiagram } from "./MermaidDiagram";
 
 type Block = Record<string, unknown> & { type?: string };
 
@@ -58,7 +59,7 @@ function renderBlock(block: Block, key: number): ReactNode {
     return html ? <HtmlBlock key={key} html={html} /> : null;
   }
   if (t === "steps") { const s = toSteps(block.steps); return s ? <Steps key={key} steps={s} /> : null; }
-  if (t === "diagram") return body ? <Mono key={key} label="Diagram" icon={<GitBranch className="size-3.5" />} content={body} /> : null;
+  if (t === "diagram") return body ? <MermaidDiagram key={key} code={body} /> : null;
   if (t === "code") return body ? <Mono key={key} label="Code" icon={<ListChecks className="size-3.5" />} content={body} /> : null;
   if (t === "markdown" || t === "md") return body ? <Markdown key={key} text={body} /> : null;
   // default: markdown-ish text (or HTML if it clearly is)
@@ -102,7 +103,7 @@ export function PlanView({ plan }: { plan: unknown }) {
       {html && <HtmlBlock html={html} />}
       {markdown && <Markdown text={markdown} />}
       {steps && steps.length > 0 && <Steps steps={steps} />}
-      {diagram && <Mono label="Diagram" icon={<GitBranch className="size-3.5" />} content={diagram} />}
+      {diagram && <MermaidDiagram code={diagram} />}
       {rest.length > 0 && (
         <div className="space-y-1.5 border-t border-border/50 pt-3">
           {rest.map(([k, v]) => (
