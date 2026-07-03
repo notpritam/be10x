@@ -199,8 +199,10 @@ export const api = {
 
   // Projects (linked repos)
   listProjects: () => request<{ projects: Project[] }>("/api/projects"),
-  /** Register a git repo on the server by absolute path (writes its .be10x/mcp.json). */
-  addProject: (path: string) => post<{ project: Project }>("/api/projects", { path }),
+  /** Register a git repo on the server by absolute path (writes its .be10x/mcp.json). Personal unless
+   *  teamId is given, in which case it's shared with that team (caller must already be a member). */
+  addProject: (path: string, teamId?: string | null) =>
+    post<{ project: Project }>("/api/projects", { path, ...(teamId ? { teamId } : {}) }),
   /** Browse the server's directories for the folder picker (defaults to the server user's home). */
   browseDirs: (path?: string) =>
     request<FsListing>(`/api/fs/dirs${path ? `?path=${encodeURIComponent(path)}` : ""}`),

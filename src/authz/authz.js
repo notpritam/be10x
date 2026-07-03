@@ -1,6 +1,7 @@
-// ABOUTME: Role-based authorization over team memberships.
+// ABOUTME: Role-based authorization over team memberships, plus task/project-level access built on top.
 // ABOUTME: can() compares the actor's team-role rank against the action's required minimum rank.
 import { getMembership } from '../teams/memberships.js';
+import { getProject } from '../projects/projects.js';
 
 const RANK = { viewer: 0, member: 1, admin: 2, owner: 3 };
 
@@ -32,4 +33,36 @@ export function can(db, userId, action, { teamId } = {}) {
 
 export function assertCan(db, userId, action, ctx) {
   if (!can(db, userId, action, ctx)) throw new Error('FORBIDDEN');
+}
+
+// A project is reachable if the caller registered it personally, belongs to the team it's shared with, or
+// it predates per-account project scoping (owner_id AND team_id both NULL — see db.js
+// migrateProjectsTable) — those legacy rows stay visible to everyone rather than vanishing for accounts
+// that already relied on them. `action` is 'task.read' (view) or 'task.update' (mutate); the REQUIRED
+// rank table above already encodes viewer-can-read / member-can-write.
+export function canAccessProject(db, userId, project, action = 'task.read') {
+  if (!project) return false;
+  if (project.ownerId === userId) return true;
+  if (project.teamId) return can(db, userId, action, { teamId: project.teamId });
+  return !project.ownerId && !project.teamId;
+}
+
+// The single gate every task route (HTTP and MCP) should call before reading or mutating a task: the
+// owner always has full access; a tagged reviewer can always at least READ the task (reviewers are picked
+// by search across the whole platform, not just teammates — see RequestReviewControl.tsx / gfa_submit_plan
+// — so requiring team membership too would break reviewing outside your own team); otherwise a team task
+// needs the caller to hold at least `action`'s rank on that team; otherwise a project-scoped task defers to
+// canAccessProject for the project it's filed under. Note the reviewer carve-out is read-only — actually
+// submitting a review is gated separately, directly on reviewerId, wherever that route is handled.
+export function canAccessTask(db, userId, task, action = 'task.read') {
+  if (!task) return false;
+  if (task.ownerId === userId) return true;
+  if (action === 'task.read' && task.reviewerId === userId) return true;
+  if (task.teamId && can(db, userId, action, { teamId: task.teamId })) return true;
+  if (task.projectId) return canAccessProject(db, userId, getProject(db, task.projectId), action);
+  return false;
+}
+
+export function assertCanAccessTask(db, userId, task, action = 'task.read') {
+  if (!canAccessTask(db, userId, task, action)) throw new Error('FORBIDDEN');
 }

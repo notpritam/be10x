@@ -18,10 +18,13 @@ export function DirectoryPicker({
   open,
   onOpenChange,
   onAdded,
+  teamId = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAdded: (project: Project) => void;
+  /** Share the newly-added repo with this team instead of keeping it personal. */
+  teamId?: string | null;
 }) {
   const [listing, setListing] = useState<FsListing | null>(null);
   const [loading, setLoading] = useState(false);
@@ -45,7 +48,7 @@ export function DirectoryPicker({
   async function add(path: string) {
     setAdding(path);
     try {
-      const { project } = await api.addProject(path);
+      const { project } = await api.addProject(path, teamId);
       toast.success(`Added ${project.name}.`);
       onAdded(project);
       onOpenChange(false);

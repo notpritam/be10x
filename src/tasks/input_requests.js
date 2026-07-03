@@ -16,6 +16,13 @@ export function requestInput(db, taskId, question, { choices = null, allowCustom
   return getOpenInputRequest(db, taskId);
 }
 
+// The task an input request belongs to, without pulling the whole request row — the id-only lookup an
+// authorization check needs before answerInput mutates anything.
+export function getRequestTaskId(db, requestId) {
+  const row = db.prepare('SELECT task_id AS taskId FROM input_requests WHERE id = ?').get(requestId);
+  return row ? row.taskId : null;
+}
+
 export function answerInput(db, requestId, answer, answeredBy) {
   const req = db.prepare('SELECT id, task_id AS taskId, status FROM input_requests WHERE id = ?').get(requestId);
   if (!req) throw new Error('NO_REQUEST');

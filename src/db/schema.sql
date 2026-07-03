@@ -98,15 +98,26 @@ CREATE TABLE IF NOT EXISTS input_requests (
 
 -- A registered repository. Tasks carry a project_id (see tasks.project_id); this table gives that id a
 -- stable identity: `key` is derived from the git remote (or a local: slug) so the same repo maps to the
--- same project across machines. Standalone (no FKs) so it can be created independently of the task graph.
+-- same project across machines. owner_id/team_id scope who can see and claim it — the SAME repo key
+-- linked by two different accounts (or two different teams) is two separate rows, never one shared
+-- identity, so unrelated accounts can never collide onto (or leak through) the same project. A row with
+-- both NULL is pre-migration legacy data (see db.js migrateProjectsTable) and stays visible to everyone,
+-- exactly as it always was — only new registrations are scoped.
 CREATE TABLE IF NOT EXISTS projects (
   id             TEXT PRIMARY KEY,
-  key            TEXT NOT NULL UNIQUE,
+  key            TEXT NOT NULL,
   name           TEXT NOT NULL,
   default_branch TEXT,
   root_path      TEXT,
+  owner_id       TEXT REFERENCES users(id),
+  team_id        TEXT REFERENCES teams(id) ON DELETE CASCADE,
   created_at     INTEGER NOT NULL
 );
+-- Partial unique indexes (not a table constraint) because identity is scoped: one row per (key, team)
+-- for team projects, one row per (key, owner) for personal ones — a bare UNIQUE(key) would let two
+-- different owners/teams collide onto one row again.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_team_key ON projects (key, team_id) WHERE team_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_owner_key ON projects (key, owner_id) WHERE team_id IS NULL AND owner_id IS NOT NULL;
 
 -- One execution of an ephemeral Claude agent session against a task, in that task's git worktree.
 -- session_id is Claude Code's own session id, scraped from stream-json and persisted so a later run can

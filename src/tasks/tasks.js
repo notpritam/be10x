@@ -5,6 +5,7 @@ import { getType, validateContent } from './types.js';
 import { assertTransition } from './lifecycle.js';
 import { appendEvent } from './events.js';
 import { recordPlanVersion } from '../plans/versions.js';
+import { listProjectsForUser } from '../projects/projects.js';
 
 function hydrate(row) {
   return {
@@ -66,6 +67,37 @@ export function listTasks(db, { scope, teamId, status, ownerId } = {}) {
   if (ownerId) { where.push('owner_id = ?'); args.push(ownerId); }
   const sql = 'SELECT * FROM tasks' + (where.length ? ' WHERE ' + where.join(' AND ') : '') + ' ORDER BY created_at';
   return db.prepare(sql).all(...args).map(hydrate);
+}
+
+// The authorization-scoped counterpart HTTP callers must use instead of listTasks: every row returned is
+// one userId can actually see — owned personally, tagging them as reviewer (reviewers are picked by
+// platform-wide search, not just teammates — see authz.js canAccessTask), on a team they belong to, or
+// filed under a project they can access (see projects.js listProjectsForUser — includes pre-scoping legacy
+// projects). scope/teamId/status further NARROW that visible set; they can never widen it, so a
+// caller-supplied teamId for a team the user isn't in just yields zero rows instead of leaking anything
+// (see RCA issue 1).
+export function listTasksForUser(db, userId, { scope, teamId, status } = {}) {
+  const myTeamIds = db.prepare('SELECT team_id FROM memberships WHERE user_id = ?').all(userId).map((r) => r.team_id);
+  const visibleProjectIds = listProjectsForUser(db, userId).map((p) => p.id);
+
+  const visible = ['owner_id = @userId', 'reviewer_id = @userId'];
+  const args = { userId };
+  if (myTeamIds.length) {
+    visible.push(`team_id IN (${myTeamIds.map((_, i) => '@myTeam' + i).join(',')})`);
+    myTeamIds.forEach((id, i) => (args['myTeam' + i] = id));
+  }
+  if (visibleProjectIds.length) {
+    visible.push(`project_id IN (${visibleProjectIds.map((_, i) => '@proj' + i).join(',')})`);
+    visibleProjectIds.forEach((id, i) => (args['proj' + i] = id));
+  }
+
+  const where = ['(' + visible.join(' OR ') + ')'];
+  if (scope) { where.push('scope = @scope'); args.scope = scope; }
+  if (teamId) { where.push('team_id = @teamId'); args.teamId = teamId; }
+  if (status) { where.push('status = @status'); args.status = status; }
+
+  const sql = 'SELECT * FROM tasks WHERE ' + where.join(' AND ') + ' ORDER BY created_at';
+  return db.prepare(sql).all(args).map(hydrate);
 }
 
 // Post a visual artifact (RCA, diagram, finding, suggestion) the human sees in the task view. `content`

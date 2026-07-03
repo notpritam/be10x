@@ -1,6 +1,7 @@
 // ABOUTME: The wake queue — turns board events into agent runs. Enqueue on a human action; the scheduler
 // ABOUTME: claims the oldest pending wake (optimistic lock) and drives the agent. Ephemeral, not always-live.
 import { randomUUID } from 'node:crypto';
+import { canAccessProject } from '../authz/authz.js';
 
 // Known wake reasons → the executor mode each maps to lives in the scheduler; these are the vocabulary.
 export const WAKE_REASONS = ['plan', 'revise', 'input_answer', 'execute', 'pick_up_now', 'follow_up', 'verify'];
@@ -69,24 +70,32 @@ export function claimNextWake(db, { projectId, workerId = 'runner' } = {}) {
 // what a `be10x connect` runner on a MEMBER's machine calls over HTTP — it declares the repos (project
 // keys) it has checked out locally, and only gets wakes for those. Same optimistic-lock claim as the
 // others. Personal/project-less tasks are intentionally excluded (a remote runner has no repo for them).
-// Returns the claimed wake, or null (empty keys → null).
-export function claimNextWakeForKeys(db, { projectKeys = [], workerId = 'runner' } = {}) {
+//
+// A bare key match isn't enough: project identity is scoped (see projects.js), but two different accounts
+// can still legitimately declare the SAME key (e.g. a fallback `local:<folder-name>` key when neither repo
+// has a git remote) for two UNRELATED, separately-owned projects. Passing userId filters the SQL match down
+// to projects that userId's token can actually access — otherwise one account's connector could be handed
+// (and permanently fail to run) another account's wake. Returns the claimed wake, or null (empty keys → null).
+export function claimNextWakeForKeys(db, { projectKeys = [], workerId = 'runner', userId = null } = {}) {
   if (!Array.isArray(projectKeys) || projectKeys.length === 0) return null;
   const placeholders = projectKeys.map(() => '?').join(',');
   const rows = db
     .prepare(
-      `SELECT w.id FROM wake_queue w
+      `SELECT w.id, p.owner_id AS projectOwnerId, p.team_id AS projectTeamId FROM wake_queue w
          JOIN tasks t ON t.id = w.task_id
          JOIN projects p ON p.id = t.project_id
         WHERE w.claimed_at IS NULL AND w.enqueued_at <= ? AND p.key IN (${placeholders})
         ORDER BY w.enqueued_at, w.rowid`
     )
     .all(Date.now(), ...projectKeys);
-  for (const { id } of rows) {
+  for (const row of rows) {
+    if (userId && !canAccessProject(db, userId, { ownerId: row.projectOwnerId, teamId: row.projectTeamId }, 'task.update')) {
+      continue;
+    }
     const res = db
       .prepare('UPDATE wake_queue SET claimed_at = ?, claimed_by = ? WHERE id = ? AND claimed_at IS NULL')
-      .run(Date.now(), workerId, id);
-    if (res.changes === 1) return getWake(db, id);
+      .run(Date.now(), workerId, row.id);
+    if (res.changes === 1) return getWake(db, row.id);
   }
   return null;
 }

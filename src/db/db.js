@@ -18,6 +18,47 @@ const COLUMN_MIGRATIONS = [
   { table: 'tasks', column: 'artifacts_json', ddl: 'ALTER TABLE tasks ADD COLUMN artifacts_json TEXT' },
 ];
 
+// One-time rebuild for `projects`: the original table had a global UNIQUE(key) column constraint and no
+// owner/team identity, which let two different accounts' repos collide onto one shared row (see
+// docs/rca-2026-07-03-account-isolation.md, issue 2). SQLite can't ALTER a column's constraints in place,
+// so this recreates the table with owner_id/team_id, copies the data across, then best-effort backfills
+// ownership from task history (the earliest task filed under that project tells us who/which team it
+// really belongs to). Rows with no task history stay NULL/NULL — pre-existing, ownerless, and treated as
+// legacy-visible-to-everyone by the scoping queries, exactly as they behaved before this migration. Guarded
+// by the `owner_id` column check so it's idempotent and safe to run redundantly from every process that
+// opens this db (the http server, the local runner, and each spawned agent's MCP server all call openDb()).
+function migrateProjectsTable(db) {
+  const cols = db.prepare('PRAGMA table_info(projects)').all();
+  if (cols.some((c) => c.name === 'owner_id')) return;
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE projects_new (
+        id             TEXT PRIMARY KEY,
+        key            TEXT NOT NULL,
+        name           TEXT NOT NULL,
+        default_branch TEXT,
+        root_path      TEXT,
+        owner_id       TEXT REFERENCES users(id),
+        team_id        TEXT REFERENCES teams(id) ON DELETE CASCADE,
+        created_at     INTEGER NOT NULL
+      );
+      INSERT INTO projects_new (id, key, name, default_branch, root_path, created_at)
+        SELECT id, key, name, default_branch, root_path, created_at FROM projects;
+      DROP TABLE projects;
+      ALTER TABLE projects_new RENAME TO projects;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_team_key ON projects (key, team_id) WHERE team_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_owner_key ON projects (key, owner_id) WHERE team_id IS NULL AND owner_id IS NOT NULL;
+
+      UPDATE projects SET owner_id = (
+        SELECT owner_id FROM tasks WHERE tasks.project_id = projects.id ORDER BY tasks.created_at LIMIT 1
+      );
+      UPDATE projects SET team_id = (
+        SELECT team_id FROM tasks WHERE tasks.project_id = projects.id AND tasks.team_id IS NOT NULL ORDER BY tasks.created_at LIMIT 1
+      );
+    `);
+  })();
+}
+
 // Bring an existing db up to the current schema without dropping data. Table names here are our own
 // constants (never user input), so interpolating them into PRAGMA is safe.
 export function migrate(db) {
@@ -25,6 +66,7 @@ export function migrate(db) {
     const has = db.prepare(`PRAGMA table_info(${m.table})`).all().some((c) => c.name === m.column);
     if (!has) db.exec(m.ddl);
   }
+  migrateProjectsTable(db);
 }
 
 export function openDb(path = ':memory:') {

@@ -164,7 +164,10 @@ export function AppProvider({
   const [projects, setProjects] = useState<Project[]>([]);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
-  const [view, setView] = useState<View>(() => paramToView(parseLocation().viewKey, []));
+  // Raw setter for internal, non-navigational updates only (popstate restore, patching a placeholder
+  // team/project name once it loads) — these must NOT touch the open task. User-facing navigation goes
+  // through the wrapped `setView` below instead.
+  const [view, setViewRaw] = useState<View>(() => paramToView(parseLocation().viewKey, []));
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() => parseLocation().id);
   const [expanded, setExpanded] = useState<boolean>(() => parseLocation().expanded);
   const [openTabs, setOpenTabs] = useState<TabRef[]>(() => loadTabs());
@@ -230,7 +233,7 @@ export function AppProvider({
       const loc = parseLocation();
       setSelectedTaskId(loc.id);
       setExpanded(loc.expanded);
-      setView(paramToView(loc.viewKey, teamsRef.current));
+      setViewRaw(paramToView(loc.viewKey, teamsRef.current));
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -238,14 +241,14 @@ export function AppProvider({
 
   // A team view restored from the URL before teams loaded shows a placeholder name — fill it once loaded.
   useEffect(() => {
-    setView((v) =>
+    setViewRaw((v) =>
       v.kind === "team" ? { ...v, name: teams.find((t) => t.id === v.teamId)?.name ?? v.name } : v,
     );
   }, [teams]);
 
   // Same for a project view restored from the URL before the linked repos loaded.
   useEffect(() => {
-    setView((v) =>
+    setViewRaw((v) =>
       v.kind === "project"
         ? { ...v, name: projects.find((p) => p.id === v.projectId)?.name ?? v.name }
         : v,
@@ -360,6 +363,15 @@ export function AppProvider({
     }
     onSignedOut();
   }, [onSignedOut]);
+
+  // User-facing navigation: switching views (a sidebar click, a team being deleted, …) always leaves
+  // whatever task was open so the shell falls back to that view's board — otherwise the main area keeps
+  // showing the old task while the sidebar/tab-bar highlight silently moves to the new view underneath it.
+  const setView = useCallback((next: View) => {
+    setViewRaw(next);
+    setSelectedTaskId(null);
+    setExpanded(false);
+  }, []);
 
   const selectTask = useCallback((id: string | null) => {
     setSelectedTaskId(id);

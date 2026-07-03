@@ -14,17 +14,17 @@ import { createDeviceCode, getByUserCode, approveDeviceCode, denyDeviceCode, pol
 import { getTool } from '../mcp/tools.js';
 import { createTeam, deleteTeam } from '../teams/teams.js';
 import { listMembers, addMember, setRole, removeMember } from '../teams/memberships.js';
-import { assertCan } from '../authz/authz.js';
-import { createTask, getTask, listTasks, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
+import { assertCan, assertCanAccessTask, canAccessProject } from '../authz/authz.js';
+import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
 import { requestReview, submitReview } from '../reviews/reviews.js';
-import { requestInput, answerInput, getOpenInputRequest } from '../tasks/input_requests.js';
+import { requestInput, answerInput, getOpenInputRequest, getRequestTaskId } from '../tasks/input_requests.js';
 import { addComment, listComments } from '../tasks/comments.js';
 import { enqueueWake, getWake, claimNextWakeForKeys } from '../executor/wake.js';
 import { listRunsForTask, createRun, finishRun, setRunSession, getLatestRunForTask } from '../executor/runs.js';
 import { prepareWake, settleWake } from '../runner/runner.js';
 import { taskDebug } from '../tasks/debug.js';
-import { listProjects, registerProject, detectProjectKey, getProject } from '../projects/projects.js';
+import { listProjectsForUser, registerProject, detectProjectKey, getProject } from '../projects/projects.js';
 import { createShareLink, listShareLinksForTask, revokeShareLink, getActiveShareLinkByToken, shareView } from '../share/share.js';
 import { listPlanVersions, getPlanVersion } from '../plans/versions.js';
 
@@ -216,11 +216,11 @@ const ROUTES = [
     deleteTeam(db, params.id);
     send(res, 200, { ok: true });
   }],
-  ['GET', '/api/tasks', true, async ({ db, req, res }) => {
+  ['GET', '/api/tasks', true, async ({ db, req, res, user }) => {
     const q = new URL(req.url, 'http://x').searchParams;
-    send(res, 200, { tasks: listTasks(db, { scope: q.get('scope') || undefined, teamId: q.get('teamId') || undefined, status: q.get('status') || undefined }) });
+    send(res, 200, { tasks: listTasksForUser(db, user.id, { scope: q.get('scope') || undefined, teamId: q.get('teamId') || undefined, status: q.get('status') || undefined }) });
   }],
-  ['GET', '/api/projects', true, async ({ db, res }) => send(res, 200, { projects: listProjects(db) })],
+  ['GET', '/api/projects', true, async ({ db, res, user }) => send(res, 200, { projects: listProjectsForUser(db, user.id) })],
   // Server-side directory browser for the "add a repo" folder picker (the board runs on the user's
   // machine, so browsing the server FS = browsing their folders). Lists subdirectories only, flags git repos.
   ['GET', '/api/fs/dirs', true, async ({ req, res }) => {
@@ -243,14 +243,18 @@ const ROUTES = [
   ['POST', '/api/projects', true, async ({ db, res, body, user }) => {
     // Register a git repo on this machine from the dashboard (the board's answer to `be10x link`):
     // validate the path, register it, and write its .be10x/mcp.json so the spawned agent gets gfa_* tools.
+    // Personal by default; an explicit teamId (the "Add a repository" flow passes the current team view)
+    // shares it with that team instead — the caller must already be at least a member there.
     let p = String(body.path || '').trim();
     if (!p) throw new Error('MISSING_FIELD:path');
     if (p.startsWith('~')) p = homedir() + p.slice(1);
     const abs = resolve(p);
     if (!existsSync(abs)) throw new Error('NO_SUCH_PATH');
     if (!existsSync(join(abs, '.git'))) throw new Error('NOT_A_GIT_REPO');
+    const teamId = body.teamId || null;
+    if (teamId) assertCan(db, user.id, 'task.create', { teamId });
     const { key, rootPath, defaultBranch } = detectProjectKey(abs);
-    const project = registerProject(db, { key, name: body.name || basename(rootPath), rootPath, defaultBranch });
+    const project = registerProject(db, { key, name: body.name || basename(rootPath), rootPath, defaultBranch, ownerId: user.id, teamId });
     const { token } = createToken(db, user.id, 'ui:' + key);
     const dir = join(rootPath, '.be10x');
     mkdirSync(dir, { recursive: true });
@@ -263,11 +267,15 @@ const ROUTES = [
   ['POST', '/api/tasks', true, async ({ db, res, body, user }) => {
     // Orchestration inputs: which repo (projectId), isolation (worktree|branch, stored on content so the
     // executor can honor it), and whether to start the agent planning immediately (handOff).
+    const teamId = body.teamId || null;
+    if (teamId) assertCan(db, user.id, 'task.create', { teamId });
+    const projectId = body.projectId || null;
+    if (projectId && !canAccessProject(db, user.id, getProject(db, projectId))) throw new Error('FORBIDDEN');
     const content = { ...(body.content || {}) };
     if (body.isolation) content.isolation = body.isolation;
     let task = createTask(db, {
       type: body.type, scope: body.scope, title: body.title, ownerId: user.id,
-      content, teamId: body.teamId || null, projectId: body.projectId || null, severity: body.severity || 'medium',
+      content, teamId, projectId, severity: body.severity || 'medium',
     });
     if (body.handOff) {
       transition(db, task.id, 'researching', user.id, { handOff: true });
@@ -276,63 +284,130 @@ const ROUTES = [
     }
     send(res, 200, { task });
   }],
-  ['GET', '/api/tasks/:id', true, async ({ db, res, params }) => {
+  ['GET', '/api/tasks/:id', true, async ({ db, res, params, user }) => {
     const t = getTask(db, params.id);
     if (!t) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, t);
     send(res, 200, { task: t });
   }],
-  ['GET', '/api/tasks/:id/events', true, async ({ db, res, params }) => send(res, 200, { events: listEvents(db, params.id) })],
-  ['GET', '/api/tasks/:id/runs', true, async ({ db, res, params }) => send(res, 200, { runs: listRunsForTask(db, params.id) })],
+  ['GET', '/api/tasks/:id/events', true, async ({ db, res, params, user }) => {
+    const t = getTask(db, params.id);
+    if (!t) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, t);
+    send(res, 200, { events: listEvents(db, params.id) });
+  }],
+  ['GET', '/api/tasks/:id/runs', true, async ({ db, res, params, user }) => {
+    const t = getTask(db, params.id);
+    if (!t) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, t);
+    send(res, 200, { runs: listRunsForTask(db, params.id) });
+  }],
   // A consolidated raw snapshot behind the debug button: live agent status, runs, wake queue, events.
-  ['GET', '/api/tasks/:id/debug', true, async ({ db, res, params }) => {
+  ['GET', '/api/tasks/:id/debug', true, async ({ db, res, params, user }) => {
     const dbg = taskDebug(db, params.id);
     if (!dbg) return send(res, 404, { error: 'NO_SUCH_TASK' });
+    assertCanAccessTask(db, user.id, dbg.task);
     send(res, 200, dbg);
   }],
   ['POST', '/api/tasks/:id/transition', true, async ({ db, res, params, body, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, existing, 'task.update');
     const task = transition(db, params.id, body.to, user.id);
     // A drag that hands the task to the agent (→researching) or approves it (→ready_to_work) wakes it.
     if (body.to === 'researching') enqueueWake(db, params.id, 'plan');
     else if (body.to === 'ready_to_work') enqueueWake(db, params.id, 'execute');
     send(res, 200, { task });
   }],
-  ['POST', '/api/tasks/:id/plan', true, async ({ db, res, params, body, user }) => send(res, 200, { task: setPlan(db, params.id, body.plan, user.id) })],
+  ['POST', '/api/tasks/:id/plan', true, async ({ db, res, params, body, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, existing, 'task.update');
+    send(res, 200, { task: setPlan(db, params.id, body.plan, user.id) });
+  }],
   // Plan history: list past snapshots (newest-first), or restore one (re-sets it as the current plan,
   // which itself snapshots a fresh version).
-  ['GET', '/api/tasks/:id/plan-versions', true, async ({ db, res, params }) => send(res, 200, { versions: listPlanVersions(db, params.id) })],
+  ['GET', '/api/tasks/:id/plan-versions', true, async ({ db, res, params, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, existing);
+    send(res, 200, { versions: listPlanVersions(db, params.id) });
+  }],
   ['POST', '/api/tasks/:id/plan-versions/:versionId/restore', true, async ({ db, res, params, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, existing, 'task.update');
     const version = getPlanVersion(db, params.versionId);
     if (!version) throw new Error('NOT_FOUND');
     send(res, 200, { task: setPlan(db, params.id, version.plan, user.id) });
   }],
-  ['POST', '/api/tasks/:id/research', true, async ({ db, res, params, body, user }) => send(res, 200, { task: setResearch(db, params.id, body.research, user.id) })],
-  ['POST', '/api/tasks/:id/content', true, async ({ db, res, params, body, user }) => send(res, 200, { task: updateContent(db, params.id, body.patch || {}, user.id) })],
-  ['POST', '/api/tasks/:id/rate', true, async ({ db, res, params, body, user }) => send(res, 200, { task: rateTask(db, params.id, body.rating, user.id) })],
-  ['POST', '/api/tasks/:id/retry', true, async ({ db, res, params, user }) => send(res, 200, { task: retryTask(db, params.id, user.id) })],
-  ['POST', '/api/tasks/:id/review/request', true, async ({ db, res, params, body, user }) => send(res, 200, { task: requestReview(db, params.id, body.reviewerId, user.id) })],
+  ['POST', '/api/tasks/:id/research', true, async ({ db, res, params, body, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, existing, 'task.update');
+    send(res, 200, { task: setResearch(db, params.id, body.research, user.id) });
+  }],
+  ['POST', '/api/tasks/:id/content', true, async ({ db, res, params, body, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, existing, 'task.update');
+    send(res, 200, { task: updateContent(db, params.id, body.patch || {}, user.id) });
+  }],
+  ['POST', '/api/tasks/:id/rate', true, async ({ db, res, params, body, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, existing, 'task.update');
+    send(res, 200, { task: rateTask(db, params.id, body.rating, user.id) });
+  }],
+  ['POST', '/api/tasks/:id/retry', true, async ({ db, res, params, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, existing, 'task.update');
+    send(res, 200, { task: retryTask(db, params.id, user.id) });
+  }],
+  ['POST', '/api/tasks/:id/review/request', true, async ({ db, res, params, body, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, existing, 'task.update');
+    send(res, 200, { task: requestReview(db, params.id, body.reviewerId, user.id) });
+  }],
   ['POST', '/api/tasks/:id/review/submit', true, async ({ db, res, params, body, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    // The rank-based check isn't the right gate here — only the specific person tagged as reviewer may
+    // submit that review, not just any team member with sufficient rank.
+    if (existing.reviewerId !== user.id) throw new Error('FORBIDDEN');
     const review = submitReview(db, params.id, user.id, body.verdict, body.comment || '');
     // Approval wakes the agent to implement; requested changes wake it to revise the plan.
     if (review.verdict === 'approved') enqueueWake(db, params.id, 'execute', { review: 'approved' });
     else enqueueWake(db, params.id, 'revise', { verdict: 'changes_requested', comment: body.comment || '' });
     send(res, 200, { review });
   }],
-  ['GET', '/api/reviews/pending', true, async ({ db, res, user }) => send(res, 200, { tasks: listTasks(db, { status: 'plan_review' }).filter((t) => t.reviewerId === user.id) })],
+  ['GET', '/api/reviews/pending', true, async ({ db, res, user }) => send(res, 200, { tasks: listTasksForUser(db, user.id, { status: 'plan_review' }).filter((t) => t.reviewerId === user.id) })],
   ['POST', '/api/tasks/:id/hand-to-agent', true, async ({ db, res, params, user }) => {
     const t = getTask(db, params.id);
     if (!t) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, t, 'task.update');
     if (t.status === 'backlog') transition(db, params.id, 'researching', user.id, { handOff: true });
     enqueueWake(db, params.id, 'plan');
     send(res, 200, { task: getTask(db, params.id) });
   }],
-  ['POST', '/api/tasks/:id/pick-up-now', true, async ({ db, res, params }) => {
-    if (!getTask(db, params.id)) throw new Error('NO_TASK');
+  ['POST', '/api/tasks/:id/pick-up-now', true, async ({ db, res, params, user }) => {
+    const t = getTask(db, params.id);
+    if (!t) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, t, 'task.update');
     send(res, 200, { ok: true, wake: enqueueWake(db, params.id, 'pick_up_now') });
   }],
-  ['GET', '/api/tasks/:id/comments', true, async ({ db, res, params }) => send(res, 200, { comments: listComments(db, params.id) })],
+  ['GET', '/api/tasks/:id/comments', true, async ({ db, res, params, user }) => {
+    const t = getTask(db, params.id);
+    if (!t) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, t);
+    send(res, 200, { comments: listComments(db, params.id) });
+  }],
   ['POST', '/api/tasks/:id/comments', true, async ({ db, res, params, body, user }) => {
     const task = getTask(db, params.id);
     if (!task) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, task, 'task.update');
     const comment = addComment(db, params.id, { author: user.id, body: body.body, anchor: body.anchor });
     // A comment wakes the agent to address it — in every active state (revise the plan under review,
     // otherwise pick it up). Only genuinely-closed states (backlog awaiting hand-off, done/terminal) skip.
@@ -341,24 +416,50 @@ const ROUTES = [
     }
     send(res, 200, { comment });
   }],
-  ['POST', '/api/tasks/:id/input/request', true, async ({ db, res, params, body, user }) => send(res, 200, { inputRequest: requestInput(db, params.id, body.question, { choices: body.choices || null, allowCustom: body.allowCustom !== false }, user.id) })],
-  ['GET', '/api/tasks/:id/input', true, async ({ db, res, params }) => send(res, 200, { inputRequest: getOpenInputRequest(db, params.id) })],
+  ['POST', '/api/tasks/:id/input/request', true, async ({ db, res, params, body, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, existing, 'task.update');
+    send(res, 200, { inputRequest: requestInput(db, params.id, body.question, { choices: body.choices || null, allowCustom: body.allowCustom !== false }, user.id) });
+  }],
+  ['GET', '/api/tasks/:id/input', true, async ({ db, res, params, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, existing);
+    send(res, 200, { inputRequest: getOpenInputRequest(db, params.id) });
+  }],
   ['POST', '/api/input/:reqId/answer', true, async ({ db, res, params, body, user }) => {
-    const row = db.prepare('SELECT task_id AS taskId FROM input_requests WHERE id = ?').get(params.reqId);
+    const taskId = getRequestTaskId(db, params.reqId);
+    if (taskId) {
+      const existing = getTask(db, taskId);
+      if (existing) assertCanAccessTask(db, user.id, existing, 'task.update');
+    }
     answerInput(db, params.reqId, body.answer, user.id);
-    if (row) enqueueWake(db, row.taskId, 'input_answer', { answer: body.answer }); // resume the paused agent
+    if (taskId) enqueueWake(db, taskId, 'input_answer', { answer: body.answer }); // resume the paused agent
     send(res, 200, { ok: true });
   }],
 
   // --- Shareable, permissioned plan-review links --------------------------------------------------
-  // Owner-only (authRequired): mint / list / revoke a task's share links.
+  // Owner-only (authRequired): mint / list / revoke a task's share links. Strictly the task's owner, not
+  // just any team member — a share link hands an outsider real access (up to running the agent).
   ['POST', '/api/tasks/:id/share', true, async ({ db, res, params, body, user }) => {
-    if (!getTask(db, params.id)) throw new Error('NO_TASK');
+    const task = getTask(db, params.id);
+    if (!task) throw new Error('NO_TASK');
+    if (task.ownerId !== user.id) throw new Error('FORBIDDEN');
     const share = createShareLink(db, { taskId: params.id, permission: body.permission, createdBy: user.id });
     send(res, 200, { share });
   }],
-  ['GET', '/api/tasks/:id/shares', true, async ({ db, res, params }) => send(res, 200, { shares: listShareLinksForTask(db, params.id) })],
-  ['DELETE', '/api/share/:token', true, async ({ db, res, params }) => {
+  ['GET', '/api/tasks/:id/shares', true, async ({ db, res, params, user }) => {
+    const task = getTask(db, params.id);
+    if (!task) throw new Error('NO_TASK');
+    if (task.ownerId !== user.id) throw new Error('FORBIDDEN');
+    send(res, 200, { shares: listShareLinksForTask(db, params.id) });
+  }],
+  ['DELETE', '/api/share/:token', true, async ({ db, res, params, user }) => {
+    const link = getActiveShareLinkByToken(db, params.token);
+    if (!link) return send(res, 404, { error: 'NO_SUCH_SHARE' });
+    const task = getTask(db, link.task_id);
+    if (!task || task.ownerId !== user.id) throw new Error('FORBIDDEN');
     if (!revokeShareLink(db, params.token)) return send(res, 404, { error: 'NO_SUCH_SHARE' });
     send(res, 200, { ok: true });
   }],
@@ -458,10 +559,13 @@ const AGENT_ROUTES = [
 
   // A connector declares a repo it serves so tasks can target it and `claim` can match it. The project is
   // path-less on a hosted board (the repo lives on the member's machine, not the server). Idempotent.
-  ['POST', '/api/agent/projects', async ({ db, res, body }) => {
+  ['POST', '/api/agent/projects', async ({ db, res, body, auth }) => {
     const key = String(body.key || '').trim();
     if (!key) throw new Error('MISSING_FIELD:key');
-    const project = registerProject(db, { key, name: body.name || key, rootPath: null });
+    // Personal to the token's owner — a connector declares repos for itself, not a team (no team concept
+    // travels through `be10x connect` today). Scoped so two different accounts' connectors declaring the
+    // same key (e.g. the same folder name with no git remote) never collide onto one shared project.
+    const project = registerProject(db, { key, name: body.name || key, rootPath: null, ownerId: auth.userId });
     send(res, 200, { project });
   }],
 
@@ -473,7 +577,7 @@ const AGENT_ROUTES = [
   ['POST', '/api/agent/claim', async ({ db, res, body, auth }) => {
     const projectKeys = Array.isArray(body.projectKeys) ? body.projectKeys : [];
     const workerId = body.workerId || 'connect:' + auth.userId;
-    const wake = claimNextWakeForKeys(db, { projectKeys, workerId });
+    const wake = claimNextWakeForKeys(db, { projectKeys, workerId, userId: auth.userId });
     if (!wake) return send(res, 200, { wake: null });
     const task = getTask(db, wake.taskId);
     if (!task) return send(res, 200, { wake: null }); // orphaned wake row; nothing to run

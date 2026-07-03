@@ -3,7 +3,7 @@
 import {
   createTask,
   getTask,
-  listTasks,
+  listTasksForUser,
   setResearch,
   setPlan,
   transition,
@@ -15,12 +15,13 @@ import {
   handoffReasonForPhase,
 } from '../tasks/tasks.js';
 import { requestReview } from '../reviews/reviews.js';
-import { requestInput, answerInput } from '../tasks/input_requests.js';
+import { requestInput, answerInput, getRequestTaskId } from '../tasks/input_requests.js';
 import { addComment } from '../tasks/comments.js';
 import { claimNextReadyTask, recordProgress } from '../worker/worker.js';
-import { getProjectByKey } from '../projects/projects.js';
+import { listProjectsForUser } from '../projects/projects.js';
 import { enqueueWake } from '../executor/wake.js';
 import { STATES } from '../tasks/lifecycle.js';
+import { assertCan, assertCanAccessTask } from '../authz/authz.js';
 
 const SCOPES = ['personal', 'project', 'team'];
 const TYPES = ['code-issue', 'general'];
@@ -37,24 +38,35 @@ const ID_OR_TASKID = {
   taskId: { type: 'string', description: 'Alias for id — either is accepted.' },
 };
 
+// Every handler below that touches an existing task must go through this first: fetch it, and verify
+// ctx.userId (the token owner) can actually reach it — owns it, is on its team, or can see its project
+// (see authz.js canAccessTask). A personal access token is bearer-only, so without this a token minted for
+// one account's own work could read or mutate ANY task on the board by id (see RCA issue 1). Throws
+// NO_TASK / FORBIDDEN exactly like the equivalent HTTP routes.
+function requireTaskAccess(db, ctx, taskId, action = 'task.read') {
+  const task = getTask(db, taskId);
+  if (!task) throw new Error('NO_TASK');
+  assertCanAccessTask(db, ctx.userId, task, action);
+  return task;
+}
+
 // The registry. Every entry: { name, description, inputSchema (JSON Schema), handler(db, ctx, args) }.
 // Handlers call core and return the JSON-serializable result — core errors are allowed to throw.
 export const TOOLS = [
   {
     name: 'gfa_list_tasks',
-    description: 'List tasks on the board, optionally filtered by scope, team, lifecycle status, or owner.',
+    description: 'List tasks on the board, optionally filtered by scope, team, or lifecycle status. Always scoped to what the authenticated user can see.',
     inputSchema: {
       type: 'object',
       properties: {
         scope: { type: 'string', enum: SCOPES, description: 'Filter by scope.' },
         teamId: { type: 'string', description: 'Filter by team id.' },
         status: { type: 'string', enum: STATES, description: 'Filter by lifecycle status.' },
-        ownerId: { type: 'string', description: 'Filter by owner user id.' },
       },
       additionalProperties: false,
     },
     handler: (db, ctx, args = {}) =>
-      listTasks(db, { scope: args.scope, teamId: args.teamId, status: args.status, ownerId: args.ownerId }),
+      listTasksForUser(db, ctx.userId, { scope: args.scope, teamId: args.teamId, status: args.status }),
   },
   {
     name: 'gfa_get_task',
@@ -64,7 +76,11 @@ export const TOOLS = [
       properties: { ...ID_OR_TASKID },
       additionalProperties: false,
     },
-    handler: (db, ctx, args) => getTask(db, taskIdOf(args)),
+    handler: (db, ctx, args) => {
+      const task = getTask(db, taskIdOf(args));
+      if (task) assertCanAccessTask(db, ctx.userId, task);
+      return task;
+    },
   },
   {
     name: 'gfa_create_task',
@@ -83,8 +99,9 @@ export const TOOLS = [
       required: ['type', 'scope', 'title'],
       additionalProperties: false,
     },
-    handler: (db, ctx, args) =>
-      createTask(db, {
+    handler: (db, ctx, args) => {
+      if (args.teamId) assertCan(db, ctx.userId, 'task.create', { teamId: args.teamId });
+      return createTask(db, {
         type: args.type,
         scope: args.scope,
         title: args.title,
@@ -92,7 +109,8 @@ export const TOOLS = [
         content: args.content ?? {},
         teamId: args.teamId ?? null,
         severity: args.severity ?? 'medium',
-      }),
+      });
+    },
   },
   {
     name: 'gfa_research_task',
@@ -106,7 +124,10 @@ export const TOOLS = [
       required: ['research'],
       additionalProperties: false,
     },
-    handler: (db, ctx, args) => setResearch(db, taskIdOf(args), args.research, ctx.userId),
+    handler: (db, ctx, args) => {
+      requireTaskAccess(db, ctx, taskIdOf(args), 'task.update');
+      return setResearch(db, taskIdOf(args), args.research, ctx.userId);
+    },
   },
   {
     name: 'gfa_plan_task',
@@ -122,7 +143,10 @@ export const TOOLS = [
       required: ['plan'],
       additionalProperties: false,
     },
-    handler: (db, ctx, args) => setPlan(db, taskIdOf(args), args.plan, ctx.userId),
+    handler: (db, ctx, args) => {
+      requireTaskAccess(db, ctx, taskIdOf(args), 'task.update');
+      return setPlan(db, taskIdOf(args), args.plan, ctx.userId);
+    },
   },
   {
     name: 'gfa_submit_for_review',
@@ -136,7 +160,10 @@ export const TOOLS = [
       required: ['taskId', 'reviewerId'],
       additionalProperties: false,
     },
-    handler: (db, ctx, args) => requestReview(db, args.taskId, args.reviewerId, ctx.userId),
+    handler: (db, ctx, args) => {
+      requireTaskAccess(db, ctx, args.taskId, 'task.update');
+      return requestReview(db, args.taskId, args.reviewerId, ctx.userId);
+    },
   },
   {
     name: 'gfa_submit_plan',
@@ -152,8 +179,7 @@ export const TOOLS = [
       additionalProperties: false,
     },
     handler: (db, ctx, args) => {
-      const task = getTask(db, args.taskId);
-      if (!task) throw new Error('NO_TASK');
+      const task = requireTaskAccess(db, ctx, args.taskId, 'task.update');
       return requestReview(db, args.taskId, args.reviewerId || task.ownerId, ctx.userId);
     },
   },
@@ -165,7 +191,10 @@ export const TOOLS = [
       properties: { ...ID_OR_TASKID },
       additionalProperties: false,
     },
-    handler: (db, ctx, args) => transition(db, taskIdOf(args), 'ready_to_work', ctx.userId),
+    handler: (db, ctx, args) => {
+      requireTaskAccess(db, ctx, taskIdOf(args), 'task.update');
+      return transition(db, taskIdOf(args), 'ready_to_work', ctx.userId);
+    },
   },
   {
     name: 'gfa_claim_task',
@@ -196,13 +225,15 @@ export const TOOLS = [
       required: ['taskId'],
       additionalProperties: false,
     },
-    handler: (db, ctx, args) =>
-      recordProgress(
+    handler: (db, ctx, args) => {
+      requireTaskAccess(db, ctx, args.taskId, 'task.update');
+      return recordProgress(
         db,
         args.taskId,
         { state: args.state, step: args.step, message: args.message, todos: args.todos, changes: args.changes },
         ctx.userId
-      ),
+      );
+    },
   },
   {
     name: 'gfa_reply',
@@ -217,7 +248,10 @@ export const TOOLS = [
       required: ['taskId', 'message'],
       additionalProperties: false,
     },
-    handler: (db, ctx, args) => addComment(db, args.taskId, { author: 'agent', body: args.message, anchor: 'general' }),
+    handler: (db, ctx, args) => {
+      requireTaskAccess(db, ctx, args.taskId, 'task.update');
+      return addComment(db, args.taskId, { author: 'agent', body: args.message, anchor: 'general' });
+    },
   },
   {
     name: 'gfa_request_input',
@@ -233,8 +267,10 @@ export const TOOLS = [
       required: ['taskId', 'question'],
       additionalProperties: false,
     },
-    handler: (db, ctx, args) =>
-      requestInput(db, args.taskId, args.question, { choices: args.choices, allowCustom: args.allowCustom }, ctx.userId),
+    handler: (db, ctx, args) => {
+      requireTaskAccess(db, ctx, args.taskId, 'task.update');
+      return requestInput(db, args.taskId, args.question, { choices: args.choices, allowCustom: args.allowCustom }, ctx.userId);
+    },
   },
   {
     name: 'gfa_answer_input',
@@ -248,7 +284,11 @@ export const TOOLS = [
       required: ['requestId', 'answer'],
       additionalProperties: false,
     },
-    handler: (db, ctx, args) => answerInput(db, args.requestId, args.answer, ctx.userId),
+    handler: (db, ctx, args) => {
+      const taskId = getRequestTaskId(db, args.requestId);
+      if (taskId) requireTaskAccess(db, ctx, taskId, 'task.update');
+      return answerInput(db, args.requestId, args.answer, ctx.userId);
+    },
   },
   {
     name: 'gfa_rate_task',
@@ -262,7 +302,10 @@ export const TOOLS = [
       required: ['rating'],
       additionalProperties: false,
     },
-    handler: (db, ctx, args) => rateTask(db, taskIdOf(args), args.rating, ctx.userId),
+    handler: (db, ctx, args) => {
+      requireTaskAccess(db, ctx, taskIdOf(args), 'task.update');
+      return rateTask(db, taskIdOf(args), args.rating, ctx.userId);
+    },
   },
   {
     name: 'gfa_import_task',
@@ -303,9 +346,12 @@ export const TOOLS = [
       additionalProperties: false,
     },
     handler: (db, ctx, args) => {
+      if (args.teamId) assertCan(db, ctx.userId, 'task.create', { teamId: args.teamId });
       let projectId = null;
       if (args.projectKey) {
-        const p = getProjectByKey(db, args.projectKey);
+        // Resolved against what THIS user can see, not a bare global key lookup — two accounts can
+        // register the same key as separate, unrelated projects (see projects.js registerProject).
+        const p = listProjectsForUser(db, ctx.userId).find((proj) => proj.key === args.projectKey);
         if (!p) throw new Error('NO_PROJECT'); // link the repo first: `be10x link`
         projectId = p.id;
       }
@@ -357,8 +403,10 @@ export const TOOLS = [
       required: ['content'],
       additionalProperties: false,
     },
-    handler: (db, ctx, args) =>
-      postArtifact(db, taskIdOf(args), { key: args.key, kind: args.kind, title: args.title, content: args.content }, ctx.userId),
+    handler: (db, ctx, args) => {
+      requireTaskAccess(db, ctx, taskIdOf(args), 'task.update');
+      return postArtifact(db, taskIdOf(args), { key: args.key, kind: args.kind, title: args.title, content: args.content }, ctx.userId);
+    },
   },
   {
     name: 'gfa_submit_output',
@@ -372,7 +420,10 @@ export const TOOLS = [
       required: ['refs'],
       additionalProperties: false,
     },
-    handler: (db, ctx, args) => setRefs(db, taskIdOf(args), args.refs, ctx.userId),
+    handler: (db, ctx, args) => {
+      requireTaskAccess(db, ctx, taskIdOf(args), 'task.update');
+      return setRefs(db, taskIdOf(args), args.refs, ctx.userId);
+    },
   },
 ];
 

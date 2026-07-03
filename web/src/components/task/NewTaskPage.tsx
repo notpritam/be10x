@@ -225,7 +225,7 @@ export function NewTaskPage({
           </div>
         </div>
       </div>
-      <DirectoryPicker open={pickerOpen} onOpenChange={setPickerOpen} onAdded={onRepoAdded} />
+      <DirectoryPicker open={pickerOpen} onOpenChange={setPickerOpen} onAdded={onRepoAdded} teamId={scope.teamId} />
     </div>
   );
 }

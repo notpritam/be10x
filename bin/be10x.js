@@ -251,10 +251,6 @@ async function cmdLinkRemote(args, saved, cfgPath) {
 async function cmdLinkLocal(args) {
   const dbPath = dbPathAbs();
   const db = await openBoardDb(dbPath);
-  const cwd = process.cwd();
-  const { key, rootPath, defaultBranch } = detectProjectKey(cwd);
-  const name = args.name && args.name !== true ? args.name : basename(rootPath);
-  const project = registerProject(db, { key, name, rootPath, defaultBranch });
 
   const userId = resolveUserId(db, args.email);
   if (!userId) {
@@ -262,6 +258,11 @@ async function cmdLinkLocal(args) {
     console.error('(Connecting to a hosted board instead? Run:  be10x login <board-url>)');
     process.exit(1);
   }
+
+  const cwd = process.cwd();
+  const { key, rootPath, defaultBranch } = detectProjectKey(cwd);
+  const name = args.name && args.name !== true ? args.name : basename(rootPath);
+  const project = registerProject(db, { key, name, rootPath, defaultBranch, ownerId: userId });
 
   const { token } = createToken(db, userId, 'cli:' + key);
   const config = {
