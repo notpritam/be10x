@@ -51,8 +51,6 @@ function migrateProjectsTable(db) {
         SELECT id, key, name, default_branch, root_path, created_at FROM projects;
       DROP TABLE projects;
       ALTER TABLE projects_new RENAME TO projects;
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_team_key ON projects (key, team_id) WHERE team_id IS NOT NULL;
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_owner_key ON projects (key, owner_id) WHERE team_id IS NULL AND owner_id IS NOT NULL;
 
       UPDATE projects SET owner_id = (
         SELECT owner_id FROM tasks WHERE tasks.project_id = projects.id ORDER BY tasks.created_at LIMIT 1
@@ -64,6 +62,22 @@ function migrateProjectsTable(db) {
   })();
 }
 
+// The partial unique indexes that give `projects` its scoped identity (one row per (key, team) for
+// team projects, one row per (key, owner) for personal ones). Deliberately NOT inlined into
+// schema.sql's CREATE TABLE block: CREATE TABLE IF NOT EXISTS is a no-op against a database that
+// already has an (old-shape) `projects` table, so an index statement placed there would run
+// against the OLD columns and crash with "no such column: team_id" before migrateProjectsTable()
+// ever got a chance to add them — exactly what took down every deploy since that migration
+// landed. Calling this LAST in migrate(), after both COLUMN_MIGRATIONS and migrateProjectsTable()
+// have run, guarantees owner_id/team_id already exist on every path (fresh table via schema.sql,
+// already-migrated table, or a table this exact migrate() call just rebuilt).
+function ensureProjectsIndexes(db) {
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_team_key ON projects (key, team_id) WHERE team_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_owner_key ON projects (key, owner_id) WHERE team_id IS NULL AND owner_id IS NOT NULL;
+  `);
+}
+
 // Bring an existing db up to the current schema without dropping data. Table names here are our own
 // constants (never user input), so interpolating them into PRAGMA is safe.
 export function migrate(db) {
@@ -72,6 +86,7 @@ export function migrate(db) {
     if (!has) db.exec(m.ddl);
   }
   migrateProjectsTable(db);
+  ensureProjectsIndexes(db);
 }
 
 export function openDb(path = ':memory:') {

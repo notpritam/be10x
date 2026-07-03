@@ -103,6 +103,14 @@ CREATE TABLE IF NOT EXISTS input_requests (
 -- identity, so unrelated accounts can never collide onto (or leak through) the same project. A row with
 -- both NULL is pre-migration legacy data (see db.js migrateProjectsTable) and stays visible to everyone,
 -- exactly as it always was — only new registrations are scoped.
+-- The two partial unique indexes that give this table its scoped identity (one row per (key, team)
+-- for team projects, one row per (key, owner) for personal ones) are created in db.js's
+-- ensureProjectsIndexes(), NOT here — CREATE TABLE IF NOT EXISTS is a no-op against an existing
+-- (pre-migration) database, so an index statement sitting right here would run against the OLD
+-- table shape (no owner_id/team_id yet) and crash the whole db.exec() with "no such column:
+-- team_id" before migrate() ever gets a chance to add them. ensureProjectsIndexes() runs last,
+-- after the columns are guaranteed to exist on every path (fresh table, already-migrated table,
+-- or just-rebuilt-by-migrateProjectsTable table) — see db.js for the full explanation.
 CREATE TABLE IF NOT EXISTS projects (
   id             TEXT PRIMARY KEY,
   key            TEXT NOT NULL,
@@ -113,11 +121,6 @@ CREATE TABLE IF NOT EXISTS projects (
   team_id        TEXT REFERENCES teams(id) ON DELETE CASCADE,
   created_at     INTEGER NOT NULL
 );
--- Partial unique indexes (not a table constraint) because identity is scoped: one row per (key, team)
--- for team projects, one row per (key, owner) for personal ones — a bare UNIQUE(key) would let two
--- different owners/teams collide onto one row again.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_team_key ON projects (key, team_id) WHERE team_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_owner_key ON projects (key, owner_id) WHERE team_id IS NULL AND owner_id IS NOT NULL;
 
 -- One execution of an ephemeral Claude agent session against a task, in that task's git worktree.
 -- session_id is Claude Code's own session id, scraped from stream-json and persisted so a later run can
