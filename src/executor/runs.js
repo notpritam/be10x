@@ -2,6 +2,17 @@
 // ABOUTME: durable state (session_id, worktree, status) that lets a lost process resume from the DB.
 import { randomUUID } from 'node:crypto';
 
+// A SUM(...) fragment over runs' token/cost columns, aliased to the camelCase names every usage
+// consumer (admin dashboard, leaderboard) expects. Shared so the two never drift apart. `alias` is
+// the runs table's alias in the caller's query (never user input — always a literal at call sites).
+export function usageTotalsSql(alias) {
+  return `COALESCE(SUM(${alias}.input_tokens), 0) AS inputTokens,
+          COALESCE(SUM(${alias}.output_tokens), 0) AS outputTokens,
+          COALESCE(SUM(${alias}.cache_creation_tokens), 0) AS cacheCreationTokens,
+          COALESCE(SUM(${alias}.cache_read_tokens), 0) AS cacheReadTokens,
+          COALESCE(SUM(${alias}.cost_usd), 0) AS costUsd`;
+}
+
 // Map a snake_case `runs` row to the camelCase run object the rest of the code uses. `result` is the
 // parsed result_json (null when unset). Returns null for a missing row.
 function hydrate(row) {
@@ -23,6 +34,11 @@ function hydrate(row) {
     createdAt: row.created_at,
     startedAt: row.started_at,
     endedAt: row.ended_at,
+    inputTokens: row.input_tokens,
+    outputTokens: row.output_tokens,
+    cacheCreationTokens: row.cache_creation_tokens,
+    cacheReadTokens: row.cache_read_tokens,
+    costUsd: row.cost_usd,
   };
 }
 
@@ -80,16 +96,26 @@ export function markRunning(db, id) {
 }
 
 // Close a run out. `status` must be 'done' or 'failed'. `result` (any JSON) and `error` (stringified)
-// are optional; ended_at is stamped now.
-export function finishRun(db, id, { status, result = null, error = null } = {}) {
+// are optional; ended_at is stamped now. `usage` ({ inputTokens, outputTokens,
+// cacheCreationTokens, cacheReadTokens, costUsd }, see claude-adapter.js extractUsage) is optional
+// and each field independently nullable — a run that never reached a result event just persists
+// nulls rather than blocking on missing usage data.
+export function finishRun(db, id, { status, result = null, error = null, usage = null } = {}) {
   if (status !== 'done' && status !== 'failed') {
     throw new Error('finishRun: status must be done|failed');
   }
-  db.prepare('UPDATE runs SET status = ?, result_json = ?, error = ?, ended_at = ? WHERE id = ?').run(
+  db.prepare(
+    'UPDATE runs SET status = ?, result_json = ?, error = ?, ended_at = ?, input_tokens = ?, output_tokens = ?, cache_creation_tokens = ?, cache_read_tokens = ?, cost_usd = ? WHERE id = ?'
+  ).run(
     status,
     result == null ? null : JSON.stringify(result),
     error == null ? null : String(error),
     Date.now(),
+    usage?.inputTokens ?? null,
+    usage?.outputTokens ?? null,
+    usage?.cacheCreationTokens ?? null,
+    usage?.cacheReadTokens ?? null,
+    usage?.costUsd ?? null,
     id
   );
   return getRun(db, id);

@@ -56,6 +56,19 @@ export interface FsListing {
 
 export type TeamRole = "owner" | "admin" | "member" | "viewer";
 
+/** One row of the public leaderboard — tasks completed and token usage through be10x only. */
+export interface LeaderboardRow {
+  id: string;
+  email: string;
+  displayName: string;
+  tasksDone: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  costUsd: number;
+}
+
 export interface Member {
   userId: string;
   displayName: string | null;

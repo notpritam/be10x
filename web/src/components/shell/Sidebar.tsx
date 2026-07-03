@@ -10,6 +10,7 @@ import {
   MessageCircleQuestion,
   Plug,
   Plus,
+  Trophy,
   UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -37,12 +38,14 @@ export function Sidebar({
   onConnectAgent,
   onNewTask,
   onProfile,
+  onLeaderboard,
 }: {
   collapsed: boolean;
   onToggleCollapse: () => void;
   onConnectAgent: () => void;
   onNewTask: () => void;
   onProfile: () => void;
+  onLeaderboard: () => void;
 }) {
   const { user, teams, projects, view, setView, counts, logout } = useApp();
   const activeKey = viewKey(view);
@@ -213,6 +216,10 @@ export function Sidebar({
             <DropdownMenuItem onClick={onProfile}>
               <UserRound className="size-4" />
               Profile
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onLeaderboard}>
+              <Trophy className="size-4" />
+              Leaderboard
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onConnectAgent}>
               <Plug className="size-4" />

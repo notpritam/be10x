@@ -12,6 +12,7 @@ import { BootSplash } from "@/components/common/BootSplash";
 import { ShareReviewPage } from "@/components/share/ShareReviewPage";
 import { DeviceApprovePage } from "@/components/agent/DeviceApprovePage";
 import { LandingPage } from "@/components/landing/LandingPage";
+import { AdminDashboard } from "@/components/admin/AdminDashboard";
 
 type Session = "loading" | User | null;
 
@@ -39,6 +40,10 @@ export function App() {
   const shareToken =
     typeof window !== "undefined" ? /^\/share\/([^/]+)\/?$/.exec(window.location.pathname)?.[1] : undefined;
 
+  // The admin dashboard (/admin) has its own bearer-token gate, independent of the session cookie
+  // entirely — it renders before session resolution so it never waits on (or requires) a login.
+  const isAdminRoute = typeof window !== "undefined" && window.location.pathname === "/admin";
+
   // The `be10x login` approve screen (/connect?code=…). Requires an account — the minted token binds to it —
   // so it renders after auth; a signed-out visitor hits the auth screen first, then lands back here.
   const connectCode =
@@ -48,7 +53,9 @@ export function App() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      {shareToken ? (
+      {isAdminRoute ? (
+        <AdminDashboard />
+      ) : shareToken ? (
         <ShareReviewPage token={decodeURIComponent(shareToken)} />
       ) : session === "loading" ? (
         <BootSplash />

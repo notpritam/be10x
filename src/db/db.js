@@ -16,6 +16,11 @@ const COLUMN_MIGRATIONS = [
   { table: 'runs', column: 'executor', ddl: "ALTER TABLE runs ADD COLUMN executor TEXT NOT NULL DEFAULT 'claude'" },
   { table: 'runs', column: 'model', ddl: 'ALTER TABLE runs ADD COLUMN model TEXT' },
   { table: 'tasks', column: 'artifacts_json', ddl: 'ALTER TABLE tasks ADD COLUMN artifacts_json TEXT' },
+  { table: 'runs', column: 'input_tokens', ddl: 'ALTER TABLE runs ADD COLUMN input_tokens INTEGER' },
+  { table: 'runs', column: 'output_tokens', ddl: 'ALTER TABLE runs ADD COLUMN output_tokens INTEGER' },
+  { table: 'runs', column: 'cache_creation_tokens', ddl: 'ALTER TABLE runs ADD COLUMN cache_creation_tokens INTEGER' },
+  { table: 'runs', column: 'cache_read_tokens', ddl: 'ALTER TABLE runs ADD COLUMN cache_read_tokens INTEGER' },
+  { table: 'runs', column: 'cost_usd', ddl: 'ALTER TABLE runs ADD COLUMN cost_usd REAL' },
 ];
 
 // One-time rebuild for `projects`: the original table had a global UNIQUE(key) column constraint and no

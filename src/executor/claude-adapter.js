@@ -177,6 +177,24 @@ export function parseStreamLine(line) {
   };
 }
 
+// Extracts token/cost usage from a stream-json `result` event's `usage` + `total_cost_usd` fields
+// (see docs/superpowers/specs/2026-07-03-admin-dashboard-leaderboard-design.md). Tolerant of a
+// missing or malformed shape — a run whose stream never reached `result`, or an unexpected future
+// shape, just yields all-null fields rather than throwing, so usage capture never blocks a run.
+export function extractUsage(result) {
+  const empty = { inputTokens: null, outputTokens: null, cacheCreationTokens: null, cacheReadTokens: null, costUsd: null };
+  if (!result || typeof result !== 'object') return empty;
+  const u = result.usage && typeof result.usage === 'object' ? result.usage : {};
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  return {
+    inputTokens: num(u.input_tokens),
+    outputTokens: num(u.output_tokens),
+    cacheCreationTokens: num(u.cache_creation_input_tokens),
+    cacheReadTokens: num(u.cache_read_input_tokens),
+    costUsd: num(result.total_cost_usd),
+  };
+}
+
 // Stateful reducer over a stream-json line stream. Feed lines via push(); read accumulated state via
 // the getters. `sessionId` is the first one seen, `text` is all assistant text concatenated, and
 // `done`/`result` flip once the terminal `type:'result'` line arrives.

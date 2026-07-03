@@ -11,6 +11,7 @@ import { BoardView } from "@/components/board/BoardView";
 import { ListView } from "@/components/board/ListView";
 import { NewTaskPage } from "@/components/task/NewTaskPage";
 import { ProfilePage } from "@/components/user/ProfilePage";
+import { LeaderboardPage } from "@/components/leaderboard/LeaderboardPage";
 import { DeepDivePanel } from "@/components/task/DeepDivePanel";
 import { useTaskDetail } from "@/components/task/useTaskDetail";
 import { ManageTeamDialog } from "@/components/team/ManageTeamDialog";
@@ -22,6 +23,7 @@ export function AppShell() {
   const [tab, setTab] = useState<BoardTab>("board");
   const [composing, setComposing] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [manageTeamOpen, setManageTeamOpen] = useState(false);
   const [connectAgentOpen, setConnectAgentOpen] = useState(false);
 
@@ -31,11 +33,13 @@ export function AppShell() {
 
   const startCompose = () => {
     setShowProfile(false);
+    setShowLeaderboard(false);
     setComposing(true);
   };
   const leaveOverlays = () => {
     setComposing(false);
     setShowProfile(false);
+    setShowLeaderboard(false);
   };
 
   return (
@@ -47,7 +51,13 @@ export function AppShell() {
         onNewTask={startCompose}
         onProfile={() => {
           setComposing(false);
+          setShowLeaderboard(false);
           setShowProfile(true);
+        }}
+        onLeaderboard={() => {
+          setComposing(false);
+          setShowProfile(false);
+          setShowLeaderboard(true);
         }}
       />
 
@@ -61,18 +71,21 @@ export function AppShell() {
           composing={composing}
           onCloseCompose={() => setComposing(false)}
         />
-        {showProfile ? (
+        {showProfile || showLeaderboard ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex shrink-0 items-center border-b border-border/60 px-4 py-2">
               <button
                 type="button"
-                onClick={() => setShowProfile(false)}
+                onClick={() => {
+                  setShowProfile(false);
+                  setShowLeaderboard(false);
+                }}
                 className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               >
                 <ArrowLeft className="size-4" /> Back
               </button>
             </div>
-            <ProfilePage />
+            {showProfile ? <ProfilePage /> : <LeaderboardPage />}
           </div>
         ) : composing ? (
           <NewTaskPage

@@ -140,7 +140,17 @@ CREATE TABLE IF NOT EXISTS runs (
   error         TEXT,
   created_at    INTEGER NOT NULL,
   started_at    INTEGER,
-  ended_at      INTEGER
+  ended_at      INTEGER,
+  -- Token usage + cost from Claude Code's own stream-json `result` event (see
+  -- docs/superpowers/specs/2026-07-03-admin-dashboard-leaderboard-design.md) — null until that
+  -- event arrives, and stays null for a run that never finishes cleanly. Powers the admin
+  -- dashboard and leaderboard's "tokens through be10x" figures; not a substitute for a user's
+  -- actual Anthropic billing, which be10x has no visibility into.
+  input_tokens          INTEGER,
+  output_tokens         INTEGER,
+  cache_creation_tokens INTEGER,
+  cache_read_tokens     INTEGER,
+  cost_usd              REAL
 );
 
 -- The step-by-step execution trace of a run — the "what happened, in depth" record for debugging: the

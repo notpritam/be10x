@@ -11,7 +11,7 @@ import { writeFileSync, unlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { buildClaudeCommand, BE10X_SYSTEM_PROMPT, StreamAccumulator } from '../executor/claude-adapter.js';
+import { buildClaudeCommand, BE10X_SYSTEM_PROMPT, StreamAccumulator, extractUsage } from '../executor/claude-adapter.js';
 import { ensureWorktree as realEnsureWorktree, worktreeBranch, collectGitMeta } from '../executor/worktree.js';
 import { buildPrompt, deriveError, FRESH_MODES } from '../executor/executor.js';
 import { classifyFailure } from '../executor/failures.js';
@@ -136,7 +136,7 @@ export function makeRemoteExecutor(repo, opts = {}) {
         settled = true;
         cleanup(systemPromptPath);
         const git = collectGitMeta(wt.path, wt.baseRef);
-        const summary = { sessionId: acc.sessionId, worktree: wt.path, branch, mode, done: acc.done, ...(git ? { git } : {}) };
+        const summary = { sessionId: acc.sessionId, worktree: wt.path, branch, mode, done: acc.done, usage: extractUsage(acc.result), ...(git ? { git } : {}) };
         if (ok && acc.done) {
           summary.ok = true;
         } else {

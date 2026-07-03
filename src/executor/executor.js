@@ -12,7 +12,7 @@ import { writeFileSync, unlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { buildClaudeCommand, BE10X_SYSTEM_PROMPT, StreamAccumulator } from './claude-adapter.js';
+import { buildClaudeCommand, BE10X_SYSTEM_PROMPT, StreamAccumulator, extractUsage } from './claude-adapter.js';
 import { classifyFailure, guidance } from './failures.js';
 import { ensureWorktree as realEnsureWorktree, worktreeBranch, collectGitMeta } from './worktree.js';
 import { createRun, setRunSession, setRunModel, setRunPid, markRunning, finishRun, getLatestRunForTask } from './runs.js';
@@ -345,9 +345,10 @@ export function makeClaudeExecutor(db, project, opts = {}) {
         } catch {
           // best-effort trace
         }
+        const usage = extractUsage(acc.result);
         if (ok && acc.done) {
           summary.ok = true;
-          finishRun(db, run.id, { status: 'done', result: summary });
+          finishRun(db, run.id, { status: 'done', result: summary, usage });
           recordProgress(
             db,
             task.id,
@@ -362,7 +363,7 @@ export function makeClaudeExecutor(db, project, opts = {}) {
           summary.ok = false;
           summary.failureKind = failureKind;
           summary.error = error;
-          finishRun(db, run.id, { status: 'failed', result: summary, error });
+          finishRun(db, run.id, { status: 'failed', result: summary, error, usage });
           const g = guidance(failureKind);
           const message = g ? `${truncate(error, 180)} — ${g}` : truncate(error);
           recordProgress(

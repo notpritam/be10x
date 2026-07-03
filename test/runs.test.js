@@ -92,3 +92,26 @@ test('finishRun closes the run and round-trips the result; bad status throws', (
 
   assert.throws(() => finishRun(db, run.id, { status: 'weird' }), /done\|failed/);
 });
+
+test('finishRun persists token usage when given, and leaves it null when omitted', () => {
+  const db = seed();
+  const withUsage = createRun(db, { taskId: 't1' });
+  const done = finishRun(db, withUsage.id, {
+    status: 'done',
+    result: { ok: true },
+    usage: { inputTokens: 100, outputTokens: 250, cacheCreationTokens: 10, cacheReadTokens: 5, costUsd: 0.012 },
+  });
+  assert.equal(done.inputTokens, 100);
+  assert.equal(done.outputTokens, 250);
+  assert.equal(done.cacheCreationTokens, 10);
+  assert.equal(done.cacheReadTokens, 5);
+  assert.equal(done.costUsd, 0.012);
+
+  const withoutUsage = createRun(db, { taskId: 't1' });
+  const finished = finishRun(db, withoutUsage.id, { status: 'failed', error: 'crashed' });
+  assert.equal(finished.inputTokens, null);
+  assert.equal(finished.outputTokens, null);
+  assert.equal(finished.cacheCreationTokens, null);
+  assert.equal(finished.cacheReadTokens, null);
+  assert.equal(finished.costUsd, null);
+});

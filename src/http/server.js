@@ -29,6 +29,8 @@ import { listProjectsForUser, registerProject, detectProjectKey, getProject } fr
 import { createShareLink, listShareLinksForTask, revokeShareLink, getActiveShareLinkByToken, shareView } from '../share/share.js';
 import { listPlanVersions, getPlanVersion } from '../plans/versions.js';
 import { recordTelemetryBatch } from '../telemetry/store.js';
+import { adminOverview, listUsersForAdmin, userDetailForAdmin } from '../admin/admin.js';
+import { leaderboard, startOfCurrentMonthMs } from '../leaderboard/leaderboard.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(here, '..', '..', 'public');
@@ -591,6 +593,42 @@ const ROUTES = [
       }),
     });
   }],
+
+  // --- admin dashboard (see docs/superpowers/specs/2026-07-03-admin-dashboard-leaderboard-design.md) ---
+  // Same GFA_ADMIN_TOKEN gate as the telemetry viewer above — a bare 404 on any auth failure.
+  ['GET', '/api/admin/overview', false, async ({ db, req, res }) => {
+    if (!validAdminToken(req)) return send(res, 404, { error: 'NOT_FOUND' });
+    send(res, 200, adminOverview(db));
+  }],
+  ['GET', '/api/admin/users', false, async ({ db, req, res }) => {
+    if (!validAdminToken(req)) return send(res, 404, { error: 'NOT_FOUND' });
+    const q = new URL(req.url, 'http://x').searchParams;
+    send(res, 200, { users: listUsersForAdmin(db, { q: q.get('q') || '', limit: q.get('limit') }) });
+  }],
+  ['GET', '/api/admin/users/:id', false, async ({ db, req, res, params }) => {
+    if (!validAdminToken(req)) return send(res, 404, { error: 'NOT_FOUND' });
+    const detail = userDetailForAdmin(db, params.id);
+    if (!detail) return send(res, 404, { error: 'NOT_FOUND' });
+    send(res, 200, detail);
+  }],
+
+  // Public leaderboard — always-on platform data (tasks completed + tokens through be10x), not
+  // gated behind the opt-in CLI telemetry flag (see the design doc). scope=all needs no session;
+  // scope=team:<id> does, so an outsider can't probe a team's roster by guessing its id.
+  // period=month|all (default all) additionally scopes the ranking to the current calendar month.
+  ['GET', '/api/leaderboard', false, async ({ db, req, res, user }) => {
+    const q = new URL(req.url, 'http://x').searchParams;
+    const scope = q.get('scope') || 'all';
+    const period = q.get('period') === 'month' ? 'month' : 'all';
+    const sinceMs = period === 'month' ? startOfCurrentMonthMs() : null;
+    if (scope.startsWith('team:')) {
+      const teamId = scope.slice('team:'.length);
+      if (!user) return send(res, 401, { error: 'NO_SESSION' });
+      assertCan(db, user.id, 'team.read', { teamId });
+      return send(res, 200, { scope, period, rows: leaderboard(db, { teamId, sinceMs }) });
+    }
+    send(res, 200, { scope: 'all', period, rows: leaderboard(db, { sinceMs }) });
+  }],
 ];
 
 // The agent/runner API — token (Bearer) authenticated, transport-agnostic. This is how an agent running on
@@ -666,7 +704,9 @@ const AGENT_ROUTES = [
       finishRun(
         db,
         body.runId,
-        summary.ok === false ? { status: 'failed', result: summary, error: summary.error } : { status: 'done', result: summary }
+        summary.ok === false
+          ? { status: 'failed', result: summary, error: summary.error, usage: summary.usage }
+          : { status: 'done', result: summary, usage: summary.usage }
       );
     }
     const commentIds = Array.isArray(body.commentIds) ? body.commentIds : [];

@@ -7,6 +7,7 @@ import type {
   FsListing,
   InputRequest,
   Isolation,
+  LeaderboardRow,
   Member,
   MintedToken,
   Project,
@@ -162,6 +163,12 @@ export const api = {
   // Teams
   listTeams: () => request<{ teams: Team[] }>("/api/teams"),
   createTeam: (name: string) => post<{ team: Team }>("/api/teams", { name }),
+
+  // Leaderboard — tasks completed + tokens through be10x. scope: "all" or `team:<id>`; period: "all" or "month".
+  leaderboard: (scope: string = "all", period: "all" | "month" = "all") =>
+    request<{ scope: string; period: string; rows: LeaderboardRow[] }>(
+      `/api/leaderboard?scope=${encodeURIComponent(scope)}&period=${period}`,
+    ),
 
   // Team membership
   listMembers: (teamId: string) =>

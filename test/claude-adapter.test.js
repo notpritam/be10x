@@ -8,6 +8,7 @@ import {
   buildClaudeCommand,
   parseStreamLine,
   StreamAccumulator,
+  extractUsage,
 } from '../src/executor/claude-adapter.js';
 
 // True when `sub` appears as a contiguous run inside `arr` — used to assert flag+value adjacency.
@@ -166,4 +167,34 @@ test('StreamAccumulator: keeps the first session id and concatenates assistant t
   acc.push('{"type":"assistant","message":{"content":[{"type":"text","text":"b"}]},"session_id":"second"}');
   assert.equal(acc.sessionId, 'first');
   assert.equal(acc.text, 'ab');
+});
+
+test('extractUsage pulls token counts and cost off a real-shaped result event', () => {
+  const result = {
+    type: 'result',
+    subtype: 'success',
+    total_cost_usd: 0.0421,
+    usage: {
+      input_tokens: 120,
+      output_tokens: 340,
+      cache_creation_input_tokens: 50,
+      cache_read_input_tokens: 900,
+    },
+  };
+  assert.deepEqual(extractUsage(result), {
+    inputTokens: 120,
+    outputTokens: 340,
+    cacheCreationTokens: 50,
+    cacheReadTokens: 900,
+    costUsd: 0.0421,
+  });
+});
+
+test('extractUsage is all-null for a missing/malformed result, never throws', () => {
+  const empty = { inputTokens: null, outputTokens: null, cacheCreationTokens: null, cacheReadTokens: null, costUsd: null };
+  assert.deepEqual(extractUsage(null), empty);
+  assert.deepEqual(extractUsage(undefined), empty);
+  assert.deepEqual(extractUsage('not an object'), empty);
+  assert.deepEqual(extractUsage({ subtype: 'success' }), empty); // no usage/cost fields at all
+  assert.deepEqual(extractUsage({ usage: { input_tokens: 'not a number' } }), empty); // wrong type
 });
