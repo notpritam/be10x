@@ -101,6 +101,14 @@
   .colbox ul { margin: 0; padding-left: 18px; font-size: 13px; color: #34383f; }
   .colbox li { margin: 6px 0; }
 
+  .roadmap { display: flex; align-items: stretch; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .rstep { flex: 1 1 180px; background: #fff; border: 1px solid var(--line-strong); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+  .rstep .rn { width: 22px; height: 22px; border-radius: 7px; background: var(--accent); color: #fff; font-weight: 700; font-size: 12px; display: grid; place-items: center; margin-bottom: 4px; }
+  .rstep b { font-size: 13.5px; }
+  .rstep span { font-size: 12px; color: var(--muted); line-height: 1.4; }
+  .rarrow { align-self: center; color: var(--faint); font-size: 18px; }
+  @media (max-width: 760px) { .rarrow { transform: rotate(90deg); } }
+
   footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--faint); }
 </style>
 </head>
@@ -117,6 +125,38 @@
       <span><i class="dot blocked"></i> Not available in Claude Code itself — confirmed via official docs</span>
     </div>
   </header>
+
+  <section id="tldr" style="margin-top:32px">
+    <div class="card" style="border:1.5px solid var(--accent);padding-top:18px">
+      <div class="kicker" style="margin-bottom:10px">start here — the short version</div>
+      <div class="twocol" style="margin-bottom:6px">
+        <div class="colbox ok">
+          <h3><span class="check">✓</span> What we found</h3>
+          <ul>
+            <li>Every step is a fresh process, but the conversation isn't lost — <code>sessionId</code> carries it forward (§01–02).</li>
+            <li>Headless mode (what runs today) can't do live mid-turn typing — confirmed against Claude Code's own docs (§03).</li>
+            <li>A real pty <b>can</b> — tested live in this environment: works, resumes correctly (§07).</li>
+          </ul>
+        </div>
+        <div class="colbox no">
+          <h3><span class="cross">✕</span> The catch</h3>
+          <ul>
+            <li>Nothing stops two processes (a runner wake + a live session) from colliding on the same task — confirmed, and kept that way by decision, not left over (§05).</li>
+            <li>There's no way to stop a run once it starts — abort/kill doesn't exist yet (§05).</li>
+            <li>"Always-live sessions" was already proposed and deliberately rejected once before (§06) — worth reopening on purpose, not by accident.</li>
+          </ul>
+        </div>
+      </div>
+      <p style="margin:14px 0 8px;font-size:13px;color:var(--muted);font-weight:700">The plan — three phases, in order</p>
+      <div class="roadmap">
+        <div class="rstep"><span class="rn">1</span><b>Foundation</b><span>Abort/kill only (pgid + SIGKILL). No task-level lock, by decision — concurrent processes in one worktree stay allowed. Backend only.</span></div>
+        <span class="rarrow">→</span>
+        <div class="rstep"><span class="rn">2</span><b>CLI escape hatch</b><span><code>be10x resume &lt;task&gt;</code> — a real terminal is already a pty, no bridging needed.</span></div>
+        <span class="rarrow">→</span>
+        <div class="rstep"><span class="rn">3</span><b>Browser terminal-mode</b><span>Same mechanism as step 2, plus node-pty + WebSocket + xterm.js.</span></div>
+      </div>
+    </div>
+  </section>
 
   <!-- 1 -->
   <section id="onemessage">
@@ -262,7 +302,7 @@
       <ul>
         <li><b>No way to stop a run once it starts.</b> Not a route in <code>server.js</code>, not a button in the web app, not an MCP tool — zero matches across all three. The only way a run ends is by finishing on its own, or a person manually killing the OS process outside this app entirely.</li>
         <li><b>"Crash-safe recovery" only cleans up bookkeeping.</b> When a runner dies mid-step, the sweep (runner.js:221-235) marks that one <code>runs</code> row <code>failed</code> so the UI stops showing a dead process as alive — it never touches <code>wake_queue</code> and never resumes the task. A human still has to act again to get it moving.</li>
-        <li><b>No concurrency guard per task.</b> Two wakes for the same task can be claimed by two different runner processes at the same moment, each spawning its own agent into the same git worktree. <code>monitor-task.mjs</code> only notices this after the fact and logs a warning — nothing in the code prevents it.</li>
+        <li><b>No concurrency guard per task — staying that way.</b> Two wakes for the same task can be claimed by two different runner processes at the same moment, each spawning its own agent into the same git worktree. <code>monitor-task.mjs</code> only notices this after the fact and logs a warning. Decided: no task-level lock in Phase 1 — this stays allowed, and stays each session's own responsibility to avoid colliding.</li>
       </ul>
     </div>
   </section>
