@@ -19,6 +19,14 @@ import { makeBoardClient, connectLoop, writeMcpConfig, loadConnectConfig, saveCo
 import { buildLaunchdPlist, buildSystemdUnit, serviceEnvPath, servicePaths, isRemovablePath } from '../src/connect/service.js';
 import { renderWelcome } from '../src/cli/welcome.js';
 import { fg, dim, bold, sym, BRAND } from '../src/cli/ui.js';
+import {
+  loadTelemetryConfig,
+  setTelemetryEnabled,
+  effectiveEnabled,
+  recordEvent,
+  flushQueue,
+  promptForConsent,
+} from '../src/telemetry/telemetry.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SIGNUP_HINT = 'Sign up on the board first: be10x serve → http://localhost:4610';
@@ -322,7 +330,7 @@ async function cmdWork(args) {
 
   // Real executor: spawn an ephemeral Claude session in the task's own worktree and stream it to the board.
   const claudeExecute = makeClaudeExecutor(db, project, { model: process.env.GFA_MODEL, workerId });
-  const execute = async (task, runOpts = {}) => {
+  const execute = withTaskTelemetry(async (task, runOpts = {}) => {
     const stamp = () => new Date().toISOString();
     console.log('[' + stamp() + '] ' + task.humanId + ' (' + (runOpts.mode || 'plan') + ') — ' + task.title);
     const summary = await claudeExecute(task, runOpts);
@@ -331,7 +339,7 @@ async function cmdWork(args) {
         (summary.sessionId ? ' · session ' + summary.sessionId : '')
     );
     return summary;
-  };
+  });
 
   console.log(
     'be10x runner watching ' + key + ' for board wakes' +
@@ -397,9 +405,11 @@ async function cmdConnect(args) {
   }
 
   const makeExecutor = (repo) =>
-    makeRemoteExecutor(
-      { rootPath: repo.path, defaultBranch: repo.defaultBranch },
-      { model: process.env.GFA_MODEL, mcpConfigPath: join(repo.path, '.be10x', 'mcp.json') }
+    withTaskTelemetry(
+      makeRemoteExecutor(
+        { rootPath: repo.path, defaultBranch: repo.defaultBranch },
+        { model: process.env.GFA_MODEL, mcpConfigPath: join(repo.path, '.be10x', 'mcp.json') }
+      )
     );
   const workerId = 'connect:' + (args.name && args.name !== true ? args.name : basename(repos[0]?.path || 'machine'));
   const intervalMs = (args.interval && args.interval !== true ? Number(args.interval) : 3) * 1000;
@@ -701,6 +711,97 @@ async function cmdInstallSkill() {
   console.log('(or just say "move this to the 10x board") to push the session onto the board.');
 }
 
+// --- opt-in telemetry -----------------------------------------------------------
+// See docs/superpowers/specs/2026-07-03-cli-telemetry-consent-design.md. Off by default; a task
+// run's title/content/plan is only ever sent once a human explicitly agrees.
+
+// Real readline-backed prompt (the injectable half — promptForConsent — lives in telemetry.js so
+// it's unit-testable without a terminal).
+async function askLine(question) {
+  const { createInterface } = await import('node:readline/promises');
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return await rl.question(question);
+  } finally {
+    rl.close();
+  }
+}
+
+// Ask once, the first time any command (other than `telemetry` itself, so managing the setting
+// doesn't require answering it first) runs with no decision on record yet. Non-interactive runs
+// (CI, piped input) are left undecided rather than answered on their behalf — effectiveEnabled
+// already treats "undecided" as off.
+async function ensureTelemetryConsent(cmd) {
+  if (cmd === 'telemetry') return;
+  if (effectiveEnabled(process.env, loadTelemetryConfig()) !== undefined) return;
+  const answer = await promptForConsent({ ask: askLine });
+  if (answer === null) return; // non-interactive — stays undecided
+  setTelemetryEnabled(answer);
+  console.log(
+    dim(
+      answer
+        ? '  Thanks — turn this off anytime with `be10x telemetry off`.'
+        : '  Understood — turn this on anytime with `be10x telemetry on`.'
+    )
+  );
+  console.log('');
+}
+
+// Wraps an executor's execute(task, runOpts) so every agent run — from `be10x work` (local) or
+// `be10x connect` (remote) — records what it worked and the outcome, IF telemetry is on. A no-op
+// wrapper (still calls through, records nothing) when it's off, so call sites never branch on it.
+function withTaskTelemetry(execute) {
+  return async (task, runOpts = {}) => {
+    const enabled = effectiveEnabled(process.env, loadTelemetryConfig()) === true;
+    const summary = await execute(task, runOpts);
+    if (enabled) {
+      recordEvent(
+        'task_run',
+        {
+          taskId: task.id,
+          humanId: task.humanId,
+          title: task.title,
+          content: task.content,
+          plan: task.plan,
+          mode: runOpts.mode,
+          ok: summary?.ok !== false,
+        },
+        { enabled }
+      );
+    }
+    return summary;
+  };
+}
+
+// telemetry [status|on|off] — check or change the stored decision. Doesn't touch a GFA_TELEMETRY
+// env override, which always wins for the current process regardless of what's stored.
+async function cmdTelemetry(args) {
+  const sub = args._[0] || 'status';
+  if (sub === 'on' || sub === 'off') {
+    const cfg = setTelemetryEnabled(sub === 'on');
+    console.log(fg(BRAND.good, sym.ok + ' ') + 'Telemetry is ' + sub + '.');
+    console.log(dim('  install id: ' + cfg.installId));
+    return;
+  }
+  if (sub === 'status') {
+    const cfg = loadTelemetryConfig();
+    const enabled = effectiveEnabled(process.env, cfg);
+    const forced = process.env.GFA_TELEMETRY !== undefined;
+    if (enabled === undefined) console.log("Telemetry: not decided yet — you'll be asked next time you run a command.");
+    else console.log('Telemetry: ' + (enabled ? 'on' : 'off') + (forced ? ' (forced by GFA_TELEMETRY env var)' : ''));
+    if (cfg?.installId) console.log(dim('install id: ' + cfg.installId));
+    console.log('');
+    console.log(
+      dim(
+        'Sends CLI command usage always, and — only when on — task/plan content from `work`/`connect` runs, to help improve be10x.'
+      )
+    );
+    return;
+  }
+  console.error('Usage: be10x telemetry [status|on|off]');
+  process.exit(1);
+}
+
 // --- dispatch -----------------------------------------------------------------
 
 const COMMANDS = {
@@ -715,6 +816,7 @@ const COMMANDS = {
   list: cmdList,
   adopt: cmdAdopt,
   'install-skill': cmdInstallSkill,
+  telemetry: cmdTelemetry,
 };
 
 function usage() {
@@ -732,17 +834,19 @@ function usage() {
   console.log('  list                             list projects and this repo\'s tasks by status');
   console.log('  adopt --title T [--phase P] ...  move this session\'s work onto the board as a task');
   console.log('  install-skill                    install the /be10x-adopt skill into ~/.claude/skills');
+  console.log('  telemetry [status|on|off]        check or change the opt-in telemetry setting');
   console.log('');
   console.log('  adopt options: --type code-issue|general  --project KEY  --phase ' + IMPORT_PHASES.join('|'));
   console.log('                 --summary S  --symptom S  --plan-file F  --research-file F');
   console.log('                 --artifacts-file F  --refs-file F  --handoff  --email E');
   console.log('');
-  console.log('Env: GFA_DB_PATH (default ./gfa.db), GFA_EMAIL');
+  console.log('Env: GFA_DB_PATH (default ./gfa.db), GFA_EMAIL, GFA_TELEMETRY (0|1, overrides the stored choice)');
 }
 
 async function main() {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
+  await ensureTelemetryConsent(cmd);
   // Full, flat command reference (every command incl. advanced ones).
   if (cmd === 'commands' || (cmd === 'help' && argv.includes('--all'))) return usage();
   // Bare `be10x` (or help/menu) → the welcome + live status + curated menu.
@@ -760,7 +864,25 @@ async function main() {
     console.error(dim('Run `be10x` for the menu, or `be10x commands` for the full list.'));
     process.exit(1);
   }
-  await fn(parseArgs(argv.slice(1)));
+
+  const telemetryCfg = loadTelemetryConfig();
+  const telemetryOn = effectiveEnabled(process.env, telemetryCfg) === true;
+  const startedAt = Date.now();
+  let ok = true;
+  try {
+    await fn(parseArgs(argv.slice(1)));
+  } catch (e) {
+    ok = false;
+    throw e;
+  } finally {
+    // Note: a command that exits early via process.exit() (several do, on validation failures)
+    // skips this finally — an accepted gap in best-effort telemetry, not worth restructuring
+    // every command's error path to avoid.
+    recordEvent('cli_command', { command: cmd, ok, durationMs: Date.now() - startedAt }, { enabled: telemetryOn });
+    if (telemetryOn && telemetryCfg?.installId) {
+      void flushQueue({ installId: telemetryCfg.installId, cliVersion: readPkgVersion() });
+    }
+  }
 }
 
 main().catch((e) => {

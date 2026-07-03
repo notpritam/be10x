@@ -231,3 +231,21 @@ CREATE TABLE IF NOT EXISTS device_codes (
   expires_at  INTEGER NOT NULL,
   approved_at INTEGER
 );
+
+-- Opt-in CLI telemetry (see docs/superpowers/specs/2026-07-03-cli-telemetry-consent-design.md).
+-- Public, unauthenticated endpoint — a fresh CLI install has no session or account yet.
+-- install_id is a random per-machine id generated locally by the CLI, never an email or account;
+-- there is deliberately no FK to users. payload_json carries the event's fields (which, for
+-- task_run events, may include task title/content/plan — only ever sent if the user opted in).
+CREATE TABLE IF NOT EXISTS telemetry_events (
+  id           TEXT PRIMARY KEY,
+  install_id   TEXT NOT NULL,
+  event        TEXT NOT NULL,
+  cli_version  TEXT,
+  os           TEXT,
+  node_version TEXT,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  occurred_at  INTEGER,
+  received_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_telemetry_events_install ON telemetry_events (install_id, received_at);

@@ -124,9 +124,39 @@ Under the hood: the agent's `gfa_*` tools reach the board through an HTTP MCP tr
 
 ## Honest status — what's built vs. not
 
-- ✅ **Built & tested:** board, auth, teams/roles, tasks, plans, HTML artifacts, agent orchestration, share links, adopt-to-board, crash recovery, **distributed runners (teammates run the agent on their own machines over HTTPS)**, PWA (installable). 227 tests.
+- ✅ **Built & tested:** board, auth, teams/roles, tasks, plans, HTML artifacts, agent orchestration, share links, adopt-to-board, crash recovery, **distributed runners (teammates run the agent on their own machines over HTTPS)**, PWA (installable). 311 tests.
 - **Two ways to run the agent:** single-host (board + agent on the server, credentials above) **or** the connector (each teammate runs it locally — see "Connect your machine").
 - 🔜 **Not yet:** a hosted-managed Claude login (each member brings their own), and team-scoped tokens on the agent API — any valid token can drive tasks today, which is fine for a trusted team.
+
+---
+
+## Telemetry — opt-in, and exactly what it sends
+
+The CLI can send usage data to help improve be10x. **It's off unless you say yes** — the first
+time you run any `be10x` command, you'll be asked once:
+
+```
+Send task activity (including task/plan content) to help improve be10x? [y/N]
+```
+
+Answering no (or just hitting Enter, or running non-interactively/in CI) sends nothing, ever.
+If you say yes:
+- **Always**: which CLI command ran, whether it succeeded, and how long it took. No argument
+  values (an `--email` or file path is never sent).
+- **Only from `work`/`connect`** (the flows where the CLI actually runs an agent on a task):
+  the task's id, title, `content`, and `plan` — this is the one place the opt-in genuinely means
+  code/task content leaves your machine.
+
+It goes to a central endpoint the be10x maintainers run — `POST /api/telemetry` in
+[`src/http/server.js`](src/http/server.js), stored via
+[`src/telemetry/store.js`](src/telemetry/store.js) — the same endpoint for everyone, regardless
+of which board (yours, ours, or your own self-hosted one) you use for actual tasks. Identified
+by a random install id, never your email or account. See
+[`src/telemetry/telemetry.js`](src/telemetry/telemetry.js) for the exact client-side logic, and
+`be10x telemetry status|on|off` to check or change your choice anytime. `GFA_TELEMETRY=0`
+forces it off for a single invocation (e.g. in CI) without touching your stored preference.
+
+This in-CLI disclosure is a plain-language summary, not a legal privacy policy.
 
 ---
 
@@ -140,3 +170,4 @@ Under the hood: the agent's `gfa_*` tools reach the board through an HTTP MCP tr
 | `GFA_CLAUDE_BIN` | `claude` | The Claude CLI the runner spawns. |
 | `ANTHROPIC_API_KEY` | — | Agent auth Mode A. |
 | `GFA_MODEL` / `GFA_EFFORT` | — | Default model / reasoning effort for agent runs. |
+| `GFA_TELEMETRY` | — | `0`/`1` forces opt-in telemetry off/on for one invocation, overriding the stored choice. |

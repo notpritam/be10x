@@ -27,6 +27,7 @@ import { taskDebug } from '../tasks/debug.js';
 import { listProjectsForUser, registerProject, detectProjectKey, getProject } from '../projects/projects.js';
 import { createShareLink, listShareLinksForTask, revokeShareLink, getActiveShareLinkByToken, shareView } from '../share/share.js';
 import { listPlanVersions, getPlanVersion } from '../plans/versions.js';
+import { recordTelemetryBatch } from '../telemetry/store.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(here, '..', '..', 'public');
@@ -539,6 +540,14 @@ const ROUTES = [
   ['POST', '/api/device/deny', true, async ({ db, res, body, user }) =>
     send(res, 200, denyDeviceCode(db, { userCode: body.code || body.userCode, userId: user.id }))],
   ['GET', '/api/agent-config', true, async ({ res }) => send(res, 200, { mcpServerPath: MCP_SERVER_PATH, dbPath: process.env.GFA_DB_PATH || './gfa.db' })],
+
+  // Opt-in CLI telemetry (see docs/superpowers/specs/2026-07-03-cli-telemetry-consent-design.md).
+  // Public — a fresh CLI install has no session — and deliberately not tied to a platform
+  // account; installId is a random per-machine id the CLI generates locally.
+  ['POST', '/api/telemetry', false, async ({ db, res, body }) => {
+    const result = recordTelemetryBatch(db, body);
+    send(res, 200, { ok: true, ...result });
+  }],
 ];
 
 // The agent/runner API — token (Bearer) authenticated, transport-agnostic. This is how an agent running on
