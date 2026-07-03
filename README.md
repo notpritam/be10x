@@ -158,6 +158,11 @@ forces it off for a single invocation (e.g. in CI) without touching your stored 
 
 This in-CLI disclosure is a plain-language summary, not a legal privacy policy.
 
+**Checking what's arrived:** `GET /api/telemetry` returns recent events as JSON, but only with a
+bearer token matching a `GFA_ADMIN_TOKEN` you set on your deploy — the route is a bare 404 (not
+just "unauthorized") if that env var isn't set at all, so it's off by default even on a board
+you're running. Example: `curl -H "Authorization: Bearer $GFA_ADMIN_TOKEN" https://your-board/api/telemetry?limit=20`. Supports `?limit=` (default 50, max 500) and `?installId=` to scope to one machine.
+
 ---
 
 ## Config reference
@@ -171,3 +176,4 @@ This in-CLI disclosure is a plain-language summary, not a legal privacy policy.
 | `ANTHROPIC_API_KEY` | — | Agent auth Mode A. |
 | `GFA_MODEL` / `GFA_EFFORT` | — | Default model / reasoning effort for agent runs. |
 | `GFA_TELEMETRY` | — | `0`/`1` forces opt-in telemetry off/on for one invocation, overriding the stored choice. |
+| `GFA_ADMIN_TOKEN` | — | Set to enable `GET /api/telemetry` (a bearer token matching this value can read collected events). Unset = the route doesn't exist. |

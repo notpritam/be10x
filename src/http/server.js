@@ -1,6 +1,7 @@
 // ABOUTME: Zero-dependency HTTP front door — REST over the core + serves the buildless web board.
 // ABOUTME: Session-cookie auth for humans. createApp(db) returns an http.Server; startServer runs it.
 import http from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -105,6 +106,21 @@ function bearerToken(req) {
 function agentAuth(db, req) {
   const tok = bearerToken(req);
   return tok ? verifyToken(db, tok) : null;
+}
+
+// Gate for the internal telemetry-viewer endpoint below: a single shared secret (GFA_ADMIN_TOKEN),
+// not a per-user account — there's no platform "admin" role, and this data (which can include
+// task content) is meant to be visible only to whoever holds that secret. Unset entirely by
+// default, so the endpoint is off unless someone deliberately turns it on. A timing-safe compare
+// (constant-time regardless of where the strings first differ) since this guards a real secret.
+function validAdminToken(req) {
+  const configured = process.env.GFA_ADMIN_TOKEN;
+  if (!configured) return false;
+  const provided = bearerToken(req);
+  if (!provided) return false;
+  const a = Buffer.from(configured);
+  const b = Buffer.from(provided);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 function match(pattern, pathname) {
@@ -547,6 +563,33 @@ const ROUTES = [
   ['POST', '/api/telemetry', false, async ({ db, res, body }) => {
     const result = recordTelemetryBatch(db, body);
     send(res, 200, { ok: true, ...result });
+  }],
+  // Internal viewer for the collected telemetry — off unless GFA_ADMIN_TOKEN is set on this
+  // deploy, and even then requires that exact bearer token. Returns a bare 404 (not 401/403) on
+  // any auth failure so an unauthenticated caller can't tell the route exists at all.
+  ['GET', '/api/telemetry', false, async ({ db, req, res }) => {
+    if (!validAdminToken(req)) return send(res, 404, { error: 'NOT_FOUND' });
+    const q = new URL(req.url, 'http://x').searchParams;
+    const limit = Math.min(Math.max(Number(q.get('limit')) || 50, 1), 500);
+    const installId = q.get('installId');
+    // received_at is shared by every event in one batch, so it alone can't order events recorded
+    // together — occurred_at (the CLI's own timestamp for each event) breaks the tie.
+    const sql =
+      'SELECT id, install_id AS installId, event, cli_version AS cliVersion, os, node_version AS nodeVersion, payload_json AS payloadJson, occurred_at AS occurredAt, received_at AS receivedAt FROM telemetry_events' +
+      (installId ? ' WHERE install_id = ?' : '') +
+      ' ORDER BY received_at DESC, occurred_at DESC LIMIT ?';
+    const rows = installId ? db.prepare(sql).all(installId, limit) : db.prepare(sql).all(limit);
+    send(res, 200, {
+      events: rows.map(({ payloadJson, ...row }) => {
+        let payload;
+        try {
+          payload = JSON.parse(payloadJson);
+        } catch {
+          payload = {};
+        }
+        return { ...row, ...payload };
+      }),
+    });
   }],
 ];
 

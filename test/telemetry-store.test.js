@@ -106,3 +106,74 @@ test('POST /api/telemetry without an installId returns a 4xx, not a 500', async 
     assert.ok(res.status >= 400 && res.status < 500);
   });
 });
+
+// GET /api/telemetry — the internal viewer, gated behind GFA_ADMIN_TOKEN. Mutates process.env for
+// the duration of each test, always restored in `finally` so it never leaks into other test files.
+async function withAdminToken(token, fn) {
+  const prev = process.env.GFA_ADMIN_TOKEN;
+  if (token === undefined) delete process.env.GFA_ADMIN_TOKEN;
+  else process.env.GFA_ADMIN_TOKEN = token;
+  try {
+    await fn();
+  } finally {
+    if (prev === undefined) delete process.env.GFA_ADMIN_TOKEN;
+    else process.env.GFA_ADMIN_TOKEN = prev;
+  }
+}
+
+test('GET /api/telemetry is a 404 when GFA_ADMIN_TOKEN is not configured at all, even with a bearer token', async () => {
+  await withAdminToken(undefined, async () => {
+    await withServer(async (base) => {
+      const res = await fetch(base + '/api/telemetry', { headers: { Authorization: 'Bearer anything' } });
+      assert.equal(res.status, 404);
+    });
+  });
+});
+
+test('GET /api/telemetry is a 404 with no Authorization header, or the wrong token', async () => {
+  await withAdminToken('correct-secret', async () => {
+    await withServer(async (base) => {
+      const noAuth = await fetch(base + '/api/telemetry');
+      assert.equal(noAuth.status, 404);
+      const wrongAuth = await fetch(base + '/api/telemetry', { headers: { Authorization: 'Bearer wrong-secret' } });
+      assert.equal(wrongAuth.status, 404);
+    });
+  });
+});
+
+test('GET /api/telemetry returns recent events, newest first, with the correct admin token', async () => {
+  await withAdminToken('correct-secret', async () => {
+    await withServer(async (base, db) => {
+      recordTelemetryBatch(db, {
+        installId: 'view-1',
+        cliVersion: '0.1.0',
+        events: [
+          { event: 'cli_command', command: 'link', occurredAt: 1000 },
+          { event: 'task_run', taskId: 't1', content: 'plan text', occurredAt: 2000 },
+        ],
+      });
+      const res = await fetch(base + '/api/telemetry', { headers: { Authorization: 'Bearer correct-secret' } });
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.equal(json.events.length, 2);
+      assert.equal(json.events[0].event, 'task_run', 'newest (higher received_at) first');
+      assert.equal(json.events[0].content, 'plan text');
+      assert.equal(json.events[1].command, 'link');
+    });
+  });
+});
+
+test('GET /api/telemetry respects limit and installId filters', async () => {
+  await withAdminToken('correct-secret', async () => {
+    await withServer(async (base, db) => {
+      recordTelemetryBatch(db, { installId: 'a', events: [{ event: 'cli_command' }, { event: 'cli_command' }] });
+      recordTelemetryBatch(db, { installId: 'b', events: [{ event: 'cli_command' }] });
+
+      const filtered = await fetch(base + '/api/telemetry?installId=b', { headers: { Authorization: 'Bearer correct-secret' } });
+      assert.equal((await filtered.json()).events.length, 1);
+
+      const limited = await fetch(base + '/api/telemetry?limit=1', { headers: { Authorization: 'Bearer correct-secret' } });
+      assert.equal((await limited.json()).events.length, 1);
+    });
+  });
+});
