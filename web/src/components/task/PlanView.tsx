@@ -83,6 +83,14 @@ export function PlanView({ plan }: { plan: unknown }) {
   }
 
   const html = obj && str(obj.html);
+
+  // A rich HTML document is a complete, self-sufficient artifact — same as the bare-string HTML
+  // case above. Render it alone. An agent that sends html ALSO frequently sends steps/markdown
+  // restating the same content for other consumers (e.g. an execute-phase checklist) — stacking
+  // those underneath the html duplicates whatever it already says, which reads as broken/garbled
+  // output rather than extra content. Only fall through to the other fields when there's no html.
+  if (html) return <HtmlBlock html={html} />;
+
   const markdown = obj && firstStr(obj, ["markdown", "md"]);
   const steps = toSteps(obj?.steps) ?? toSteps(plan);
   const diagram = obj && firstStr(obj, ["diagram"]);
@@ -90,7 +98,7 @@ export function PlanView({ plan }: { plan: unknown }) {
     ? Object.entries(obj).filter(([k, v]) => !["html", "markdown", "md", "steps", "diagram", "blocks"].includes(k) && v != null && v !== "")
     : [];
 
-  if (!html && !markdown && !steps && !diagram) {
+  if (!markdown && !steps && !diagram) {
     return (
       <pre className="scroll-thin overflow-x-auto rounded-lg border border-border/60 bg-muted/40 p-3 font-mono text-[11.5px] leading-relaxed text-foreground/85">
         {JSON.stringify(plan, null, 2)}
@@ -100,7 +108,6 @@ export function PlanView({ plan }: { plan: unknown }) {
 
   return (
     <div className="space-y-4">
-      {html && <HtmlBlock html={html} />}
       {markdown && <Markdown text={markdown} />}
       {steps && steps.length > 0 && <Steps steps={steps} />}
       {diagram && <MermaidDiagram code={diagram} />}
