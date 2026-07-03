@@ -1,7 +1,7 @@
 // ABOUTME: Login / signup screen (tabbed). Same-origin auth: on success the session cookie is set
 // and we hand the user object up to <App/>. Includes a one-tap demo-account fill for reviewers.
 import { useState, type FormEvent } from "react";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import type { User } from "@/lib/types";
@@ -13,8 +13,16 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 type Mode = "signin" | "signup";
 
-export function AuthScreen({ onAuthed }: { onAuthed: (user: User) => void }) {
-  const [mode, setMode] = useState<Mode>("signin");
+export function AuthScreen({
+  onAuthed,
+  initialMode = "signin",
+  onBack,
+}: {
+  onAuthed: (user: User) => void;
+  initialMode?: Mode;
+  onBack?: () => void;
+}) {
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
@@ -69,6 +77,15 @@ export function AuthScreen({ onAuthed }: { onAuthed: (user: User) => void }) {
       />
 
       <div className="relative w-full max-w-[400px] soft-fade">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="mb-4 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <ArrowLeft className="size-3.5" /> Back
+          </button>
+        )}
         <div className="mb-7 flex flex-col items-center gap-3 text-center">
           <BrandTile className="size-11" />
           <div>

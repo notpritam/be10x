@@ -11,11 +11,16 @@ import { AppShell } from "@/components/shell/AppShell";
 import { BootSplash } from "@/components/common/BootSplash";
 import { ShareReviewPage } from "@/components/share/ShareReviewPage";
 import { DeviceApprovePage } from "@/components/agent/DeviceApprovePage";
+import { LandingPage } from "@/components/landing/LandingPage";
 
 type Session = "loading" | User | null;
 
 export function App() {
   const [session, setSession] = useState<Session>("loading");
+  // Logged-out visitors see the landing page by default; the CTA (or /login) opens the auth form.
+  const [authMode, setAuthMode] = useState<null | "signin" | "signup">(
+    typeof window !== "undefined" && window.location.pathname === "/login" ? "signin" : null,
+  );
 
   useEffect(() => {
     let active = true;
@@ -50,7 +55,15 @@ export function App() {
       ) : connectCode !== undefined && session ? (
         <DeviceApprovePage code={connectCode} user={session} />
       ) : session === null ? (
-        <AuthScreen onAuthed={setSession} />
+        connectCode !== undefined || authMode ? (
+          <AuthScreen
+            onAuthed={setSession}
+            initialMode={authMode ?? "signin"}
+            onBack={connectCode !== undefined ? undefined : () => setAuthMode(null)}
+          />
+        ) : (
+          <LandingPage onGetStarted={() => setAuthMode("signup")} onSignIn={() => setAuthMode("signin")} />
+        )
       ) : (
         <AppProvider user={session} onSignedOut={handleSignedOut}>
           <AppShell />
