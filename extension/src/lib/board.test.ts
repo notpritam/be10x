@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import { deviceStart, devicePoll, mintUploadUrls, fileBug } from './board';
 
-function stub(routes: Record<string, any>) {
+function stub(routes: Record<string, (o: any) => any>) {
   return async (url: string, opts?: any) => {
     const key = (opts?.method || 'GET') + ' ' + new URL(url).pathname;
     const entry = routes[key];
