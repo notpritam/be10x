@@ -12,6 +12,7 @@ import { ListView } from "@/components/board/ListView";
 import { NewTaskPage } from "@/components/task/NewTaskPage";
 import { ProfilePage } from "@/components/user/ProfilePage";
 import { LeaderboardPage } from "@/components/leaderboard/LeaderboardPage";
+import { BugsPage } from "@/components/bugs/BugsPage";
 import { DeepDivePanel } from "@/components/task/DeepDivePanel";
 import { useTaskDetail } from "@/components/task/useTaskDetail";
 import { ManageTeamDialog } from "@/components/team/ManageTeamDialog";
@@ -24,6 +25,7 @@ export function AppShell() {
   const [composing, setComposing] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showBugs, setShowBugs] = useState(false);
   const [manageTeamOpen, setManageTeamOpen] = useState(false);
   const [connectAgentOpen, setConnectAgentOpen] = useState(false);
 
@@ -34,12 +36,14 @@ export function AppShell() {
   const startCompose = () => {
     setShowProfile(false);
     setShowLeaderboard(false);
+    setShowBugs(false);
     setComposing(true);
   };
   const leaveOverlays = () => {
     setComposing(false);
     setShowProfile(false);
     setShowLeaderboard(false);
+    setShowBugs(false);
   };
 
   return (
@@ -52,12 +56,20 @@ export function AppShell() {
         onProfile={() => {
           setComposing(false);
           setShowLeaderboard(false);
+          setShowBugs(false);
           setShowProfile(true);
         }}
         onLeaderboard={() => {
           setComposing(false);
           setShowProfile(false);
+          setShowBugs(false);
           setShowLeaderboard(true);
+        }}
+        onBugs={() => {
+          setComposing(false);
+          setShowProfile(false);
+          setShowLeaderboard(false);
+          setShowBugs(true);
         }}
       />
 
@@ -71,7 +83,7 @@ export function AppShell() {
           composing={composing}
           onCloseCompose={() => setComposing(false)}
         />
-        {showProfile || showLeaderboard ? (
+        {showProfile || showLeaderboard || showBugs ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex shrink-0 items-center border-b border-border/60 px-4 py-2">
               <button
@@ -79,13 +91,14 @@ export function AppShell() {
                 onClick={() => {
                   setShowProfile(false);
                   setShowLeaderboard(false);
+                  setShowBugs(false);
                 }}
                 className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               >
                 <ArrowLeft className="size-4" /> Back
               </button>
             </div>
-            {showProfile ? <ProfilePage /> : <LeaderboardPage />}
+            {showBugs ? <BugsPage /> : showProfile ? <ProfilePage /> : <LeaderboardPage />}
           </div>
         ) : composing ? (
           <NewTaskPage

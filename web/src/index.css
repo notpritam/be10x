@@ -217,6 +217,11 @@
   background: #eef0f2;
   color: #6b7280;
 }
+/* One tier above `high`, for QA bug severity (tasks top out at high). Deeper red so it reads as louder. */
+.pill-critical {
+  background: #f6d0d0;
+  color: #9f1239;
+}
 
 /* Soft "needs input" badge */
 .badge-needs-input {

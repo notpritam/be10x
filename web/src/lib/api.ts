@@ -3,6 +3,10 @@
 import type {
   AgentConfig,
   Artifact,
+  Bug,
+  BugEvent,
+  BugStats,
+  BugStatus,
   Comment,
   FsListing,
   InputRequest,
@@ -99,6 +103,13 @@ function taskQuery(filter?: TaskFilter): string {
   if (filter.status) q.set("status", filter.status);
   const s = q.toString();
   return s ? `?${s}` : "";
+}
+
+/** Server-honored bug list filters. Severity is filtered client-side (the list route only narrows by
+ *  status / reporter), so it is deliberately absent here. */
+export interface BugFilter {
+  status?: BugStatus;
+  reporterId?: string;
 }
 
 export interface CreateTaskInput {
@@ -280,6 +291,28 @@ export const api = {
     }),
   answerInput: (reqId: string, answer: string) =>
     post<{ ok: true }>(`/api/input/${reqId}/answer`, { answer }),
+
+  // QA bugs — the dashboard side of the capture extension (session-cookie, same-origin). Filed over the
+  // Bearer /api/agent/bugs route by the extension; browsed and resolved here.
+  listBugs: (filter?: BugFilter) => {
+    const q = new URLSearchParams();
+    if (filter?.status) q.set("status", filter.status);
+    if (filter?.reporterId) q.set("reporterId", filter.reporterId);
+    const qs = q.toString();
+    return request<{ bugs: Bug[] }>(`/api/bugs${qs ? `?${qs}` : ""}`);
+  },
+  getBug: (id: string) => request<{ bug: Bug; events: BugEvent[] }>(`/api/bugs/${id}`),
+  updateBugStatus: (id: string, status: BugStatus, resolution?: string) =>
+    post<{ bug: Bug }>(`/api/bugs/${id}/status`, {
+      status,
+      ...(resolution !== undefined ? { resolution } : {}),
+    }),
+  addBugComment: (id: string, body: string) =>
+    post<{ event: BugEvent }>(`/api/bugs/${id}/comment`, { body }),
+  bugStats: () => request<{ stats: BugStats }>("/api/bugs/stats"),
+  /** Short-lived signed UploadThing read URL for one captured artifact. 404 when that key is absent. */
+  bugArtifactUrl: (id: string, kind: "screenshot" | "dom" | "network") =>
+    request<{ url: string }>(`/api/bugs/${id}/artifact/${kind}`),
 
   // Shareable, permissioned review links.
   // Owner-only (session): mint / list / revoke a task's links.

@@ -2,6 +2,7 @@
 // (from /api/teams + a New team popover), and a user footer with logout. Collapse is reversible.
 import { useState, type ReactNode } from "react";
 import {
+  Bug,
   ChevronsLeft,
   FolderGit2,
   GitPullRequestArrow,
@@ -39,6 +40,7 @@ export function Sidebar({
   onNewTask,
   onProfile,
   onLeaderboard,
+  onBugs,
 }: {
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -46,6 +48,7 @@ export function Sidebar({
   onNewTask: () => void;
   onProfile: () => void;
   onLeaderboard: () => void;
+  onBugs: () => void;
 }) {
   const { user, teams, projects, view, setView, counts, logout } = useApp();
   const activeKey = viewKey(view);
@@ -132,6 +135,13 @@ export function Sidebar({
           accent={counts.reviewQueue > 0}
           active={activeKey === "review_queue"}
           onClick={() => setView({ kind: "review_queue" })}
+        />
+        {/* Bugs is a full-page overlay (like Profile / Leaderboard), not a board filter — no active bar. */}
+        <NavRow
+          collapsed={collapsed}
+          icon={<Bug className="size-[17px]" />}
+          label="Bugs"
+          onClick={onBugs}
         />
 
         <div className="mt-4 flex items-center justify-between pr-1">

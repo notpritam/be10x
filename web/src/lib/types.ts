@@ -233,6 +233,61 @@ export interface Run {
   steps?: RunStep[];
 }
 
+/** QA bug lifecycle — the dashboard side of the capture extension. Distinct from task Status. */
+export type BugStatus = "open" | "in_progress" | "resolved" | "not_a_bug" | "wont_fix";
+
+/** QA bug severity — includes `critical`, unlike task Severity. */
+export type BugSeverity = "low" | "medium" | "high" | "critical";
+
+/** Who the reporter was logged in as on the captured page — or an explicit logged-out marker. Open-ended
+ *  (the extension may add fields); the dashboard reads `loggedIn` / `email` / `tokenPreview`. */
+export interface BugIdentity {
+  loggedIn?: boolean;
+  email?: string | null;
+  tokenPreview?: string | null;
+  [key: string]: unknown;
+}
+
+/** A filed bug ticket. Mirrors hydrate() in src/bugs/bugs.js — the binary artifacts (screenshot / DOM /
+ *  network) live on UploadThing; the row carries only their keys. */
+export interface Bug {
+  id: string;
+  humanId: string;
+  reporterId: string;
+  projectId: string | null;
+  teamId: string | null;
+  pageUrl: string;
+  title: string;
+  description: string;
+  status: BugStatus;
+  severity: BugSeverity;
+  assigneeId: string | null;
+  resolution: string | null;
+  screenshotKey: string | null;
+  domKey: string | null;
+  networkKey: string | null;
+  identity: BugIdentity;
+  meta: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** One entry in a bug's history — created / status / comment / assign. Mirrors listBugEvents(). */
+export interface BugEvent {
+  id: string;
+  actor: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  createdAt: number;
+}
+
+/** Per-reporter rollup for the profile card. Mirrors bugStatsForUser(). */
+export interface BugStats {
+  reported: number;
+  resolved: number;
+  open: number;
+}
+
 /** A comment on a task — the human's channel for steering the agent (plan feedback, direction). */
 export interface Comment {
   id: string;

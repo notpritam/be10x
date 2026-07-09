@@ -2,9 +2,9 @@
 // token cards. Read-only: pulls api.me() / api.listTeams() / api.listTokens() and renders them in the
 // app's card style. Not wired into routing here; whoever mounts it owns placement.
 import { useEffect, useState, type ReactNode } from "react";
-import { KeyRound, Loader2, Users } from "lucide-react";
+import { Bug, KeyRound, Loader2, Users } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
-import type { Team, TokenInfo, User } from "@/lib/types";
+import type { BugStats, Team, TokenInfo, User } from "@/lib/types";
 import { relativeTime } from "@/lib/utils";
 import { UserAvatar } from "@/components/common/bits";
 
@@ -12,6 +12,7 @@ export function ProfilePage() {
   const [user, setUser] = useState<User | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
+  const [bugStats, setBugStats] = useState<BugStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,15 +22,17 @@ export function ProfilePage() {
       setLoading(true);
       setError(null);
       try {
-        const [me, teamsRes, tokensRes] = await Promise.all([
+        const [me, teamsRes, tokensRes, bugStatsRes] = await Promise.all([
           api.me(),
           api.listTeams(),
           api.listTokens(),
+          api.bugStats(),
         ]);
         if (cancelled) return;
         setUser(me.user);
         setTeams(teamsRes.teams);
         setTokens(tokensRes.tokens);
+        setBugStats(bugStatsRes.stats);
       } catch (err) {
         if (!cancelled) setError(errorMessage(err));
       } finally {
@@ -76,6 +79,17 @@ export function ProfilePage() {
                 />
               </dl>
             </Card>
+
+            {/* Bug reports */}
+            {bugStats && (
+              <Card title="Bug reports" icon={<Bug className="size-4" />}>
+                <div className="grid grid-cols-3 gap-3">
+                  <BugStat label="Reported" value={bugStats.reported} />
+                  <BugStat label="Resolved" value={bugStats.resolved} />
+                  <BugStat label="Open" value={bugStats.open} />
+                </div>
+              </Card>
+            )}
 
             {/* Teams */}
             <Card title="Teams" icon={<Users className="size-4" />}>
@@ -152,6 +166,15 @@ function Card({
       </div>
       {children}
     </section>
+  );
+}
+
+function BugStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-border/60 bg-background px-3 py-3 text-center">
+      <p className="text-[20px] font-bold tabular-nums text-foreground">{value}</p>
+      <p className="mt-0.5 text-[11.5px] text-muted-foreground">{label}</p>
+    </div>
   );
 }
 
