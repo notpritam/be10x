@@ -6,6 +6,8 @@ import { crx } from '@crxjs/vite-plugin';
 import manifest from './src/manifest';
 
 export default defineConfig({
-  plugins: [react(), crx({ manifest })],
+  // net-hook is built as a self-contained IIFE: MAIN world has no chrome.runtime, so it cannot use
+  // CRXJS's module loader, and it must run synchronously at document_start to wrap fetch/XHR in time.
+  plugins: [react(), crx({ manifest, contentScripts: { standaloneFiles: ['src/content/net-hook.ts'] } })],
   server: { port: 5199, strictPort: true, hmr: { port: 5199 } },
 });

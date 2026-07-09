@@ -9,6 +9,12 @@ export default defineManifest({
   description: 'File QA bugs into be10x with screenshot, DOM, network, and identity attached.',
   action: { default_popup: 'src/popup/index.html', default_title: 'Report a bug to be10x' },
   background: { service_worker: 'src/background/service-worker.ts', type: 'module' },
+  // net-hook runs in the page's MAIN world so it can wrap fetch/XHR before the app fires requests;
+  // collector runs in the default ISOLATED world where chrome.runtime is available to answer the SW.
+  content_scripts: [
+    { matches: ['<all_urls>'], js: ['src/content/net-hook.ts'], run_at: 'document_start', world: 'MAIN', all_frames: false },
+    { matches: ['<all_urls>'], js: ['src/content/collector.ts'], run_at: 'document_start', all_frames: false },
+  ],
   permissions: ['storage', 'tabs', 'cookies', 'activeTab', 'scripting'],
   host_permissions: ['<all_urls>'],
 });
