@@ -19,7 +19,7 @@ import { assertCan, assertCanAccessTask, canAccessProject } from '../authz/authz
 import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
 import { createBug, getBug as getBugById, listBugs, updateBugStatus, addBugComment, listBugEvents, bugStatsForUser } from '../bugs/bugs.js';
-import { mintUploadUrls } from '../bugs/uploadthing.js';
+import { mintUploadUrls, signAccessUrl } from '../bugs/uploadthing.js';
 import { requestReview, submitReview } from '../reviews/reviews.js';
 import { requestInput, answerInput, getOpenInputRequest, getRequestTaskId } from '../tasks/input_requests.js';
 import { addComment, listComments } from '../tasks/comments.js';
@@ -651,6 +651,17 @@ const ROUTES = [
   }],
   ['POST', '/api/bugs/:id/comment', true, async ({ db, res, params, body, user }) => {
     send(res, 200, { event: addBugComment(db, params.id, user.id, body.body) });
+  }],
+  // Hand the dashboard a short-lived signed UploadThing read URL for one captured artifact. kind picks the
+  // key column (screenshot|dom|network); 404 when the bug or that particular key is absent. Six path
+  // segments, so match() never confuses this with `/api/bugs/:id` (four) or `/api/bugs/:id/status` (five).
+  ['GET', '/api/bugs/:id/artifact/:kind', true, async ({ db, res, params }) => {
+    const bug = getBugById(db, params.id);
+    if (!bug) throw new Error('NOT_FOUND');
+    const key = { screenshot: 'screenshotKey', dom: 'domKey', network: 'networkKey' }[params.kind];
+    const fileKey = key ? bug[key] : null;
+    if (!fileKey) throw new Error('NOT_FOUND');
+    send(res, 200, { url: signAccessUrl(fileKey) });
   }],
 ];
 

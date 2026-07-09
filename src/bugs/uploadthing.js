@@ -49,3 +49,23 @@ export function mintUploadUrls(files, opts = {}) {
     return { key, uploadUrl, fileUrl: `https://${appId}.ufs.sh/f/${key}`, name: f.name };
   });
 }
+
+// Builds a time-limited signed READ url for a PRIVATE UploadThing object, so the dashboard can hand the
+// browser a short-lived link to a screenshot/DOM/network bundle without the bytes touching be10x. Same
+// local-HMAC recipe as mintUploadUrls: sign the app-file URL (every param but `signature`) with
+// HMAC-SHA256 keyed by the app's apiKey, and stamp an `expires`. opts.{token,now,expiresInMs} are
+// injectable for deterministic tests; with no token it reads UPLOADTHING_TOKEN and throws
+// MISSING_FIELD:UPLOADTHING_TOKEN when unset, like the mint path.
+// NOTE: the exact UploadThing access-signing scheme (param names, host, or whether a REST call is
+// required instead of local signing) must be confirmed live against a real UPLOADTHING_TOKEN before
+// these read URLs are trusted in production.
+export function signAccessUrl(key, opts = {}) {
+  const { apiKey, appId } = parseUploadThingToken(opts.token);
+  const now = opts.now ?? Date.now();
+  const expiresInMs = opts.expiresInMs ?? 60 * 60 * 1000;
+  const url = new URL(`https://${appId}.ufs.sh/f/${key}`);
+  url.searchParams.set('expires', String(now + expiresInMs));
+  const signature = 'hmac-sha256=' + createHmac('sha256', apiKey).update(url.toString()).digest('hex');
+  url.searchParams.set('signature', signature);
+  return url.toString();
+}
