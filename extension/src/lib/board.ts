@@ -17,9 +17,11 @@ export async function deviceStart(f: Fetch, boardUrl: string, label: string) {
   return post(f, boardUrl + '/api/device/code', { label });
 }
 
+export type BoardUser = { displayName?: string; email?: string };
+
 export async function devicePoll(f: Fetch, boardUrl: string, deviceCode: string) {
   const r = await post(f, boardUrl + '/api/device/token', { deviceCode });
-  if (r && r.token) return { status: 'approved' as const, token: r.token as string };
+  if (r && r.token) return { status: 'approved' as const, token: r.token as string, user: (r.user ?? null) as BoardUser | null };
   if (r && r.status === 'denied') return { status: 'denied' as const };
   return { status: 'pending' as const };
 }

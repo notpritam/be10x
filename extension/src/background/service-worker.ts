@@ -16,7 +16,7 @@ async function connect(boardUrl: string): Promise<{ ok: boolean; error?: string 
     await new Promise((r) => setTimeout(r, intervalMs));
     const r = await devicePoll(fetch, boardUrl, start.deviceCode);
     if (r.status === 'approved') {
-      await setConfig({ boardUrl, token: r.token });
+      await setConfig({ boardUrl, token: r.token, user: r.user ?? undefined });
       return { ok: true };
     }
     if (r.status === 'denied') return { ok: false, error: 'denied' };
@@ -30,7 +30,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true; // async response
   }
   if (msg?.type === 'status') {
-    getConfig().then((c) => sendResponse({ connected: !!c.token, boardUrl: c.boardUrl }));
+    getConfig().then((c) => sendResponse({ connected: !!c.token, boardUrl: c.boardUrl, user: c.user }));
     return true;
   }
   if (msg?.type === 'report') {

@@ -29,7 +29,7 @@ describe('board client', () => {
     expect((await devicePoll(pending as any, 'https://b', 'dc')).status).toBe('pending');
     const approved = stub({ 'POST /api/device/token': () => ({ token: 'gfa_x', status: 'approved' }) });
     const r = await devicePoll(approved as any, 'https://b', 'dc');
-    expect(r).toEqual({ status: 'approved', token: 'gfa_x' });
+    expect(r).toEqual({ status: 'approved', token: 'gfa_x', user: null });
   });
 
   it('mintUploadUrls sends the bearer token and files, returns uploads', async () => {
