@@ -1,82 +1,37 @@
-// ABOUTME: MAIN-world content script — wraps fetch/XHR at document_start into a capped in-page request log.
-// ABOUTME: Must never throw or noticeably slow the page; answers the collector's postMessage round-trip.
+// ABOUTME: MAIN-world content script — wraps fetch/XHR at document_start into a timestamped NetEntry log,
+// ABOUTME: and broadcasts SPA route changes. Must never throw or noticeably slow the page.
 import { createRingBuffer } from './ring-buffer';
-import { COLLECT_REQ, COLLECT_RES, type NetRecord } from './protocol';
+import { COLLECT_REQ, COLLECT_RES, NAV_EVENT, type NetEntry } from './protocol';
+import { clamp, headersToObject, newId, parseRawHeaders, requestBodyToString, finalizeEntry, RES_BODY_CAP } from './net-entry';
 
-const CAP = 50;
-const REQ_BODY_CAP = 10 * 1024;
-const RES_BODY_CAP = 50 * 1024;
+// Count-bounded so a long-lived tab can't grow the log without limit; the report filters this down
+// to the recording window before upload. Bodies are already capped (req 10KB / resp 50KB).
+const CAP = 500;
 
-const buffer = createRingBuffer<NetRecord>(CAP);
-
-function clamp(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max) : s;
-}
-
-function headersToObject(h: unknown): Record<string, string> {
-  const out: Record<string, string> = {};
-  try {
-    if (!h) return out;
-    if (typeof Headers !== 'undefined' && h instanceof Headers) {
-      h.forEach((v, k) => {
-        out[k] = v;
-      });
-    } else if (Array.isArray(h)) {
-      for (const pair of h as [string, string][]) if (pair && pair.length >= 2) out[String(pair[0])] = String(pair[1]);
-    } else if (typeof h === 'object') {
-      const rec = h as Record<string, unknown>;
-      for (const k of Object.keys(rec)) out[k] = String(rec[k]);
-    }
-  } catch {
-    /* best-effort — return whatever we gathered */
-  }
-  return out;
-}
-
-// Only string-ish request bodies are recorded; binary (Blob/FormData/ArrayBuffer) is skipped.
-function bodyToString(body: unknown): string {
-  try {
-    if (body == null) return '';
-    if (typeof body === 'string') return clamp(body, REQ_BODY_CAP);
-    if (typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams) return clamp(body.toString(), REQ_BODY_CAP);
-    return '';
-  } catch {
-    return '';
-  }
-}
-
-function parseRawHeaders(raw: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  try {
-    for (const line of (raw || '').trim().split(/[\r\n]+/)) {
-      const idx = line.indexOf(':');
-      if (idx > 0) out[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
-    }
-  } catch {
-    /* ignore malformed header blob */
-  }
-  return out;
-}
+const buffer = createRingBuffer<NetEntry>(CAP);
 
 function installFetchHook(): void {
   try {
     const orig = window.fetch;
     if (typeof orig !== 'function') return;
     window.fetch = function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-      let rec: NetRecord | null = null;
+      let rec: NetEntry | null = null;
       try {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
         rec = {
+          id: newId(),
           url,
           method,
           requestHeaders: headersToObject(init?.headers ?? (input instanceof Request ? input.headers : undefined)),
-          requestBody: bodyToString(init?.body),
+          requestBody: requestBodyToString(init?.body),
           status: 0,
           responseHeaders: {},
-          responseBody: '',
+          responseBody: null,
           startedAt: Date.now(),
+          endedAt: 0,
           durationMs: 0,
+          type: 'fetch',
         };
         buffer.push(rec); // record the request up front so it survives even if the response read fails
       } catch {
@@ -85,14 +40,15 @@ function installFetchHook(): void {
 
       const p = orig.call(window, input, init);
       if (!rec) return p;
-      const started = rec.startedAt;
       const record = rec;
       return p.then(
         (res) => {
           try {
-            record.status = res.status;
-            record.durationMs = Date.now() - started;
-            record.responseHeaders = headersToObject(res.headers);
+            finalizeEntry(record, Date.now(), {
+              status: res.status,
+              statusText: res.statusText,
+              responseHeaders: headersToObject(res.headers),
+            });
             if (res.type !== 'opaque' && res.type !== 'opaqueredirect') {
               // Fire-and-forget body read on a clone so the page's own consumption is untouched.
               res
@@ -116,7 +72,7 @@ function installFetchHook(): void {
         },
         (err) => {
           try {
-            record.durationMs = Date.now() - started;
+            finalizeEntry(record, Date.now(), {});
           } catch {
             /* ignore */
           }
@@ -167,30 +123,33 @@ function installXhrHook(): void {
       try {
         const m = (this as unknown as { __be10x?: XhrMeta }).__be10x;
         if (m) {
-          const record: NetRecord = {
+          const record: NetEntry = {
+            id: newId(),
             url: m.url,
             method: m.method,
             requestHeaders: m.requestHeaders,
-            requestBody: bodyToString(body),
+            requestBody: requestBodyToString(body),
             status: 0,
             responseHeaders: {},
-            responseBody: '',
+            responseBody: null,
             startedAt: Date.now(),
+            endedAt: 0,
             durationMs: 0,
+            type: 'xhr',
           };
           buffer.push(record);
-          const started = record.startedAt;
           this.addEventListener('loadend', () => {
             try {
-              record.status = this.status;
-              record.durationMs = Date.now() - started;
-              record.responseHeaders = parseRawHeaders(this.getAllResponseHeaders());
+              let responseBody: string | null = null;
               const type = this.responseType;
-              if (type === '' || type === 'text') {
-                record.responseBody = clamp(this.responseText ?? '', RES_BODY_CAP);
-              } else if (type === 'json') {
-                record.responseBody = clamp(JSON.stringify(this.response), RES_BODY_CAP);
-              }
+              if (type === '' || type === 'text') responseBody = this.responseText ?? null;
+              else if (type === 'json') responseBody = JSON.stringify(this.response);
+              finalizeEntry(record, Date.now(), {
+                status: this.status,
+                statusText: this.statusText,
+                responseHeaders: parseRawHeaders(this.getAllResponseHeaders()),
+                responseBody,
+              });
             } catch {
               /* ignore — responseText can throw for some response types */
             }
@@ -203,6 +162,34 @@ function installXhrHook(): void {
     };
   } catch {
     /* leave native XHR intact */
+  }
+}
+
+// SPA route changes don't fire a native event — patch history and forward them to the ISOLATED recorder
+// (which owns the visits timeline). popstate is native and forwarded the same way for symmetry.
+function installNavHook(): void {
+  try {
+    const emit = () => {
+      try {
+        window.postMessage({ source: NAV_EVENT, url: location.href, title: document.title }, '*');
+      } catch {
+        /* ignore */
+      }
+    };
+    const wrap = (name: 'pushState' | 'replaceState') => {
+      const orig = history[name];
+      if (typeof orig !== 'function') return;
+      history[name] = function (this: History, ...args: unknown[]) {
+        const ret = orig.apply(this, args as Parameters<History[typeof name]>);
+        emit();
+        return ret;
+      } as History[typeof name];
+    };
+    wrap('pushState');
+    wrap('replaceState');
+    window.addEventListener('popstate', emit);
+  } catch {
+    /* leave native history intact */
   }
 }
 
@@ -225,4 +212,5 @@ function installCollectResponder(): void {
 
 installFetchHook();
 installXhrHook();
+installNavHook();
 installCollectResponder();

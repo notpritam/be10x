@@ -1,10 +1,21 @@
 // ABOUTME: Report flow — screenshot + rrweb DOM snapshot + network log + identity for the active tab,
 // ABOUTME: uploaded to UploadThing (best-effort, per-artifact) then filed as a bug. Never lose the bug.
 import { mintUploadUrls, fileBug } from '../lib/board';
-import type { Identity, NetRecord } from '../content/protocol';
+import type { Identity, NetEntry } from '../content/protocol';
 
-type Collected = { dom: unknown; network: NetRecord[]; identity: Identity | null };
-type Artifact = { slot: 'screenshot' | 'dom' | 'network'; name: string; blob: Blob; type: string };
+type Collected = { dom: unknown; network: NetEntry[]; identity: Identity | null };
+type Artifact = { slot: 'screenshot' | 'dom' | 'network' | 'session'; name: string; blob: Blob; type: string };
+
+// Everything the ISOLATED content script gathered for a widget-initiated session report.
+export type SessionReportPayload = {
+  pageUrl?: string;
+  form: { title: string; severity?: string; description?: string };
+  session: { events: unknown[]; startedAt: number; endedAt: number };
+  network?: NetEntry[];
+  dom?: unknown;
+  identity?: Identity | null;
+  meta?: Record<string, unknown>;
+};
 
 async function activeTab(): Promise<chrome.tabs.Tab> {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -15,6 +26,17 @@ async function activeTab(): Promise<chrome.tabs.Tab> {
 // data: URL -> Blob, for the multipart PUT to UploadThing.
 async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   return await (await fetch(dataUrl)).blob();
+}
+
+// Best-effort cover screenshot of the reporting tab's window. Never throws — a capture failure just
+// means the bug files without a cover image (some pages/states aren't capturable).
+async function captureScreenshot(windowId?: number): Promise<Blob | null> {
+  try {
+    const dataUrl = typeof windowId === 'number' ? await chrome.tabs.captureVisibleTab(windowId, { format: 'png' }) : await chrome.tabs.captureVisibleTab({ format: 'png' });
+    return await dataUrlToBlob(dataUrl);
+  } catch {
+    return null;
+  }
 }
 
 function jsonBlob(data: unknown): Blob {
@@ -40,7 +62,7 @@ async function collectFromTab(tabId: number): Promise<Collected> {
     const res = (await chrome.tabs.sendMessage(tabId, { type: 'collect' })) as Partial<Collected> | undefined;
     return {
       dom: res?.dom ?? null,
-      network: Array.isArray(res?.network) ? (res.network as NetRecord[]) : [],
+      network: Array.isArray(res?.network) ? (res.network as NetEntry[]) : [],
       identity: (res?.identity as Identity | undefined) ?? null,
     };
   } catch {
@@ -129,5 +151,46 @@ export async function reportCurrentTab(
     ok: true,
     bug: bug.bug,
     warning: keyBySlot.screenshot ? undefined : 'screenshot upload skipped (storage not configured)',
+  };
+}
+
+// Widget-initiated session report: the content script already gathered the recording, network, DOM
+// snapshot, and identity; the SW adds the cover screenshot, uploads everything in one mint call, and
+// files the bug. Every step is best-effort — the bug still files (with whatever succeeded) on failure.
+export async function reportSession(boardUrl: string, token: string, tab: chrome.tabs.Tab | undefined, payload: SessionReportPayload) {
+  const pageUrl = tab?.url || payload.pageUrl || '';
+  const shot = await captureScreenshot(tab?.windowId);
+  const network = Array.isArray(payload.network) ? payload.network : [];
+
+  const artifacts: Artifact[] = [];
+  if (shot) artifacts.push({ slot: 'screenshot', name: 'screenshot.png', blob: shot, type: 'image/png' });
+  artifacts.push({ slot: 'session', name: 'session.json', blob: jsonBlob(payload.session), type: 'application/json' });
+  if (network.length > 0) artifacts.push({ slot: 'network', name: 'network.json', blob: jsonBlob(network), type: 'application/json' });
+  if (payload.dom != null) artifacts.push({ slot: 'dom', name: 'dom.json', blob: jsonBlob(payload.dom), type: 'application/json' });
+
+  const keys = await uploadArtifacts(boardUrl, token, artifacts);
+  const keyBySlot: Partial<Record<Artifact['slot'], string | null>> = {};
+  artifacts.forEach((a, i) => {
+    keyBySlot[a.slot] = keys[i];
+  });
+
+  const identity = mergeIdentity(await readIdentity(pageUrl), payload.identity ?? null);
+
+  const bug = await fileBug(fetch, boardUrl, token, {
+    pageUrl,
+    title: payload.form.title || tab?.title || 'Untitled bug',
+    description: payload.form.description || '',
+    severity: payload.form.severity || 'medium',
+    screenshotKey: keyBySlot.screenshot ?? null,
+    sessionKey: keyBySlot.session ?? null,
+    networkKey: keyBySlot.network ?? null,
+    domKey: keyBySlot.dom ?? null,
+    identity,
+    meta: payload.meta ?? {},
+  });
+  return {
+    ok: true,
+    bug: bug.bug,
+    warning: keyBySlot.session ? undefined : 'session upload skipped (storage not configured)',
   };
 }

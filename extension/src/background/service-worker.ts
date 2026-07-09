@@ -2,7 +2,7 @@
 // ABOUTME: All board/UploadThing egress runs here (CORS-exempt via host_permissions), never a content script.
 import { deviceStart, devicePoll } from '../lib/board';
 import { getConfig, setConfig, clearAuth } from '../storage';
-import { reportCurrentTab } from './capture';
+import { reportCurrentTab, reportSession, type SessionReportPayload } from './capture';
 
 async function connect(boardUrl: string): Promise<{ ok: boolean; error?: string }> {
   boardUrl = boardUrl.replace(/\/$/, '');
@@ -24,7 +24,7 @@ async function connect(boardUrl: string): Promise<{ ok: boolean; error?: string 
   return { ok: false, error: 'expired' };
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'connect') {
     connect(msg.boardUrl).then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e.message || e) }));
     return true; // async response
@@ -39,6 +39,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       return reportCurrentTab(c.boardUrl, c.token, msg).then(sendResponse);
     }).catch((e) => sendResponse({ ok: false, error: String(e.message || e) }));
     return true;
+  }
+  if (msg?.type === 'report-session') {
+    const payload = msg as SessionReportPayload & { type: string };
+    const tab = sender.tab;
+    getConfig().then((c) => {
+      if (!c.token || !c.boardUrl) return sendResponse({ ok: false, error: 'not_connected' });
+      return reportSession(c.boardUrl, c.token, tab, payload).then(sendResponse);
+    }).catch((e) => sendResponse({ ok: false, error: String(e.message || e) }));
+    return true; // async response
   }
   if (msg?.type === 'disconnect') {
     clearAuth().then(() => sendResponse({ ok: true }));

@@ -1,7 +1,7 @@
-// ABOUTME: ISOLATED-world content script — answers the SW's `collect` with a DOM snapshot, network log, identity.
+// ABOUTME: ISOLATED-world collectors — a point-in-time DOM snapshot, the network log, and identity.
 // ABOUTME: Bridges to the MAIN-world net-hook over postMessage; degrades to best-effort on any failure.
 import { snapshot } from 'rrweb-snapshot';
-import { COLLECT_REQ, COLLECT_RES, type NetRecord, type Identity } from './protocol';
+import { COLLECT_REQ, COLLECT_RES, type NetEntry, type Identity } from './protocol';
 
 const NET_TIMEOUT_MS = 500;
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
@@ -9,11 +9,11 @@ const AUTH_URL_RE = /\/(me|users?\/me|account|session|auth|profile|whoami|viewer
 const AUTH_KEY_RE = /token|jwt|session|auth/i;
 
 // Round-trip to the MAIN-world net-hook; resolve `[]` if it never answers within the timeout.
-function collectNetwork(): Promise<NetRecord[]> {
+export function collectNetwork(): Promise<NetEntry[]> {
   return new Promise((resolve) => {
     let settled = false;
     const nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    const finish = (net: NetRecord[]) => {
+    const finish = (net: NetEntry[]) => {
       if (settled) return;
       settled = true;
       window.removeEventListener('message', onMsg);
@@ -22,7 +22,7 @@ function collectNetwork(): Promise<NetRecord[]> {
     const onMsg = (e: MessageEvent) => {
       const d = e.data as { source?: string; nonce?: string; network?: unknown } | null;
       if (!d || d.source !== COLLECT_RES || d.nonce !== nonce) return;
-      finish(Array.isArray(d.network) ? (d.network as NetRecord[]) : []);
+      finish(Array.isArray(d.network) ? (d.network as NetEntry[]) : []);
     };
     try {
       window.addEventListener('message', onMsg);
@@ -36,7 +36,7 @@ function collectNetwork(): Promise<NetRecord[]> {
 }
 
 // rrweb-snapshot yields a rebuildable node tree; fall back to raw outerHTML if it throws.
-function captureDom(): unknown {
+export function captureDom(): unknown {
   try {
     const snap = snapshot(document);
     if (snap) return snap;
@@ -87,7 +87,7 @@ function authStorageKeys(): string[] {
   return out;
 }
 
-function extractIdentity(network: NetRecord[]): Identity {
+export function extractIdentity(network: NetEntry[]): Identity {
   let loggedIn: boolean | null = null;
   let email: string | undefined;
   let source: string | undefined;
@@ -115,19 +115,22 @@ function extractIdentity(network: NetRecord[]): Identity {
   return { loggedIn, email, source, storageKeys };
 }
 
-async function collect(): Promise<{ dom: unknown; network: NetRecord[]; identity: Identity }> {
+export async function collect(): Promise<{ dom: unknown; network: NetEntry[]; identity: Identity }> {
   const network = await collectNetwork();
   const dom = captureDom();
   const identity = extractIdentity(network);
   return { dom, network, identity };
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg?.type === 'collect') {
-    collect()
-      .then(sendResponse)
-      .catch(() => sendResponse({ dom: null, network: [], identity: { loggedIn: null } as Identity }));
-    return true; // keep the channel open for the async sendResponse
-  }
-  return false;
-});
+// Register the SW's point-in-time `collect` responder (the popup's quick-report fallback path).
+export function installCollectHandler(): void {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === 'collect') {
+      collect()
+        .then(sendResponse)
+        .catch(() => sendResponse({ dom: null, network: [], identity: { loggedIn: null } as Identity }));
+      return true; // keep the channel open for the async sendResponse
+    }
+    return false;
+  });
+}
