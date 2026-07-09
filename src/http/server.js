@@ -18,6 +18,7 @@ import { listMembers, addMember, setRole, removeMember } from '../teams/membersh
 import { assertCan, assertCanAccessTask, canAccessProject } from '../authz/authz.js';
 import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
+import { createBug, getBug as getBugById, listBugs, updateBugStatus, addBugComment, listBugEvents, bugStatsForUser } from '../bugs/bugs.js';
 import { requestReview, submitReview } from '../reviews/reviews.js';
 import { requestInput, answerInput, getOpenInputRequest, getRequestTaskId } from '../tasks/input_requests.js';
 import { addComment, listComments } from '../tasks/comments.js';
@@ -629,6 +630,27 @@ const ROUTES = [
     }
     send(res, 200, { scope: 'all', period, rows: leaderboard(db, { sinceMs }) });
   }],
+
+  // --- QA bug capture (dashboard side; session auth) ------------------------------------------------
+  // A bug is filed by the extension over the Bearer /api/agent/bugs route below; these session routes are
+  // how the human dashboard browses and resolves them. `/api/bugs/stats` MUST precede `/api/bugs/:id`
+  // (match() compares segment counts only, so `:id` would otherwise capture the literal "stats").
+  ['GET', '/api/bugs', true, async ({ db, req, res }) => {
+    const q = new URL(req.url, 'http://x').searchParams;
+    send(res, 200, { bugs: listBugs(db, { status: q.get('status') || undefined, reporterId: q.get('reporterId') || undefined }) });
+  }],
+  ['GET', '/api/bugs/stats', true, async ({ db, res, user }) => send(res, 200, { stats: bugStatsForUser(db, user.id) })],
+  ['GET', '/api/bugs/:id', true, async ({ db, res, params }) => {
+    const bug = getBugById(db, params.id);
+    if (!bug) throw new Error('NOT_FOUND');
+    send(res, 200, { bug, events: listBugEvents(db, params.id) });
+  }],
+  ['POST', '/api/bugs/:id/status', true, async ({ db, res, params, body, user }) => {
+    send(res, 200, { bug: updateBugStatus(db, params.id, body.status, user.id, { resolution: body.resolution }) });
+  }],
+  ['POST', '/api/bugs/:id/comment', true, async ({ db, res, params, body, user }) => {
+    send(res, 200, { event: addBugComment(db, params.id, user.id, body.body) });
+  }],
 ];
 
 // The agent/runner API — token (Bearer) authenticated, transport-agnostic. This is how an agent running on
@@ -645,6 +667,27 @@ const AGENT_ROUTES = [
     if (!tool) throw new Error('UNKNOWN_TOOL');
     const result = tool.handler(db, auth, body.args ?? {});
     send(res, 200, { result: result ?? null });
+  }],
+
+  // The QA capture extension files a bug. Bearer-authed, so the reporter is the token's user. The payload is
+  // UploadThing keys + small metadata only — the screenshot/DOM/network binaries go straight to UploadThing,
+  // never through here (so this stays well under readJson's 2 MB cap).
+  ['POST', '/api/agent/bugs', async ({ db, res, body, auth }) => {
+    const bug = createBug(db, {
+      reporterId: auth.userId,
+      pageUrl: body.pageUrl,
+      title: body.title,
+      description: body.description,
+      severity: body.severity,
+      projectId: body.projectId,
+      teamId: body.teamId,
+      screenshotKey: body.screenshotKey,
+      domKey: body.domKey,
+      networkKey: body.networkKey,
+      identity: body.identity || {},
+      meta: body.meta || {},
+    });
+    send(res, 200, { bug });
   }],
 
   // A connector declares a repo it serves so tasks can target it and `claim` can match it. The project is
