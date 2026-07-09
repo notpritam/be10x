@@ -1,7 +1,7 @@
 // ABOUTME: MV3 service worker — owns auth, screenshot, upload, and bug filing. Message router for the popup.
 // ABOUTME: All board/UploadThing egress runs here (CORS-exempt via host_permissions), never a content script.
 import { deviceStart, devicePoll } from '../lib/board';
-import { getConfig, setConfig } from '../storage';
+import { getConfig, setConfig, clearAuth } from '../storage';
 import { reportCurrentTab } from './capture';
 
 async function connect(boardUrl: string): Promise<{ ok: boolean; error?: string }> {
@@ -38,6 +38,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (!c.token || !c.boardUrl) return sendResponse({ ok: false, error: 'not_connected' });
       return reportCurrentTab(c.boardUrl, c.token, msg).then(sendResponse);
     }).catch((e) => sendResponse({ ok: false, error: String(e.message || e) }));
+    return true;
+  }
+  if (msg?.type === 'disconnect') {
+    clearAuth().then(() => sendResponse({ ok: true }));
     return true;
   }
   return false;

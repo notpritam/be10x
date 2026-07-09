@@ -36,6 +36,10 @@ export function Popup() {
     });
   }
 
+  function disconnect() {
+    chrome.runtime.sendMessage({ type: 'disconnect' }, () => { setConnected(false); setMsg(''); });
+  }
+
   return (
     <div style={{ padding: 16, display: 'grid', gap: 8 }}>
       <strong>be10x Bug Capture</strong>
@@ -50,6 +54,7 @@ export function Popup() {
             <option value="critical">critical</option>
           </select>
           <button onClick={report} disabled={busy}>{busy ? 'Filing…' : 'Report this page'}</button>
+          <button onClick={disconnect} disabled={busy} style={{ fontSize: 11, opacity: 0.7, background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', padding: 0 }}>Switch board / disconnect</button>
         </div>
       ) : (
         <>
