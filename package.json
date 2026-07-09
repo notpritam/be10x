@@ -3,14 +3,27 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "bin": { "be10x": "bin/be10x.js" },
-  "engines": { "node": ">=18" },
-  "files": ["bin", "src", "public", "skills", "README.md"],
+  "bin": {
+    "be10x": "bin/be10x.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin",
+    "src",
+    "public",
+    "skills",
+    "README.md"
+  ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "sqids": "^0.3.0"
   },
   "optionalDependencies": {
     "better-sqlite3": "^11.8.0"
   },
-  "scripts": { "test": "node --test test/*.test.js" }
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
 }

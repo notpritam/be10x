@@ -1,6 +1,7 @@
 // ABOUTME: UploadThing v7 signer — builds presigned ingest URLs locally from UPLOADTHING_TOKEN using only
 // ABOUTME: node:crypto (no SDK). The extension PUTs bytes straight to UploadThing; be10x only stores keys.
 import { randomUUID, createHmac } from 'node:crypto';
+import Sqids from 'sqids';
 
 // UPLOADTHING_TOKEN is base64-encoded JSON { apiKey, appId, regions } (UploadThing dashboard → API keys).
 export function parseUploadThingToken(raw = process.env.UPLOADTHING_TOKEN) {
@@ -26,11 +27,42 @@ function signedUrl({ region, key, apiKey, params }) {
 }
 
 // files: [{ name, size, type }]. opts.{token,now,makeKey,expiresInMs} are injectable for deterministic tests.
+// UploadThing v7 file keys are `sqids(appId)` + base64url(seed) — NOT a random id. UploadThing's ingest
+// validates that the sqids-encoded appId prefix matches the app, so a wrong key is rejected with
+// "Invalid fileKey". This is the reference generateKey from UploadThing's docs (a djb2 hash + a sqids
+// alphabet shuffled by the appId), ported verbatim so our keys match what their server expects.
+const SQIDS_ALPHABET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
+function djb2(s) {
+  let h = 5381;
+  let i = s.length;
+  while (i) h = (h * 33) ^ s.charCodeAt(--i);
+  return (h & 0xbfffffff) | ((h >>> 1) & 0x40000000);
+}
+
+function shuffleAlphabet(str, seed) {
+  const chars = str.split('');
+  const seedNum = djb2(seed);
+  for (let i = 0; i < chars.length; i++) {
+    const j = ((seedNum % (i + 1)) + i) % chars.length;
+    const t = chars[i];
+    chars[i] = chars[j];
+    chars[j] = t;
+  }
+  return chars.join('');
+}
+
+export function generateFileKey(appId, fileSeed) {
+  const alphabet = shuffleAlphabet(SQIDS_ALPHABET, appId);
+  const encodedAppId = new Sqids({ alphabet, minLength: 12 }).encode([Math.abs(djb2(appId))]);
+  return encodedAppId + Buffer.from(String(fileSeed)).toString('base64url');
+}
+
 export function mintUploadUrls(files, opts = {}) {
   const { apiKey, appId, regions } = parseUploadThingToken(opts.token);
   const region = regions[0] || 'sea1';
   const now = opts.now ?? Date.now();
-  const makeKey = opts.makeKey ?? (() => randomUUID().replace(/-/g, ''));
+  const makeKey = opts.makeKey ?? (() => generateFileKey(appId, randomUUID()));
   const expiresInMs = opts.expiresInMs ?? 60 * 60 * 1000;
   return (files || []).map((f) => {
     const key = makeKey(f);

@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { parseUploadThingToken, mintUploadUrls } from '../src/bugs/uploadthing.js';
+import { parseUploadThingToken, mintUploadUrls, generateFileKey } from '../src/bugs/uploadthing.js';
 
 const TOKEN = Buffer.from(
   JSON.stringify({ apiKey: 'sk_test_abc', appId: 'app123', regions: ['sea1'] })
@@ -42,6 +42,18 @@ test('mintUploadUrls builds a signed ingest URL per file', () => {
   url.searchParams.delete('signature');
   const expected = 'hmac-sha256=' + createHmac('sha256', 'sk_test_abc').update(url.toString()).digest('hex');
   assert.equal(sig, expected);
+});
+
+test('generateFileKey is deterministic, appId-scoped, and url-safe', () => {
+  // The sqids-encoded appId prefix is what UploadThing validates (live-confirmed: a random key → 400
+  // "Invalid fileKey"; this scheme → 200). Lock the shape so it can't silently regress.
+  const k1 = generateFileKey('x4bfkkenpi', 'seed-1');
+  const k2 = generateFileKey('x4bfkkenpi', 'seed-1');
+  const k3 = generateFileKey('x4bfkkenpi', 'seed-2');
+  assert.equal(k1, k2); // deterministic for the same inputs
+  assert.notEqual(k1, k3); // a different seed yields a different key
+  assert.ok(k1.length >= 12); // sqids appId prefix has minLength 12
+  assert.match(k1, /^[A-Za-z0-9_-]+$/); // url-safe (sqids alphabet + base64url seed)
 });
 
 test('mintUploadUrls maps multiple files and defaults an unknown type', () => {
