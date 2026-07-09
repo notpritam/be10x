@@ -262,3 +262,44 @@ CREATE TABLE IF NOT EXISTS telemetry_events (
   received_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_telemetry_events_install ON telemetry_events (install_id, received_at);
+
+-- QA bug capture: a bug ticket filed by the browser extension. The big capture artifacts (screenshot,
+-- DOM snapshot, network bundle) live on UploadThing; only their keys + small metadata are stored here.
+-- reporter_id is the token's user (who filed it); identity_json records who they were logged into the
+-- app-under-test AS (email / logged-in-out / token preview), captured from the page at report time.
+CREATE TABLE IF NOT EXISTS bugs (
+  id             TEXT PRIMARY KEY,
+  human_id       TEXT NOT NULL UNIQUE,
+  reporter_id    TEXT NOT NULL REFERENCES users(id),
+  project_id     TEXT,
+  team_id        TEXT REFERENCES teams(id) ON DELETE SET NULL,
+  page_url       TEXT NOT NULL,
+  title          TEXT NOT NULL,
+  description    TEXT NOT NULL DEFAULT '',
+  status         TEXT NOT NULL DEFAULT 'open'
+                   CHECK (status IN ('open','in_progress','resolved','not_a_bug','wont_fix')),
+  severity       TEXT NOT NULL DEFAULT 'medium'
+                   CHECK (severity IN ('low','medium','high','critical')),
+  assignee_id    TEXT REFERENCES users(id),
+  resolution     TEXT,
+  screenshot_key TEXT,
+  dom_key        TEXT,
+  network_key    TEXT,
+  identity_json  TEXT NOT NULL DEFAULT '{}',
+  meta_json      TEXT NOT NULL DEFAULT '{}',
+  created_at     INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_bugs_reporter ON bugs (reporter_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_bugs_status   ON bugs (status, created_at);
+
+-- Append-only status/comment/assignment trail behind each bug (mirrors task_events).
+CREATE TABLE IF NOT EXISTS bug_events (
+  id           TEXT PRIMARY KEY,
+  bug_id       TEXT NOT NULL REFERENCES bugs(id) ON DELETE CASCADE,
+  actor        TEXT NOT NULL,
+  kind         TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_bug_events_bug ON bug_events (bug_id, created_at);
