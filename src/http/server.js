@@ -19,6 +19,7 @@ import { assertCan, assertCanAccessTask, canAccessProject } from '../authz/authz
 import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
 import { createBug, getBug as getBugById, listBugs, updateBugStatus, addBugComment, listBugEvents, bugStatsForUser } from '../bugs/bugs.js';
+import { mintUploadUrls } from '../bugs/uploadthing.js';
 import { requestReview, submitReview } from '../reviews/reviews.js';
 import { requestInput, answerInput, getOpenInputRequest, getRequestTaskId } from '../tasks/input_requests.js';
 import { addComment, listComments } from '../tasks/comments.js';
@@ -688,6 +689,13 @@ const AGENT_ROUTES = [
       meta: body.meta || {},
     });
     send(res, 200, { bug });
+  }],
+
+  // The extension asks for signed URLs, then PUTs each artifact (screenshot/DOM/network) directly to
+  // UploadThing — so the multi-MB bytes never traverse this server. Body is just [{ name, size, type }].
+  ['POST', '/api/agent/bugs/upload-urls', async ({ res, body }) => {
+    const files = Array.isArray(body.files) ? body.files : [];
+    send(res, 200, { uploads: mintUploadUrls(files) });
   }],
 
   // A connector declares a repo it serves so tasks can target it and `claim` can match it. The project is
