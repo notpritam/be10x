@@ -248,6 +248,66 @@ export interface BugIdentity {
   [key: string]: unknown;
 }
 
+/** A marked moment on the session-recording clock — "this is the bug". `t` is epoch ms (same wall clock
+ *  as the rrweb event timestamps), so the player maps it to a scrubber offset via its metadata startTime. */
+export interface BugMarker {
+  t: number;
+  label?: string;
+}
+
+/** One navigation captured during the recording — a full page load or an SPA route change. `t` is epoch ms. */
+export interface BugVisit {
+  t: number;
+  url: string;
+  title?: string;
+}
+
+/** The recording window + how it was captured: an always-on rolling buffer or a deliberate start/stop. */
+export interface BugRecording {
+  startedAt: number;
+  endedAt: number;
+  durationMs: number;
+  mode?: "rolling" | "explicit" | string;
+}
+
+/** Small capture metadata that rides in the bug's `meta_json` (no columns). Known replay fields are typed;
+ *  the index signature keeps it open-ended and lets the Details card still enumerate unknown keys. */
+export interface BugMeta {
+  markers?: BugMarker[];
+  visits?: BugVisit[];
+  recording?: BugRecording;
+  pageTitle?: string;
+  userAgent?: string;
+  viewport?: { w: number; h: number };
+  [key: string]: unknown;
+}
+
+/** One timestamped network call in `network.json` — synced to the replay clock so the panel can highlight
+ *  the requests in flight at the playhead. Bodies are capped upstream (req 10KB, resp 50KB). */
+export interface NetEntry {
+  id: string;
+  url: string;
+  method: string;
+  requestHeaders: Record<string, string>;
+  requestBody: string | null;
+  status: number;
+  statusText?: string;
+  responseHeaders: Record<string, string>;
+  responseBody: string | null;
+  startedAt: number;
+  endedAt: number;
+  durationMs: number;
+  type?: string;
+}
+
+/** The `session.json` artifact — rrweb's `record()` output plus the capture window. `events` is passed
+ *  straight to rrweb-player. Typed loosely here (unknown[]) so this module needn't depend on rrweb. */
+export interface RrwebSession {
+  events: unknown[];
+  startedAt?: number;
+  endedAt?: number;
+}
+
 /** A filed bug ticket. Mirrors hydrate() in src/bugs/bugs.js — the binary artifacts (screenshot / DOM /
  *  network) live on UploadThing; the row carries only their keys. */
 export interface Bug {
@@ -266,8 +326,10 @@ export interface Bug {
   screenshotKey: string | null;
   domKey: string | null;
   networkKey: string | null;
+  /** The rrweb session-recording artifact key — the scrubbable replay. Null on bugs filed before replay. */
+  sessionKey: string | null;
   identity: BugIdentity;
-  meta: Record<string, unknown>;
+  meta: BugMeta;
   createdAt: number;
   updatedAt: number;
 }

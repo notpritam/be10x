@@ -1,27 +1,26 @@
 // ABOUTME: A single bug's detail — screenshot + identity + captured metadata, a status/resolution control,
 // ABOUTME: a comment box, and the event timeline. Artifacts load via short-lived signed UploadThing URLs.
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import {
-  ArrowLeft,
-  Clock,
-  ExternalLink,
-  FileCode,
-  ImageOff,
-  Loader2,
-  MessageSquare,
-  Network,
-  Send,
-} from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
+import { ArrowLeft, Clock, ExternalLink, Loader2, MessageSquare, Send } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import type { Bug, BugEvent, BugStatus } from "@/lib/types";
 import { useApp } from "@/state/app-store";
-import { formatDateTime, humanizeKey, relativeTime } from "@/lib/utils";
+import { cn, formatDateTime, humanizeKey, relativeTime } from "@/lib/utils";
 import { UserAvatar } from "@/components/common/bits";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BUG_STATUS_META, BUG_STATUS_ORDER, BugSeverityPill, BugStatusBadge } from "./bug-bits";
+
+/** The replay UI pulls in rrweb-player + rrweb-snapshot (~200 KB); load it as its own chunk only when a
+ *  bug detail is actually opened, so it never weighs down the rest of the dashboard's initial bundle. */
+const ReplaySection = lazy(() =>
+  import("./ReplaySection").then((m) => ({ default: m.ReplaySection })),
+);
+
+/** Meta keys surfaced richly in the replay section — kept out of the generic Details key/value dump. */
+const REPLAY_META_KEYS = ["markers", "visits", "recording"];
 
 type ShotState =
   | { state: "none" }
@@ -68,6 +67,8 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
   const bug = data?.bug ?? null;
   const events = data?.events ?? [];
   const screenshotKey = bug?.screenshotKey ?? null;
+  // A session recording or network timeline needs the wider layout for the player + DevTools panel.
+  const wide = !!(bug?.sessionKey || bug?.networkKey);
 
   // The screenshot's signed URL is short-lived, so fetch it lazily once the bug (and its key) are known.
   useEffect(() => {
@@ -118,19 +119,9 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
     }
   }
 
-  async function openArtifact(kind: "dom" | "network") {
-    if (!bug) return;
-    try {
-      const { url } = await api.bugArtifactUrl(bug.id, kind);
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      toast.error(errorMessage(err));
-    }
-  }
-
   return (
     <div className="min-h-0 flex-1 overflow-y-auto scroll-thin bg-background">
-      <div className="mx-auto w-full max-w-3xl px-8 py-6 space-y-5">
+      <div className={cn("mx-auto w-full px-8 py-6 space-y-5", wide ? "max-w-5xl" : "max-w-3xl")}>
         <button
           type="button"
           onClick={onBack}
@@ -185,44 +176,13 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
               </Card>
             )}
 
-            {/* Screenshot */}
-            <Card title="Screenshot">
-              {shot.state === "loading" ? (
-                <div className="flex items-center gap-2 py-8 text-[13px] text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" /> Loading screenshot…
-                </div>
-              ) : shot.state === "ready" ? (
-                <img
-                  src={shot.url}
-                  alt={`Screenshot for ${bug.humanId}`}
-                  className="w-full rounded-md border border-border/60"
-                  onError={() => setShot({ state: "error" })}
-                />
-              ) : (
-                <EmptyNote>
-                  <ImageOff className="mx-auto mb-1.5 size-4 opacity-70" />
-                  {shot.state === "error" ? "Couldn't load the screenshot." : "No screenshot captured."}
-                </EmptyNote>
-              )}
-            </Card>
-
-            {/* Other artifacts */}
-            <Card title="Captured artifacts">
-              <div className="flex flex-col gap-1">
-                <ArtifactRow
-                  icon={<FileCode className="size-4" />}
-                  label="DOM snapshot"
-                  present={!!bug.domKey}
-                  onOpen={() => void openArtifact("dom")}
-                />
-                <ArtifactRow
-                  icon={<Network className="size-4" />}
-                  label="Network bundle"
-                  present={!!bug.networkKey}
-                  onOpen={() => void openArtifact("network")}
-                />
-              </div>
-            </Card>
+            {/* Session replay ⇄ snapshot + the playhead-synced network panel. Renders gracefully for older
+                bugs with only a screenshot (falls back to the static poster). */}
+            {(bug.sessionKey || bug.networkKey || bug.domKey || bug.screenshotKey) && (
+              <Suspense fallback={<ReplayFallback />}>
+                <ReplaySection bug={bug} screenshotUrl={shot.state === "ready" ? shot.url : null} />
+              </Suspense>
+            )}
 
             {/* Identity */}
             <Card title="Identity">
@@ -236,9 +196,11 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
                 <Field label="Page URL" value={bug.pageUrl} />
                 <Field label="Reported" value={formatDateTime(bug.createdAt)} />
                 <Field label="Last updated" value={formatDateTime(bug.updatedAt)} />
-                {Object.entries(bug.meta).map(([k, v]) => (
-                  <Field key={k} label={humanizeKey(k)} value={stringifyValue(v)} />
-                ))}
+                {Object.entries(bug.meta)
+                  .filter(([k]) => !REPLAY_META_KEYS.includes(k))
+                  .map(([k, v]) => (
+                    <Field key={k} label={humanizeKey(k)} value={stringifyValue(v)} />
+                  ))}
                 {bug.resolution && <Field label="Resolution" value={bug.resolution} />}
               </dl>
             </Card>
@@ -355,32 +317,13 @@ function IdentityBody({ bug }: { bug: Bug }) {
   return <p className="text-[13px] text-muted-foreground">Identity wasn't captured for this bug.</p>;
 }
 
-function ArtifactRow({
-  icon,
-  label,
-  present,
-  onOpen,
-}: {
-  icon: ReactNode;
-  label: string;
-  present: boolean;
-  onOpen: () => void;
-}) {
+function ReplayFallback() {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-background px-3 py-2.5">
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-        {icon}
-      </span>
-      <p className="flex-1 truncate text-[13px] font-medium text-foreground">{label}</p>
-      {present ? (
-        <Button size="xs" variant="outline" onClick={onOpen}>
-          <ExternalLink className="size-3" />
-          Open
-        </Button>
-      ) : (
-        <span className="text-[11.5px] text-muted-foreground/70">Not captured</span>
-      )}
-    </div>
+    <Card title="Session replay">
+      <div className="flex items-center gap-2 py-10 text-[13px] text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" /> Loading the replay viewer…
+      </div>
+    </Card>
   );
 }
 

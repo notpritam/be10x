@@ -112,6 +112,10 @@ export interface BugFilter {
   reporterId?: string;
 }
 
+/** The captured artifact kinds the dashboard can request a signed URL for. Mirrors the server's
+ *  kind→key map in GET /api/bugs/:id/artifact/:kind (screenshot|dom|network|session). */
+export type BugArtifactKind = "screenshot" | "dom" | "network" | "session";
+
 export interface CreateTaskInput {
   type: TaskType;
   scope: string;
@@ -311,8 +315,27 @@ export const api = {
     post<{ event: BugEvent }>(`/api/bugs/${id}/comment`, { body }),
   bugStats: () => request<{ stats: BugStats }>("/api/bugs/stats"),
   /** Short-lived signed UploadThing read URL for one captured artifact. 404 when that key is absent. */
-  bugArtifactUrl: (id: string, kind: "screenshot" | "dom" | "network") =>
+  bugArtifactUrl: (id: string, kind: BugArtifactKind) =>
     request<{ url: string }>(`/api/bugs/${id}/artifact/${kind}`),
+  /** Fetch + parse a JSON capture artifact (session.json / network.json / dom.json) through its short-lived
+   *  signed URL. The URL points at UploadThing (cross-origin), so this is a plain fetch — not the
+   *  same-origin `request()` — and deliberately sends no credentials. Throws on a 404/`no data` (the
+   *  caller decides whether that key was expected) or a failed cross-origin fetch. */
+  loadBugArtifactJson: async <T>(id: string, kind: BugArtifactKind): Promise<T> => {
+    const { url } = await request<{ url: string }>(`/api/bugs/${id}/artifact/${kind}`);
+    let res: Response;
+    try {
+      res = await fetch(url, { credentials: "omit" });
+    } catch {
+      throw new ApiError("ARTIFACT_NETWORK", 0);
+    }
+    if (!res.ok) throw new ApiError("ARTIFACT_FETCH", res.status);
+    try {
+      return (await res.json()) as T;
+    } catch {
+      throw new ApiError("ARTIFACT_PARSE", res.status);
+    }
+  },
 
   // Shareable, permissioned review links.
   // Owner-only (session): mint / list / revoke a task's links.
