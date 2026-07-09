@@ -24,6 +24,7 @@ function hydrate(row) {
     screenshotKey: row.screenshot_key,
     domKey: row.dom_key,
     networkKey: row.network_key,
+    sessionKey: row.session_key,
     identity: JSON.parse(row.identity_json),
     meta: JSON.parse(row.meta_json),
     createdAt: row.created_at,
@@ -57,6 +58,7 @@ export function createBug(db, spec = {}) {
     screenshotKey = null,
     domKey = null,
     networkKey = null,
+    sessionKey = null,
     identity = {},
     meta = {},
   } = spec;
@@ -69,11 +71,11 @@ export function createBug(db, spec = {}) {
   const now = Date.now();
   db.prepare(
     `INSERT INTO bugs (id, human_id, reporter_id, project_id, team_id, page_url, title, description,
-       status, severity, screenshot_key, dom_key, network_key, identity_json, meta_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?)`
+       status, severity, screenshot_key, dom_key, network_key, session_key, identity_json, meta_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id, humanId, reporterId, projectId, teamId, pageUrl, title, description,
-    severity, screenshotKey, domKey, networkKey, JSON.stringify(identity), JSON.stringify(meta), now, now
+    severity, screenshotKey, domKey, networkKey, sessionKey, JSON.stringify(identity), JSON.stringify(meta), now, now
   );
   appendBugEvent(db, id, reporterId, 'created', { title, severity, pageUrl });
   return getBug(db, id);

@@ -285,6 +285,9 @@ CREATE TABLE IF NOT EXISTS bugs (
   screenshot_key TEXT,
   dom_key        TEXT,
   network_key    TEXT,
+  -- Scrubbable rrweb session recording (session.json on UploadThing) — the primary replay artifact.
+  -- Markers + recording window ride in meta_json, so only this key needs a column.
+  session_key    TEXT,
   identity_json  TEXT NOT NULL DEFAULT '{}',
   meta_json      TEXT NOT NULL DEFAULT '{}',
   created_at     INTEGER NOT NULL,

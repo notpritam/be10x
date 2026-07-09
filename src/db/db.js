@@ -21,6 +21,7 @@ const COLUMN_MIGRATIONS = [
   { table: 'runs', column: 'cache_creation_tokens', ddl: 'ALTER TABLE runs ADD COLUMN cache_creation_tokens INTEGER' },
   { table: 'runs', column: 'cache_read_tokens', ddl: 'ALTER TABLE runs ADD COLUMN cache_read_tokens INTEGER' },
   { table: 'runs', column: 'cost_usd', ddl: 'ALTER TABLE runs ADD COLUMN cost_usd REAL' },
+  { table: 'bugs', column: 'session_key', ddl: 'ALTER TABLE bugs ADD COLUMN session_key TEXT' },
 ];
 
 // One-time rebuild for `projects`: the original table had a global UNIQUE(key) column constraint and no
@@ -82,8 +83,14 @@ function ensureProjectsIndexes(db) {
 // constants (never user input), so interpolating them into PRAGMA is safe.
 export function migrate(db) {
   for (const m of COLUMN_MIGRATIONS) {
-    const has = db.prepare(`PRAGMA table_info(${m.table})`).all().some((c) => c.name === m.column);
-    if (!has) db.exec(m.ddl);
+    const info = db.prepare(`PRAGMA table_info(${m.table})`).all();
+    // A COLUMN_MIGRATION only applies to a table that already exists. In a real boot schema.sql (which
+    // CREATEs every table) runs before migrate(), so the target table is always present and this guard is
+    // a no-op; it only matters when migrate() is called against a partially hand-built db (e.g. a unit
+    // test's old-shape fixture that predates a table) — there the table would be created, already carrying
+    // this column, by schema.sql on a real open, so skipping the ALTER is the correct behavior.
+    if (info.length === 0) continue;
+    if (!info.some((c) => c.name === m.column)) db.exec(m.ddl);
   }
   migrateProjectsTable(db);
   ensureProjectsIndexes(db);

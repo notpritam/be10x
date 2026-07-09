@@ -653,12 +653,12 @@ const ROUTES = [
     send(res, 200, { event: addBugComment(db, params.id, user.id, body.body) });
   }],
   // Hand the dashboard a short-lived signed UploadThing read URL for one captured artifact. kind picks the
-  // key column (screenshot|dom|network); 404 when the bug or that particular key is absent. Six path
+  // key column (screenshot|dom|network|session); 404 when the bug or that particular key is absent. Six path
   // segments, so match() never confuses this with `/api/bugs/:id` (four) or `/api/bugs/:id/status` (five).
   ['GET', '/api/bugs/:id/artifact/:kind', true, async ({ db, res, params }) => {
     const bug = getBugById(db, params.id);
     if (!bug) throw new Error('NOT_FOUND');
-    const key = { screenshot: 'screenshotKey', dom: 'domKey', network: 'networkKey' }[params.kind];
+    const key = { screenshot: 'screenshotKey', dom: 'domKey', network: 'networkKey', session: 'sessionKey' }[params.kind];
     const fileKey = key ? bug[key] : null;
     if (!fileKey) throw new Error('NOT_FOUND');
     send(res, 200, { url: signAccessUrl(fileKey) });
@@ -696,6 +696,7 @@ const AGENT_ROUTES = [
       screenshotKey: body.screenshotKey,
       domKey: body.domKey,
       networkKey: body.networkKey,
+      sessionKey: body.sessionKey,
       identity: body.identity || {},
       meta: body.meta || {},
     });

@@ -59,14 +59,16 @@ test('extension ingests a bug (Bearer); dashboard lists, reads, resolves it (ses
           screenshotKey: 'k1',
           domKey: 'k2',
           networkKey: 'k3',
+          sessionKey: 'k4',
           identity: { loggedIn: true, email: 'buyer@x.co' },
-          meta: { selector: '#pay' },
+          meta: { selector: '#pay', markers: [{ t: 1, label: 'bug' }] },
         }),
       })
     );
     assert.equal(ingest.status, 200);
     assert.equal(ingest.body.bug.humanId, 'BUG-001');
     assert.equal(ingest.body.bug.reporterId, userId);
+    assert.equal(ingest.body.bug.sessionKey, 'k4'); // the rrweb recording key surfaces on the hydrated bug
     const bugId = ingest.body.bug.id;
 
     // A bad token is rejected.

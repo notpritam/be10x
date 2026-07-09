@@ -29,8 +29,14 @@ test('createBug stores a bug and getBug hydrates it', () => {
     screenshotKey: 'k-shot',
     domKey: 'k-dom',
     networkKey: 'k-net',
+    sessionKey: 'k-session',
     identity: { loggedIn: true, email: 'buyer@x.co' },
-    meta: { selector: '#pay', viewport: { w: 1440, h: 900 } },
+    meta: {
+      selector: '#pay',
+      viewport: { w: 1440, h: 900 },
+      markers: [{ t: 1783619469393, label: 'This is the bug' }],
+      recording: { startedAt: 1783619400000, endedAt: 1783619470000, durationMs: 70000, mode: 'rolling' },
+    },
   });
   assert.equal(bug.humanId, 'BUG-001');
   assert.equal(bug.status, 'open');
@@ -39,8 +45,16 @@ test('createBug stores a bug and getBug hydrates it', () => {
   assert.equal(bug.pageUrl, 'https://app.example.com/checkout');
   assert.equal(bug.identity.email, 'buyer@x.co');
   assert.equal(bug.meta.selector, '#pay');
+  // The rrweb session key round-trips as its own column; markers + recording window ride in meta_json.
+  assert.equal(bug.sessionKey, 'k-session');
+  assert.equal(bug.meta.markers[0].label, 'This is the bug');
+  assert.equal(bug.meta.recording.mode, 'rolling');
   const got = getBug(db, bug.id);
   assert.equal(got.title, 'Pay button dead');
+  assert.equal(got.sessionKey, 'k-session');
+  // A bug filed before session recording existed keeps a null session key (older-bug fallback path).
+  const legacy = createBug(db, { reporterId: u.id, pageUrl: 'p', title: 'no session' });
+  assert.equal(legacy.sessionKey, null);
   assert.equal(getBug(db, 'nope'), null);
 });
 

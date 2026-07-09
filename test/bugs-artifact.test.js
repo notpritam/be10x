@@ -91,3 +91,29 @@ test('bug artifact route: signed URL when the key exists, 404 when it does not',
     assert.equal(noAuth.status, 401);
   });
 });
+
+test('bug artifact route: kind=session signs the rrweb recording key, 404 when absent', async () => {
+  await withServer(async (base) => {
+    const { cookie, token } = await signupAndToken(base);
+
+    // A bug carrying an rrweb session recording → artifact/session hands back a signed read URL for it.
+    const withSession = await ingestBug(base, token, {
+      sessionKey: 'sesskey789',
+      meta: { markers: [{ t: 1783619469393, label: 'This is the bug' }] },
+    });
+    const got = await json(
+      await fetch(base + '/api/bugs/' + withSession.id + '/artifact/session', { headers: { cookie } })
+    );
+    assert.equal(got.status, 200);
+    assert.equal(typeof got.body.url, 'string');
+    const u = new URL(got.body.url);
+    assert.equal(u.host, 'appzzz.ufs.sh');
+    assert.equal(u.pathname, '/f/sesskey789');
+    assert.ok(u.searchParams.get('signature'));
+
+    // An older bug with no recording → 404 for kind=session (distinct from a signed URL / an error).
+    const noSession = await ingestBug(base, token, { screenshotKey: 'shotonly' });
+    const missing = await fetch(base + '/api/bugs/' + noSession.id + '/artifact/session', { headers: { cookie } });
+    assert.equal(missing.status, 404);
+  });
+});
