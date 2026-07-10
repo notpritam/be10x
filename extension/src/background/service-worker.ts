@@ -1,11 +1,13 @@
 // ABOUTME: MV3 service worker — owns auth, screenshot, upload, and bug filing. Message router for the popup.
 // ABOUTME: All board/UploadThing egress runs here (CORS-exempt via host_permissions), never a content script.
 import { deviceStart, devicePoll } from '../lib/board';
-import { getConfig, setConfig, clearAuth } from '../storage';
+import { getConfig, setConfig, clearAuth, normalizeBoardUrl } from '../storage';
 import { reportCurrentTab, reportSession, type SessionReportPayload } from './capture';
 
 async function connect(boardUrl: string): Promise<{ ok: boolean; error?: string }> {
-  boardUrl = boardUrl.replace(/\/$/, '');
+  // Strip trailing slash and pin localhost→127.0.0.1 before the very first fetch (device-code),
+  // otherwise the connect itself dies on IPv6 for a board bound only to IPv4.
+  boardUrl = normalizeBoardUrl(boardUrl.replace(/\/$/, '')) as string;
   const label = 'Chrome extension';
   const start = await deviceStart(fetch, boardUrl, label);
   await chrome.tabs.create({ url: start.verificationUriComplete });
