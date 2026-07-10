@@ -43,6 +43,17 @@ function jsonBlob(data: unknown): Blob {
   return new Blob([JSON.stringify(data)], { type: 'application/json' });
 }
 
+// Turn the final fileBug failure into an actionable message (which board, and why). A raw "Failed to fetch"
+// means the board host was unreachable from the service worker (down, wrong URL, or a network block).
+function fileBugError(boardUrl: string, e: unknown): Error {
+  const msg = String((e as Error)?.message || e);
+  console.error('[be10x] fileBug failed →', boardUrl, '·', msg);
+  if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+    return new Error(`couldn't reach the board at ${boardUrl} — is it running and is that the exact URL?`);
+  }
+  return new Error(`the board rejected the report: ${msg}`);
+}
+
 // Coarse identity from cookies — the collector's page-context identity is layered over this later.
 async function readIdentity(url: string) {
   try {
@@ -136,17 +147,22 @@ export async function reportCurrentTab(
 
   const identity = mergeIdentity(await readIdentity(pageUrl), collected.identity);
 
-  const bug = await fileBug(fetch, boardUrl, token, {
-    pageUrl,
-    title: meta.title || tab.title || 'Untitled bug',
-    description: meta.description || '',
-    severity: meta.severity || 'medium',
-    screenshotKey: keyBySlot.screenshot ?? null,
-    domKey: keyBySlot.dom ?? null,
-    networkKey: keyBySlot.network ?? null,
-    identity,
-    meta: { pageTitle: tab.title, userAgent: navigator.userAgent, capturedAt: Date.now() },
-  });
+  let bug;
+  try {
+    bug = await fileBug(fetch, boardUrl, token, {
+      pageUrl,
+      title: meta.title || tab.title || 'Untitled bug',
+      description: meta.description || '',
+      severity: meta.severity || 'medium',
+      screenshotKey: keyBySlot.screenshot ?? null,
+      domKey: keyBySlot.dom ?? null,
+      networkKey: keyBySlot.network ?? null,
+      identity,
+      meta: { pageTitle: tab.title, userAgent: navigator.userAgent, capturedAt: Date.now() },
+    });
+  } catch (e) {
+    throw fileBugError(boardUrl, e);
+  }
   return {
     ok: true,
     bug: bug.bug,
@@ -176,18 +192,23 @@ export async function reportSession(boardUrl: string, token: string, tab: chrome
 
   const identity = mergeIdentity(await readIdentity(pageUrl), payload.identity ?? null);
 
-  const bug = await fileBug(fetch, boardUrl, token, {
-    pageUrl,
-    title: payload.form.title || tab?.title || 'Untitled bug',
-    description: payload.form.description || '',
-    severity: payload.form.severity || 'medium',
-    screenshotKey: keyBySlot.screenshot ?? null,
-    sessionKey: keyBySlot.session ?? null,
-    networkKey: keyBySlot.network ?? null,
-    domKey: keyBySlot.dom ?? null,
-    identity,
-    meta: payload.meta ?? {},
-  });
+  let bug;
+  try {
+    bug = await fileBug(fetch, boardUrl, token, {
+      pageUrl,
+      title: payload.form.title || tab?.title || 'Untitled bug',
+      description: payload.form.description || '',
+      severity: payload.form.severity || 'medium',
+      screenshotKey: keyBySlot.screenshot ?? null,
+      sessionKey: keyBySlot.session ?? null,
+      networkKey: keyBySlot.network ?? null,
+      domKey: keyBySlot.dom ?? null,
+      identity,
+      meta: payload.meta ?? {},
+    });
+  } catch (e) {
+    throw fileBugError(boardUrl, e);
+  }
   return {
     ok: true,
     bug: bug.bug,

@@ -1,8 +1,25 @@
 // ABOUTME: In-page recorder widget — a floating, themed, accessible control mounted in a Shadow DOM root
 // ABOUTME: (host wears BLOCK_CLASS so rrweb never records it). Start/Stop, Mark, live indicator, Report form.
 import { BLOCK_CLASS } from './recorder';
+import { describeElement } from './element-pick';
+import type { PickedElement } from './protocol';
 
-export type ReportForm = { title: string; severity: string; description: string };
+export type ReportForm = {
+  title: string;
+  severity: string;
+  description: string;
+  notes: string; // composed QA notes (freeform + expected/actual); '' when the drawer was left empty
+  pickedElements: PickedElement[]; // elements the QA pinpointed with the picker; [] when none
+};
+
+// Fold the notes drawer's fields into one string for meta.notes / description seeding.
+function composeNotes(text: string, expected: string, actual: string): string {
+  const parts: string[] = [];
+  if (text.trim()) parts.push(text.trim());
+  if (expected.trim()) parts.push('Expected: ' + expected.trim());
+  if (actual.trim()) parts.push('Actual: ' + actual.trim());
+  return parts.join('\n\n');
+}
 
 export type WidgetCallbacks = {
   isRecording: () => boolean; // an explicit take is in progress
@@ -81,6 +98,50 @@ const CSS = `
   .msg.err { color: #c0392b; }
   .msg.ok { color: #1a7f37; }
   .hidden { display: none !important; }
+  .icon.notes-toggle { position: relative; }
+  .icon.notes-toggle.has-notes { opacity: 1; color: #2563eb; }
+  .icon.notes-toggle.has-notes::after {
+    content: ''; position: absolute; top: 2px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: #2563eb;
+  }
+  .drawer {
+    overflow: hidden; display: grid; gap: 10px; padding: 0 12px; max-height: 0; opacity: 0; visibility: hidden;
+    border-bottom: 1px solid transparent;
+    transition: max-height .18s ease, opacity .18s ease, padding .18s ease, visibility 0s linear .18s;
+  }
+  .drawer.open {
+    max-height: 380px; opacity: 1; visibility: visible; padding: 12px; border-color: rgba(0,0,0,.07);
+    transition: max-height .18s ease, opacity .18s ease, padding .18s ease, visibility 0s;
+  }
+  .drawer-hint { font-size: 11px; opacity: .55; margin: -2px 0 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .icon.pick-toggle.active { opacity: 1; color: #2563eb; }
+  .pick-outline {
+    position: fixed; top: 0; left: 0; z-index: 2147483646; pointer-events: none; box-sizing: border-box;
+    border: 2px solid #2563eb; background: rgba(37,99,235,.12); border-radius: 3px; display: none;
+  }
+  .pick-outline.on { display: block; }
+  .pick-label {
+    position: fixed; top: 0; left: 0; z-index: 2147483647; pointer-events: none; display: none;
+    font: 11px/1.4 -apple-system, system-ui, sans-serif; background: #2563eb; color: #fff;
+    padding: 2px 6px; border-radius: 4px; white-space: nowrap; max-width: 60vw; overflow: hidden; text-overflow: ellipsis;
+  }
+  .pick-label.on { display: block; }
+  .pick-banner {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 2147483647; display: none;
+    align-items: center; gap: 10px; background: #17171a; color: #fff; border-radius: 999px;
+    padding: 7px 8px 7px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.32);
+    font: 12px/1.4 -apple-system, system-ui, sans-serif;
+  }
+  .pick-banner.on { display: flex; }
+  .pick-banner .count { font-variant-numeric: tabular-nums; opacity: .7; }
+  .pill-btn {
+    border: 0; cursor: pointer; border-radius: 999px; padding: 4px 10px; font: inherit; font-weight: 600;
+    background: rgba(255,255,255,.14); color: #fff;
+  }
+  .pill-btn:hover { background: rgba(255,255,255,.24); }
+  .pill-btn:disabled { opacity: .45; cursor: default; }
+  .pill-btn.primary { background: #2563eb; }
+  .pill-btn.primary:hover { background: #1d4ed8; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
   @media (prefers-color-scheme: dark) {
     .root { color: #ececee; }
@@ -90,6 +151,7 @@ const CSS = `
     .btn { background: #2c2c30; color: #ececee; border-color: rgba(255,255,255,.12); }
     .btn:hover { background: #34343a; }
     input, select, textarea { background: #2c2c30; color: #ececee; border-color: #3a3a40; }
+    .drawer.open { border-color: rgba(255,255,255,.08); }
   }
 `;
 
@@ -113,8 +175,10 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   const statText = h('span', { class: 'stat-text' }, 'Ready');
   const sub = h('span', { class: 'sub' });
   const stat = h('span', { class: 'stat' }, dot, statText, sub);
+  const pickBtn = h('button', { class: 'icon pick-toggle', type: 'button', 'aria-label': 'Pick element', 'aria-pressed': 'false', title: 'Pick element' }, '🎯');
+  const notesBtn = h('button', { class: 'icon notes-toggle', type: 'button', 'aria-label': 'QA notes', 'aria-expanded': 'false', title: 'QA notes' }, '📝');
   const collapseBtn = h('button', { class: 'icon', type: 'button', 'aria-label': 'Collapse recorder', title: 'Collapse' }, '–');
-  const hd = h('div', { class: 'hd' }, stat, collapseBtn);
+  const hd = h('div', { class: 'hd' }, stat, pickBtn, notesBtn, collapseBtn);
 
   const recBtn = h('button', { class: 'btn rec', type: 'button' }, '● Start');
   const markBtn = h('button', { class: 'btn', type: 'button', 'aria-label': 'Mark the bug moment' }, '⚑ Mark');
@@ -148,17 +212,57 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     msg,
   );
 
+  // QA notes drawer — filled WHILE investigating, persists across the session, rides in meta.notes.
+  const nText = h('textarea', { class: 'n-text', 'aria-label': 'QA notes', placeholder: 'What are you seeing? Steps, observations…' });
+  const nExpected = h('input', { class: 'n-expected', type: 'text', 'aria-label': 'Expected result', placeholder: 'e.g. Payment succeeds' });
+  const nActual = h('input', { class: 'n-actual', type: 'text', 'aria-label': 'Actual result', placeholder: 'e.g. Spinner hangs' });
+  const notesPanel = h(
+    'div',
+    { class: 'drawer', role: 'group', 'aria-label': 'QA notes', 'aria-hidden': 'true' },
+    h('label', { class: 'field' }, h('span', {}, 'Notes'), nText),
+    h('p', { class: 'drawer-hint' }, 'Saved with the report. Seeds the description if you leave it blank.'),
+    h(
+      'div',
+      { class: 'grid2' },
+      h('label', { class: 'field' }, h('span', {}, 'Expected'), nExpected),
+      h('label', { class: 'field' }, h('span', {}, 'Actual'), nActual),
+    ),
+  );
+
   const body = h('div', { class: 'body' }, actions, markRow, form);
-  const card = h('div', { class: 'card hidden' }, hd, body);
+  const card = h('div', { class: 'card hidden' }, hd, notesPanel, body);
   root.append(bubble, card);
   shadow.append(root);
+
+  // Element-picker overlay — a highlight outline + label that follow the hovered element, plus a control
+  // banner. All in the Shadow DOM under BLOCK_CLASS, so rrweb never records the highlight or the toolbar.
+  const pickOutline = h('div', { class: 'pick-outline', 'aria-hidden': 'true' });
+  const pickLabel = h('div', { class: 'pick-label', 'aria-hidden': 'true' });
+  const pickCount = h('span', { class: 'count' }, '0 picked');
+  const pickClearBtn = h('button', { class: 'pill-btn', type: 'button' }, 'Clear');
+  const pickDoneBtn = h('button', { class: 'pill-btn primary', type: 'button' }, 'Done');
+  const pickBanner = h(
+    'div',
+    { class: 'pick-banner', role: 'region', 'aria-label': 'Element picker' },
+    h('span', {}, '🎯 Click elements · Esc to exit'),
+    pickCount,
+    pickClearBtn,
+    pickDoneBtn,
+  );
+  shadow.append(pickOutline, pickLabel, pickBanner);
   document.documentElement.append(host);
 
   // --- state ---
   let collapsed = false;
   let markOpen = false;
   let formOpen = false;
+  let notesOpen = false;
   let busy = false;
+  let pickMode = false;
+  let pickedElements: PickedElement[] = [];
+  let collapsedBeforePick = false;
+
+  const hasNotes = () => !!(nText.value.trim() || nExpected.value.trim() || nActual.value.trim());
 
   const setMsg = (text: string, kind?: 'err' | 'ok') => {
     msg.textContent = text;
@@ -166,12 +270,22 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   };
 
   function render() {
-    bubble.classList.toggle('hidden', !collapsed);
+    // In pick mode the card + bubble tuck away; the picker banner + overlay drive the session.
+    bubble.classList.toggle('hidden', !collapsed || pickMode);
     card.classList.toggle('hidden', collapsed);
     bubble.classList.toggle('rec', cb.isRecording());
     markRow.classList.toggle('hidden', !markOpen);
     form.classList.toggle('hidden', !formOpen);
     actions.classList.toggle('hidden', formOpen);
+    notesPanel.classList.toggle('open', notesOpen);
+    notesPanel.setAttribute('aria-hidden', notesOpen ? 'false' : 'true');
+    notesBtn.setAttribute('aria-expanded', notesOpen ? 'true' : 'false');
+    notesBtn.classList.toggle('has-notes', hasNotes());
+    pickBtn.classList.toggle('active', pickMode);
+    pickBtn.setAttribute('aria-pressed', pickMode ? 'true' : 'false');
+    pickBanner.classList.toggle('on', pickMode);
+    pickCount.textContent = `${pickedElements.length} picked`;
+    pickClearBtn.disabled = pickedElements.length === 0;
 
     const recording = cb.isRecording();
     recBtn.textContent = recording ? '■ Stop' : '● Start';
@@ -203,8 +317,154 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     collapsed = true;
     markOpen = false;
     formOpen = false;
+    notesOpen = false;
     render();
   });
+
+  notesBtn.addEventListener('click', () => {
+    notesOpen = !notesOpen;
+    if (notesOpen) {
+      markOpen = false;
+      formOpen = false;
+    }
+    render();
+    if (notesOpen) nText.focus();
+  });
+  // Keep the header indicator live as the QA types, without waiting for the 1s render tick.
+  for (const el of [nText, nExpected, nActual]) el.addEventListener('input', render);
+
+  // --- element picker ---
+  // True when the event target is our own widget (host, or anything inside its Shadow DOM) — those must
+  // never be highlighted/captured, and their clicks (banner buttons) must pass through untouched.
+  const isOwnTarget = (t: EventTarget | null): boolean => {
+    if (!t || !(t instanceof Node)) return true;
+    if (t === host) return true;
+    try {
+      if (t.getRootNode() === shadow) return true;
+    } catch {
+      /* ignore */
+    }
+    return false;
+  };
+  // The real page element under an event (composedPath pierces shadow), or null for our own UI.
+  const pickTarget = (e: Event): Element | null => {
+    try {
+      const path = e.composedPath ? e.composedPath() : [];
+      const t = (path.length ? path[0] : e.target) as EventTarget | null;
+      if (isOwnTarget(t)) return null;
+      return t instanceof Element ? t : null;
+    } catch {
+      return null;
+    }
+  };
+  const hideOutline = () => {
+    pickOutline.classList.remove('on');
+    pickLabel.classList.remove('on');
+  };
+  const positionOutline = (el: Element) => {
+    try {
+      const r = el.getBoundingClientRect();
+      pickOutline.style.left = r.left + 'px';
+      pickOutline.style.top = r.top + 'px';
+      pickOutline.style.width = r.width + 'px';
+      pickOutline.style.height = r.height + 'px';
+      pickOutline.classList.add('on');
+      const cls = (el.getAttribute('class') || '')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((c) => '.' + c)
+        .join('');
+      pickLabel.textContent = `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${cls} · ${Math.round(r.width)}×${Math.round(r.height)}`;
+      pickLabel.style.left = Math.max(4, r.left) + 'px';
+      pickLabel.style.top = (r.top - 20 < 4 ? r.top + 4 : r.top - 20) + 'px';
+      pickLabel.classList.add('on');
+    } catch {
+      /* ignore */
+    }
+  };
+  const onPickMove = (e: MouseEvent) => {
+    const t = pickTarget(e);
+    if (!t) {
+      hideOutline();
+      return;
+    }
+    positionOutline(t);
+  };
+  const onPickClick = (e: MouseEvent) => {
+    const t = pickTarget(e);
+    if (!t) return; // our own UI (banner buttons) — let them handle the click
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    try {
+      if (pickedElements.length < 50) pickedElements.push(describeElement(t));
+    } catch {
+      /* ignore — never break the page over one bad element */
+    }
+    render();
+  };
+  // Shield the page from the picking interaction (focus, navigation, drag-start) — page targets only.
+  const onPickShield = (e: Event) => {
+    const t = pickTarget(e);
+    if (!t) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof (e as MouseEvent).stopImmediatePropagation === 'function') (e as MouseEvent).stopImmediatePropagation();
+  };
+  const onPickKey = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    exitPick();
+  };
+  const pickListeners: [string, EventListener][] = [
+    ['mousemove', onPickMove as EventListener],
+    ['click', onPickClick as EventListener],
+    ['mousedown', onPickShield],
+    ['mouseup', onPickShield],
+    ['pointerdown', onPickShield],
+    ['keydown', onPickKey as EventListener],
+  ];
+  const addPickListeners = () => {
+    for (const [type, fn] of pickListeners) document.addEventListener(type, fn, true);
+  };
+  const removePickListeners = () => {
+    for (const [type, fn] of pickListeners) {
+      try {
+        document.removeEventListener(type, fn, true);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+  function enterPick() {
+    if (pickMode) return;
+    pickMode = true;
+    collapsedBeforePick = collapsed;
+    collapsed = true; // tuck the card away — the banner + overlay drive the pick session
+    markOpen = formOpen = notesOpen = false;
+    addPickListeners();
+    render();
+  }
+  function exitPick() {
+    if (!pickMode) return;
+    pickMode = false;
+    removePickListeners();
+    hideOutline();
+    collapsed = collapsedBeforePick;
+    render();
+  }
+  pickBtn.addEventListener('click', () => {
+    if (pickMode) exitPick();
+    else enterPick();
+  });
+  pickClearBtn.addEventListener('click', () => {
+    pickedElements = [];
+    render();
+  });
+  pickDoneBtn.addEventListener('click', exitPick);
 
   recBtn.addEventListener('click', () => {
     if (cb.isRecording()) cb.onStop();
@@ -215,6 +475,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   markBtn.addEventListener('click', () => {
     markOpen = !markOpen;
     formOpen = false;
+    notesOpen = false;
     render();
     if (markOpen) {
       markInput.value = 'This is the bug';
@@ -242,6 +503,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   reportBtn.addEventListener('click', () => {
     formOpen = true;
     markOpen = false;
+    notesOpen = false;
     setMsg('');
     render();
     fTitle.focus();
@@ -264,13 +526,18 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     busy = true;
     setMsg('Capturing & uploading…');
     render();
-    cb.onReport({ title, severity: fSev.value, description: fDesc.value.trim() })
+    const notes = composeNotes(nText.value, nExpected.value, nActual.value);
+    cb.onReport({ title, severity: fSev.value, description: fDesc.value.trim(), notes, pickedElements: pickedElements.slice() })
       .then((r) => {
         busy = false;
         setMsg(r.message, r.ok ? 'ok' : 'err');
         if (r.ok) {
           fTitle.value = '';
           fDesc.value = '';
+          nText.value = '';
+          nExpected.value = '';
+          nActual.value = '';
+          pickedElements = [];
           formOpen = false;
         }
         render();
@@ -287,6 +554,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     if (e.key !== 'Escape') return;
     if (formOpen) formOpen = false;
     else if (markOpen) markOpen = false;
+    else if (notesOpen) notesOpen = false;
     else if (!collapsed) collapsed = true;
     else return;
     e.stopPropagation();
@@ -300,6 +568,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     destroy() {
       window.clearInterval(timer);
       root.removeEventListener('keydown', onKey);
+      removePickListeners(); // no-op if pick mode was never entered
       host.remove();
     },
   };

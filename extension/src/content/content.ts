@@ -32,15 +32,20 @@ async function report(form: ReportForm): Promise<ReportResult> {
     const network = pruneByAge(await collectNetwork(), recording.endedAt, recording.endedAt - recording.startedAt + NET_WINDOW_SLACK_MS);
     const dom = captureDom();
     const identity = extractIdentity(network);
+    const notes = form.notes ?? '';
+    // The QA's investigation notes seed the bug description when they didn't fill the description field.
+    const seededForm = { title: form.title, severity: form.severity, description: form.description || notes };
     payload = {
       type: 'report-session',
       pageUrl: location.href,
-      form,
+      form: seededForm,
       session: { events: recording.events, startedAt: recording.startedAt, endedAt: recording.endedAt },
       network,
       dom,
       identity,
       meta: {
+        notes,
+        pickedElements: form.pickedElements ?? [],
         markers: recording.markers,
         visits: recording.visits,
         recording: {
