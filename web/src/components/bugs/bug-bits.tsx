@@ -45,3 +45,20 @@ export function BugSeverityPill({ severity }: { severity: BugSeverity }) {
     <span className={cn("pill-priority", `pill-${severity}`)}>{BUG_SEVERITY_LABEL[severity]}</span>
   );
 }
+
+/** A bug's triage tags as small chips — routes it to whoever owns that tag. Renders nothing when empty. */
+export function BugTagChips({ tags, className }: { tags: string[]; className?: string }) {
+  if (!tags?.length) return null;
+  return (
+    <span className={cn("inline-flex flex-wrap items-center gap-1", className)}>
+      {tags.map((t) => (
+        <span
+          key={t}
+          className="inline-flex items-center rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary"
+        >
+          {t}
+        </span>
+      ))}
+    </span>
+  );
+}

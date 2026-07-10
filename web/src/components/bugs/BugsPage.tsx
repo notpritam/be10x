@@ -14,6 +14,7 @@ import {
   BUG_STATUS_ORDER,
   BugSeverityPill,
   BugStatusBadge,
+  BugTagChips,
 } from "./bug-bits";
 
 type StatusFilter = BugStatus | "all";
@@ -41,14 +42,17 @@ function hostOf(url: string): string {
 }
 
 export function BugsPage() {
-  const { user } = useApp();
+  const { user, teams, projects } = useApp();
   const [selectedBugId, setSelectedBugId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("all");
+  const [tagFilter, setTagFilter] = useState<string>("all");
+  const [teamFilter, setTeamFilter] = useState<string>("all");
+  const [projectFilter, setProjectFilter] = useState<string>("all");
   const [bugs, setBugs] = useState<Bug[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // The list route narrows by status server-side; severity is filtered client-side below.
+  // The list route narrows by status server-side; severity/tag/team/project are filtered client-side below.
   useEffect(() => {
     let active = true;
     setBugs(null);
@@ -62,9 +66,34 @@ export function BugsPage() {
     };
   }, [statusFilter]);
 
+  // Filter options are derived from what's actually present in the loaded bugs, so a control only appears
+  // once there's something to narrow by (no empty Team/Project/Tag rows on a fresh board).
+  const tagOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const b of bugs ?? []) for (const t of b.tags) set.add(t);
+    return [...set].sort();
+  }, [bugs]);
+  const teamOptions = useMemo(() => {
+    const ids = new Set<string>();
+    for (const b of bugs ?? []) if (b.teamId) ids.add(b.teamId);
+    return [...ids].map((id) => ({ value: id, label: teams.find((t) => t.id === id)?.name ?? "Team" }));
+  }, [bugs, teams]);
+  const projectOptions = useMemo(() => {
+    const ids = new Set<string>();
+    for (const b of bugs ?? []) if (b.projectId) ids.add(b.projectId);
+    return [...ids].map((id) => ({ value: id, label: projects.find((p) => p.id === id)?.name ?? "Project" }));
+  }, [bugs, projects]);
+
   const visible = useMemo(
-    () => (bugs ?? []).filter((b) => severityFilter === "all" || b.severity === severityFilter),
-    [bugs, severityFilter],
+    () =>
+      (bugs ?? []).filter(
+        (b) =>
+          (severityFilter === "all" || b.severity === severityFilter) &&
+          (tagFilter === "all" || b.tags.includes(tagFilter)) &&
+          (teamFilter === "all" || b.teamId === teamFilter) &&
+          (projectFilter === "all" || b.projectId === projectFilter),
+      ),
+    [bugs, severityFilter, tagFilter, teamFilter, projectFilter],
   );
 
   if (selectedBugId) {
@@ -87,6 +116,30 @@ export function BugsPage() {
             options={SEVERITY_OPTIONS}
             onChange={setSeverityFilter}
           />
+          {teamOptions.length > 0 && (
+            <FilterChips
+              label="Team"
+              value={teamFilter}
+              options={[{ value: "all", label: "All" }, ...teamOptions]}
+              onChange={setTeamFilter}
+            />
+          )}
+          {projectOptions.length > 0 && (
+            <FilterChips
+              label="Project"
+              value={projectFilter}
+              options={[{ value: "all", label: "All" }, ...projectOptions]}
+              onChange={setProjectFilter}
+            />
+          )}
+          {tagOptions.length > 0 && (
+            <FilterChips
+              label="Tag"
+              value={tagFilter}
+              options={[{ value: "all", label: "All" }, ...tagOptions.map((t) => ({ value: t, label: t }))]}
+              onChange={setTagFilter}
+            />
+          )}
         </div>
 
         {error && (
@@ -114,6 +167,7 @@ export function BugsPage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[13px] font-semibold text-foreground">{bug.title}</p>
                     <p className="truncate text-[11.5px] text-muted-foreground">{hostOf(bug.pageUrl)}</p>
+                    {bug.tags.length > 0 && <BugTagChips tags={bug.tags} className="mt-1" />}
                   </div>
                   <BugSeverityPill severity={bug.severity} />
                   <BugStatusBadge status={bug.status} />

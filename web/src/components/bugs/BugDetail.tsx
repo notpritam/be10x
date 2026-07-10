@@ -5,11 +5,13 @@ import {
   ArrowLeft,
   Clock,
   ExternalLink,
+  FolderGit2,
   Loader2,
   MessageSquare,
   Send,
   Share2,
   StickyNote,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, dashboardArtifacts, errorMessage } from "@/lib/api";
@@ -20,7 +22,7 @@ import { UserAvatar } from "@/components/common/bits";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BUG_STATUS_META, BUG_STATUS_ORDER, BugSeverityPill, BugStatusBadge } from "./bug-bits";
+import { BUG_STATUS_META, BUG_STATUS_ORDER, BugSeverityPill, BugStatusBadge, BugTagChips } from "./bug-bits";
 import { BugShareDialog } from "./BugShareDialog";
 
 /** The replay UI pulls in rrweb-player + rrweb-snapshot (~200 KB); load it as its own chunk only when a
@@ -40,7 +42,7 @@ type ShotState =
   | { state: "error" };
 
 export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void }) {
-  const { user } = useApp();
+  const { user, teams, projects } = useApp();
   const [data, setData] = useState<{ bug: Bug; events: BugEvent[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [shot, setShot] = useState<ShotState>({ state: "loading" });
@@ -190,6 +192,21 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
                   <Clock className="size-3.5" /> Reported {relativeTime(bug.createdAt)}
                 </span>
               </div>
+              {(bug.tags.length > 0 || bug.teamId || bug.projectId) && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  {bug.teamId && (
+                    <span className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      <Users className="size-3" /> {teams.find((t) => t.id === bug.teamId)?.name ?? "Team"}
+                    </span>
+                  )}
+                  {bug.projectId && (
+                    <span className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      <FolderGit2 className="size-3" /> {projects.find((p) => p.id === bug.projectId)?.name ?? "Project"}
+                    </span>
+                  )}
+                  <BugTagChips tags={bug.tags} />
+                </div>
+              )}
             </header>
 
             {bug.description && (

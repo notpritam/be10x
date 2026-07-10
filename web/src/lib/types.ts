@@ -365,6 +365,8 @@ export interface Bug {
   reporterId: string;
   projectId: string | null;
   teamId: string | null;
+  /** Free-form triage labels set by the reporter — routes the bug to whoever owns that tag. [] when none. */
+  tags: string[];
   pageUrl: string;
   title: string;
   description: string;
