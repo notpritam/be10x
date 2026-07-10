@@ -43,7 +43,24 @@ function hostOf(url: string): string {
 
 export function BugsPage() {
   const { user, teams, projects } = useApp();
-  const [selectedBugId, setSelectedBugId] = useState<string | null>(null);
+  // The open bug persists across refreshes (sessionStorage), matching AppShell's panel restore — so a
+  // reload lands you back on the exact bug, not the board.
+  const [selectedBugId, setSelectedBugId] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem("be10x.selectedBug");
+    } catch {
+      return null;
+    }
+  });
+  const selectBug = (id: string | null) => {
+    setSelectedBugId(id);
+    try {
+      if (id) sessionStorage.setItem("be10x.selectedBug", id);
+      else sessionStorage.removeItem("be10x.selectedBug");
+    } catch {
+      /* ignore */
+    }
+  };
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("all");
   const [tagFilter, setTagFilter] = useState<string>("all");
@@ -97,7 +114,7 @@ export function BugsPage() {
   );
 
   if (selectedBugId) {
-    return <BugDetail bugId={selectedBugId} onBack={() => setSelectedBugId(null)} />;
+    return <BugDetail bugId={selectedBugId} onBack={() => selectBug(null)} />;
   }
 
   return (
@@ -158,7 +175,7 @@ export function BugsPage() {
               <li key={bug.id}>
                 <button
                   type="button"
-                  onClick={() => setSelectedBugId(bug.id)}
+                  onClick={() => selectBug(bug.id)}
                   className="flex w-full items-center gap-3 rounded-xl border border-border/60 bg-card px-3.5 py-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
                   <span className="w-14 shrink-0 font-mono text-[11px] font-medium tracking-wide text-muted-foreground">

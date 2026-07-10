@@ -138,7 +138,7 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto scroll-thin bg-background">
-      <div className={cn("mx-auto w-full px-8 py-6 space-y-5", wide ? "max-w-5xl" : "max-w-3xl")}>
+      <div className={cn("mx-auto w-full px-8 py-6 space-y-5", wide ? "max-w-none" : "max-w-3xl")}>
         <button
           type="button"
           onClick={onBack}

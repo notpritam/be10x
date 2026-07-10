@@ -18,14 +18,28 @@ import { useTaskDetail } from "@/components/task/useTaskDetail";
 import { ManageTeamDialog } from "@/components/team/ManageTeamDialog";
 import { ConnectAgentDialog } from "@/components/agent/ConnectAgentDialog";
 
+// The active full-page panel (Bugs/Profile/Leaderboard) is a full page, not a board view, so it isn't in
+// the app-store's URL. Persist it in sessionStorage so a refresh restores the same page instead of dropping
+// back to the board. (The app-store rewrites the path/?v= for tasks and would clobber a URL param here.)
+type Panel = "" | "bugs" | "profile" | "leaderboard";
+const PANEL_KEY = "be10x.panel";
+function initialPanel(): Panel {
+  try {
+    const p = sessionStorage.getItem(PANEL_KEY);
+    return p === "bugs" || p === "profile" || p === "leaderboard" ? p : "";
+  } catch {
+    return "";
+  }
+}
+
 export function AppShell() {
   const { view, selectedTaskId, selectTask, closeTab } = useApp();
   const [collapsed, setCollapsed] = useState(false);
   const [tab, setTab] = useState<BoardTab>("board");
   const [composing, setComposing] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
-  const [showLeaderboard, setShowLeaderboard] = useState(false);
-  const [showBugs, setShowBugs] = useState(false);
+  const [showProfile, setShowProfile] = useState(() => initialPanel() === "profile");
+  const [showLeaderboard, setShowLeaderboard] = useState(() => initialPanel() === "leaderboard");
+  const [showBugs, setShowBugs] = useState(() => initialPanel() === "bugs");
   const [manageTeamOpen, setManageTeamOpen] = useState(false);
   const [connectAgentOpen, setConnectAgentOpen] = useState(false);
 
@@ -33,17 +47,25 @@ export function AppShell() {
   const ctrl = useTaskDetail(selectedTaskId);
   const activeTeam = view.kind === "team" ? { id: view.teamId, name: view.name } : null;
 
+  // Switch the active full-page panel and remember it across refreshes.
+  const setPanel = (panel: Panel) => {
+    setShowProfile(panel === "profile");
+    setShowLeaderboard(panel === "leaderboard");
+    setShowBugs(panel === "bugs");
+    try {
+      sessionStorage.setItem(PANEL_KEY, panel);
+    } catch {
+      /* private mode / storage blocked — panel just won't persist */
+    }
+  };
+
   const startCompose = () => {
-    setShowProfile(false);
-    setShowLeaderboard(false);
-    setShowBugs(false);
+    setPanel("");
     setComposing(true);
   };
   const leaveOverlays = () => {
     setComposing(false);
-    setShowProfile(false);
-    setShowLeaderboard(false);
-    setShowBugs(false);
+    setPanel("");
   };
 
   return (
@@ -55,21 +77,15 @@ export function AppShell() {
         onNewTask={startCompose}
         onProfile={() => {
           setComposing(false);
-          setShowLeaderboard(false);
-          setShowBugs(false);
-          setShowProfile(true);
+          setPanel("profile");
         }}
         onLeaderboard={() => {
           setComposing(false);
-          setShowProfile(false);
-          setShowBugs(false);
-          setShowLeaderboard(true);
+          setPanel("leaderboard");
         }}
         onBugs={() => {
           setComposing(false);
-          setShowProfile(false);
-          setShowLeaderboard(false);
-          setShowBugs(true);
+          setPanel("bugs");
         }}
       />
 
@@ -88,11 +104,7 @@ export function AppShell() {
             <div className="flex shrink-0 items-center border-b border-border/60 px-4 py-2">
               <button
                 type="button"
-                onClick={() => {
-                  setShowProfile(false);
-                  setShowLeaderboard(false);
-                  setShowBugs(false);
-                }}
+                onClick={() => setPanel("")}
                 className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               >
                 <ArrowLeft className="size-4" /> Back
