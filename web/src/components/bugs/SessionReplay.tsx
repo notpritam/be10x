@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { Replayer } from "rrweb";
 import { AlertTriangle, Flag, Pause, Play } from "lucide-react";
@@ -31,6 +32,10 @@ export interface ReplayClock {
 /** Imperative handle so parents (marker list, visits rail, network rows) can seek the player by wall time. */
 export interface SessionReplayHandle {
   seekToEpoch: (epochMs: number) => void;
+  /** Best-effort highlight of a picked element inside the live replay DOM: resolves the CSS selector against
+   *  the replayer's iframe document, measures its box, and draws an overlay. Pass null to clear. If the node
+   *  isn't found (or the iframe isn't ready) the overlay simply clears — the caller degrades to card-only. */
+  highlightSelector: (selector: string | null) => void;
 }
 
 interface SessionReplayProps {
@@ -43,6 +48,9 @@ interface SessionReplayProps {
   onTimeUpdate: (epochMs: number) => void;
   /** A picked element's page-pixel rect to highlight over the replay, or null. */
   pickRect?: { x: number; y: number; w: number; h: number } | null;
+  /** Extra content rendered as a right-side rail only while the stage is expanded to fullscreen (the
+   *  time-synced activity rail). Ignored in the normal inline layout. */
+  expandedAside?: ReactNode;
 }
 
 function formatOffset(ms: number): string {
@@ -54,7 +62,10 @@ function formatOffset(ms: number): string {
 }
 
 export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>(
-  function SessionReplay({ events, markers, viewport, onClockReady, onTimeUpdate, pickRect }, ref) {
+  function SessionReplay(
+    { events, markers, viewport, onClockReady, onTimeUpdate, pickRect, expandedAside },
+    ref,
+  ) {
     const scrollBoxRef = useRef<HTMLDivElement | null>(null);
     const mountRef = useRef<HTMLDivElement | null>(null);
     const replayerRef = useRef<Replayer | null>(null);
@@ -71,6 +82,11 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
     const [expanded, setExpanded] = useState(false);
     const [appliedScale, setAppliedScale] = useState<number | null>(null);
     const [speed, setSpeed] = useState(1);
+    // A picked element located live inside the replay iframe (its viewport-space box), drawn as a second
+    // overlay. Distinct from `pickRect` (the hover highlight from the element's stored page rect).
+    const [selectorRect, setSelectorRect] = useState<{ x: number; y: number; w: number; h: number } | null>(
+      null,
+    );
 
     const onClockReadyRef = useRef(onClockReady);
     const onTimeUpdateRef = useRef(onTimeUpdate);
@@ -209,6 +225,7 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
       } catch {
         return;
       }
+      setSelectorRect(null); // the picked-element box drifts once the DOM starts moving again.
       setPlaying(true);
       stopRaf();
       rafRef.current = requestAnimationFrame(tick);
@@ -239,6 +256,25 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
       }
     }, []);
 
+    // Resolve a picked element's CSS selector against the live replay iframe and measure its box in the
+    // iframe's own (unscaled) viewport pixels — PickOverlay multiplies by appliedScale to land it on the stage.
+    const measureSelector = useCallback(
+      (selector: string): { x: number; y: number; w: number; h: number } | null => {
+        try {
+          const doc = mountRef.current?.querySelector<HTMLIFrameElement>("iframe")?.contentDocument;
+          const node = doc?.querySelector(selector);
+          if (!node) return null;
+          const r = node.getBoundingClientRect();
+          if (r.width <= 0 && r.height <= 0) return null;
+          return { x: r.left, y: r.top, w: r.width, h: r.height };
+        } catch {
+          // Cross-origin / detached document / malformed selector — degrade to no overlay.
+          return null;
+        }
+      },
+      [],
+    );
+
     const seekOffset = useCallback(
       (off: number) => {
         const r = replayerRef.current;
@@ -246,6 +282,7 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
         if (!r || !clock) return;
         const clamped = Math.max(0, Math.min(clock.total, off));
         try {
+          setSelectorRect(null); // a scrub stales the picked-element box; the highlight flow re-measures after.
           if (playing) r.play(clamped);
           else r.pause(clamped);
           setOffset(clamped);
@@ -262,6 +299,14 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
         const clock = clockRef.current;
         if (!clock) return;
         seekOffset(epochMs - clock.start);
+      },
+      highlightSelector: (selector: string | null) => {
+        if (!selector) {
+          setSelectorRect(null);
+          return;
+        }
+        // Defer one frame so a seek issued immediately before this has applied its DOM mutations.
+        requestAnimationFrame(() => setSelectorRect(measureSelector(selector)));
       },
     }));
 
@@ -306,7 +351,8 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
           />
         }
       >
-        <div className="flex flex-col gap-3">
+        <div className={cn("flex min-w-0 gap-3", expanded ? "flex-col lg:flex-row" : "flex-col")}>
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
           {/* rrweb's Replayer mounts its own iframe here; never React-managed children. */}
           <div
             ref={scrollBoxRef}
@@ -315,10 +361,13 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
               expanded && "max-h-[calc(100vh-9rem)]",
             )}
           >
-            {/* Content-sized wrapper so the picked-element overlay scrolls in lockstep with the iframe. */}
+            {/* Content-sized wrapper so the picked-element overlays scroll in lockstep with the iframe. The
+                first box is the hover highlight (stored page rect); the second is the click highlight, located
+                live inside the iframe by CSS selector. */}
             <div className="relative inline-block align-top">
               <div ref={mountRef} className="block" />
               <PickOverlay rect={pickRect ?? null} scale={appliedScale} />
+              <PickOverlay rect={selectorRect} scale={appliedScale} />
             </div>
           </div>
 
@@ -397,6 +446,10 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
             ))}
           </div>
         </div>
+          </div>
+          {expanded && expandedAside ? (
+            <aside className="w-full shrink-0 lg:w-[340px]">{expandedAside}</aside>
+          ) : null}
         </div>
       </StageShell>
     );

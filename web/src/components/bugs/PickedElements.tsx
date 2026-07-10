@@ -30,10 +30,17 @@ export function PickedElements({
   elements,
   activeIndex,
   onActivate,
+  selectedIndex = null,
+  onSelect,
 }: {
   elements: PickedElement[];
+  /** The row currently hovered — a transient highlight over the stage (via the stored page rect). */
   activeIndex: number | null;
   onActivate: (index: number | null) => void;
+  /** The row the reporter clicked — a persistent selection that seeks the replay + highlights it live. */
+  selectedIndex?: number | null;
+  /** Click a row: seek the player to the element's captured moment and highlight it in the replay. */
+  onSelect?: (index: number) => void;
 }) {
   if (elements.length === 0) return null;
   return (
@@ -49,7 +56,9 @@ export function PickedElements({
             key={`${el.selector}-${i}`}
             el={el}
             active={activeIndex === i}
+            selected={selectedIndex === i}
             onHover={(on) => onActivate(on ? i : null)}
+            onSelect={onSelect ? () => onSelect(i) : undefined}
           />
         ))}
       </ul>
@@ -60,11 +69,15 @@ export function PickedElements({
 const PickRow = memo(function PickRow({
   el,
   active,
+  selected,
   onHover,
+  onSelect,
 }: {
   el: PickedElement;
   active: boolean;
+  selected: boolean;
   onHover: (on: boolean) => void;
+  onSelect?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const propEntries = el.react?.props ? Object.entries(el.react.props) : [];
@@ -77,17 +90,23 @@ const PickRow = memo(function PickRow({
       onMouseLeave={() => onHover(false)}
       className={cn(
         "rounded-md border transition-colors",
-        active ? "border-primary/50 bg-primary/[0.05]" : "border-border/50 bg-card",
+        selected
+          ? "border-primary/60 bg-primary/[0.07] ring-1 ring-primary/30"
+          : active
+            ? "border-primary/50 bg-primary/[0.05]"
+            : "border-border/50 bg-card",
       )}
     >
       <button
         type="button"
-        onClick={() => hasDetail && setOpen((o) => !o)}
+        // Clicking a row seeks the replay to this element's moment + highlights it live; if it also carries
+        // React detail, toggle that disclosure too.
+        onClick={() => {
+          onSelect?.();
+          if (hasDetail) setOpen((o) => !o);
+        }}
         aria-expanded={hasDetail ? open : undefined}
-        className={cn(
-          "flex w-full items-start gap-1.5 px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-          hasDetail ? "cursor-pointer" : "cursor-default",
-        )}
+        className="flex w-full cursor-pointer items-start gap-1.5 px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         {hasDetail ? (
           <ChevronRight

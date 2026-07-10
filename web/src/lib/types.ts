@@ -270,6 +270,11 @@ export interface BugRecording {
   mode?: "rolling" | "explicit" | string;
 }
 
+/** One console line captured during the recording. `ts` is epoch ms (same wall clock as the replay events), so
+ *  the fullscreen activity rail can position it on the timeline. Shared contract with the capture extension —
+ *  it populates `meta.console` with exactly this shape; undefined/empty on bugs filed before console capture. */
+export type ConsoleEntry = { ts: number; level: "log" | "info" | "warn" | "error" | "debug"; text: string };
+
 /** Small capture metadata that rides in the bug's `meta_json` (no columns). Known replay fields are typed;
  *  the index signature keeps it open-ended and lets the Details card still enumerate unknown keys. */
 export interface BugMeta {
@@ -283,6 +288,9 @@ export interface BugMeta {
   notes?: string;
   /** Elements the reporter picked on the page — highlighted over the replay/snapshot. */
   pickedElements?: PickedElement[];
+  /** Console output captured during the recording, in time order — surfaced in the fullscreen activity rail.
+   *  Populated by the capture extension; undefined/empty on bugs filed before console capture. */
+  console?: ConsoleEntry[];
   [key: string]: unknown;
 }
 
@@ -330,6 +338,9 @@ export interface PickedElement {
   classes?: string[];
   text?: string;
   rect: { x: number; y: number; w: number; h: number };
+  /** Epoch ms when the reporter picked this element (same wall clock as the replay). Lets the picked-elements
+   *  panel seek the player to the capture moment. Shared contract with the extension; older captures omit it. */
+  ts?: number;
   react?: {
     component?: string;
     props?: Record<string, unknown>;

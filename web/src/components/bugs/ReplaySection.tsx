@@ -10,12 +10,21 @@ import {
   Navigation,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import type { Bug, BugMarker, BugVisit, NetEntry, PickedElement, RrwebSession } from "@/lib/types";
+import type {
+  Bug,
+  BugMarker,
+  BugVisit,
+  ConsoleEntry,
+  NetEntry,
+  PickedElement,
+  RrwebSession,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { SessionReplay, type ReplayClock, type SessionReplayHandle } from "./SessionReplay";
 import { NetworkPanel } from "./NetworkPanel";
 import { SnapshotView } from "./SnapshotView";
 import { PickedElements } from "./PickedElements";
+import { ActivityRail } from "./ActivityRail";
 
 type Mode = "replay" | "snapshot";
 type Fetch<T> = { state: "loading" } | { state: "ready"; data: T } | { state: "error" };
@@ -62,6 +71,7 @@ export function ReplaySection({ bug, screenshotUrl }: { bug: Bug; screenshotUrl:
     () => bug.meta.pickedElements ?? [],
     [bug.meta.pickedElements],
   );
+  const consoleEntries = useMemo<ConsoleEntry[]>(() => bug.meta.console ?? [], [bug.meta.console]);
   const recording = bug.meta.recording;
   const viewport = bug.meta.viewport;
 
@@ -69,6 +79,8 @@ export function ReplaySection({ bug, screenshotUrl }: { bug: Bug; screenshotUrl:
   const [activePick, setActivePick] = useState<number | null>(null);
   const activePickRect =
     activePick != null && pickedElements[activePick] ? pickedElements[activePick].rect : null;
+  // The picked element the reporter clicked — a persistent selection that seeks + highlights it in the replay.
+  const [selectedPick, setSelectedPick] = useState<number | null>(null);
 
   const [mode, setMode] = useState<Mode>(hasReplay ? "replay" : "snapshot");
   const [snapshotMounted, setSnapshotMounted] = useState(!hasReplay);
@@ -133,6 +145,23 @@ export function ReplaySection({ bug, screenshotUrl }: { bug: Bug; screenshotUrl:
     [hasReplay],
   );
 
+  // Click a picked element: mark it selected, reveal the player, seek to its captured moment (when it carries
+  // one), and highlight it live inside the replay iframe. Reuses the same seek path as the network/marker rows;
+  // degrades to selection-only when there's no replay or the element has no timestamp / can't be located.
+  const selectPick = useCallback(
+    (index: number) => {
+      setSelectedPick(index);
+      const el = pickedElements[index];
+      if (!el || !hasReplay) return;
+      setMode("replay");
+      requestAnimationFrame(() => {
+        if (typeof el.ts === "number") replayRef.current?.seekToEpoch(el.ts);
+        replayRef.current?.highlightSelector(el.selector);
+      });
+    },
+    [pickedElements, hasReplay],
+  );
+
   const openRaw = useCallback(
     async (kind: "network" | "dom" | "session") => {
       try {
@@ -151,6 +180,18 @@ export function ReplaySection({ bug, screenshotUrl }: { bug: Bug; screenshotUrl:
     : recording
       ? { start: recording.startedAt, end: recording.endedAt }
       : null;
+
+  // The fullscreen activity rail — merged network + console timeline, synced to the playhead. Built here (it
+  // needs the live currentTime + the seek), then handed to SessionReplay, which mounts it only while expanded.
+  const activityRail = (
+    <ActivityRail
+      network={networkEntries}
+      consoleEntries={consoleEntries}
+      clock={networkClock}
+      currentTime={currentTime}
+      onSeek={seekToEpoch}
+    />
+  );
 
   return (
     <section className="rounded-[8px] border border-border/60 bg-card p-5 shadow-card">
@@ -199,6 +240,7 @@ export function ReplaySection({ bug, screenshotUrl }: { bug: Bug; screenshotUrl:
                   onClockReady={handleClockReady}
                   onTimeUpdate={handleTimeUpdate}
                   pickRect={activePickRect}
+                  expandedAside={activityRail}
                 />
                 <div className="flex min-w-0 flex-col gap-4">
                   <MarkerList markers={markers} clock={clock} onSeek={seekToEpoch} />
@@ -207,6 +249,8 @@ export function ReplaySection({ bug, screenshotUrl }: { bug: Bug; screenshotUrl:
                     elements={pickedElements}
                     activeIndex={activePick}
                     onActivate={setActivePick}
+                    selectedIndex={selectedPick}
+                    onSelect={selectPick}
                   />
                 </div>
               </div>
@@ -240,6 +284,8 @@ export function ReplaySection({ bug, screenshotUrl }: { bug: Bug; screenshotUrl:
             elements={pickedElements}
             activeIndex={activePick}
             onActivate={setActivePick}
+            selectedIndex={selectedPick}
+            onSelect={selectPick}
           />
           {/* Older bugs (no session) still surface their captured network + markers, just un-synced. */}
           {!hasReplay && hasNetwork && (
