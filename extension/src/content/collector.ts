@@ -1,37 +1,44 @@
 // ABOUTME: ISOLATED-world collectors — a point-in-time DOM snapshot, the network log, and identity.
 // ABOUTME: Bridges to the MAIN-world net-hook over postMessage; degrades to best-effort on any failure.
 import { snapshot } from 'rrweb-snapshot';
-import { COLLECT_REQ, COLLECT_RES, type NetEntry, type Identity } from './protocol';
+import { COLLECT_REQ, COLLECT_RES, type NetEntry, type ConsoleEntry, type Identity } from './protocol';
 
 const NET_TIMEOUT_MS = 500;
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
 const AUTH_URL_RE = /\/(me|users?\/me|account|session|auth|profile|whoami|viewer)\b/i;
 const AUTH_KEY_RE = /token|jwt|session|auth/i;
 
-// Round-trip to the MAIN-world net-hook; resolve `[]` if it never answers within the timeout.
-export function collectNetwork(): Promise<NetEntry[]> {
+// The MAIN-world net-hook's buffers, pulled over one postMessage round-trip: the network log and the
+// console log (both already capped/bounded in the hook).
+export type HookData = { network: NetEntry[]; console: ConsoleEntry[] };
+
+// Round-trip to the MAIN-world net-hook; resolve empties if it never answers within the timeout.
+export function collectNetwork(): Promise<HookData> {
   return new Promise((resolve) => {
     let settled = false;
     const nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    const finish = (net: NetEntry[]) => {
+    const finish = (out: HookData) => {
       if (settled) return;
       settled = true;
       window.removeEventListener('message', onMsg);
-      resolve(net);
+      resolve(out);
     };
     const onMsg = (e: MessageEvent) => {
-      const d = e.data as { source?: string; nonce?: string; network?: unknown } | null;
+      const d = e.data as { source?: string; nonce?: string; network?: unknown; console?: unknown } | null;
       if (!d || d.source !== COLLECT_RES || d.nonce !== nonce) return;
-      finish(Array.isArray(d.network) ? (d.network as NetEntry[]) : []);
+      finish({
+        network: Array.isArray(d.network) ? (d.network as NetEntry[]) : [],
+        console: Array.isArray(d.console) ? (d.console as ConsoleEntry[]) : [],
+      });
     };
     try {
       window.addEventListener('message', onMsg);
       window.postMessage({ source: COLLECT_REQ, nonce }, '*');
     } catch {
-      finish([]);
+      finish({ network: [], console: [] });
       return;
     }
-    setTimeout(() => finish([]), NET_TIMEOUT_MS);
+    setTimeout(() => finish({ network: [], console: [] }), NET_TIMEOUT_MS);
   });
 }
 
@@ -116,7 +123,7 @@ export function extractIdentity(network: NetEntry[]): Identity {
 }
 
 export async function collect(): Promise<{ dom: unknown; network: NetEntry[]; identity: Identity }> {
-  const network = await collectNetwork();
+  const { network } = await collectNetwork();
   const dom = captureDom();
   const identity = extractIdentity(network);
   return { dom, network, identity };

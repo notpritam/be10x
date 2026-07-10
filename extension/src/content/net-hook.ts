@@ -1,7 +1,7 @@
 // ABOUTME: MAIN-world content script — wraps fetch/XHR/WebSocket at document_start into a timestamped
 // ABOUTME: NetEntry log, and broadcasts SPA route changes. Must never throw or noticeably slow the page.
 import { createRingBuffer } from './ring-buffer';
-import { COLLECT_REQ, COLLECT_RES, NAV_EVENT, type NetEntry } from './protocol';
+import { COLLECT_REQ, COLLECT_RES, NAV_EVENT, type NetEntry, type ConsoleEntry } from './protocol';
 import {
   byteLength,
   captureWsFrame,
@@ -13,6 +13,7 @@ import {
   isTextishContentType,
   newId,
   parseRawHeaders,
+  serializeConsoleArgs,
   REQ_BODY_CAP,
   RES_BODY_CAP,
   WS_MAX_FRAMES,
@@ -23,6 +24,10 @@ import {
 const CAP = 500;
 
 const buffer = createRingBuffer<NetEntry>(CAP);
+
+// Same bound for console calls; the report trims to the recording window. Text is capped per entry.
+const CONSOLE_CAP = 500;
+const consoleBuffer = createRingBuffer<ConsoleEntry>(CONSOLE_CAP);
 
 function installFetchHook(): void {
   try {
@@ -361,6 +366,38 @@ function installNavHook(): void {
   }
 }
 
+// Mirror the page's console into a timestamped buffer so the dashboard can lay it over the replay clock.
+// The original method is always called (devtools output is untouched); a reentrancy guard means a console
+// call made while we serialize can't recurse. Levels beyond these (trace/table/…) are intentionally left
+// unhooked — the five below are what a QA session needs.
+function installConsoleHook(): void {
+  try {
+    const levels: ConsoleEntry['level'][] = ['log', 'info', 'warn', 'error', 'debug'];
+    let inHook = false;
+    for (const level of levels) {
+      const orig = (console as unknown as Record<string, unknown>)[level];
+      if (typeof orig !== 'function') continue;
+      const original = orig as (...a: unknown[]) => unknown;
+      (console as unknown as Record<string, unknown>)[level] = function (this: unknown, ...args: unknown[]): unknown {
+        if (!inHook) {
+          inHook = true;
+          try {
+            const { text, truncated } = serializeConsoleArgs(args);
+            consoleBuffer.push({ ts: Date.now(), level, text, ...(truncated ? { truncated: true } : {}) });
+          } catch {
+            /* never let capture break the page's logging */
+          } finally {
+            inHook = false;
+          }
+        }
+        return original.apply(this, args);
+      };
+    }
+  } catch {
+    /* leave console intact */
+  }
+}
+
 // Answer the collector's round-trip: correlate on the source tag + nonce, reply with the current log.
 function installCollectResponder(): void {
   try {
@@ -368,7 +405,7 @@ function installCollectResponder(): void {
       try {
         const d = e.data as { source?: string; nonce?: unknown } | null;
         if (!d || d.source !== COLLECT_REQ || typeof d.nonce === 'undefined') return;
-        window.postMessage({ source: COLLECT_RES, nonce: d.nonce, network: buffer.toArray() }, '*');
+        window.postMessage({ source: COLLECT_RES, nonce: d.nonce, network: buffer.toArray(), console: consoleBuffer.toArray() }, '*');
       } catch {
         /* ignore */
       }
@@ -381,5 +418,6 @@ function installCollectResponder(): void {
 installFetchHook();
 installXhrHook();
 installWebSocketHook();
+installConsoleHook();
 installNavHook();
 installCollectResponder();

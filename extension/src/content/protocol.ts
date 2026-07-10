@@ -62,6 +62,7 @@ export type PickedElement = {
   text?: string; // trimmed + whitespace-collapsed, capped ~200 chars
   rect: { x: number; y: number; w: number; h: number }; // viewport coords at pick time
   react?: ReactInfo;
+  ts?: number; // epoch ms the QA picked it — lets the dashboard seek the replay to this moment
 };
 
 // A route change observed during a recording. Rides in meta.visits.
@@ -75,4 +76,13 @@ export type Identity = {
   email?: string;
   source?: string; // url the email was read from
   storageKeys?: string[]; // auth-ish localStorage key names, WITHOUT their values
+};
+
+// One captured console call on the session clock (epoch ms). Rides in meta.console; the dashboard renders
+// it in the time-synced activity rail beside the replay. `text` is the serialized args, capped ~8KB.
+export type ConsoleEntry = {
+  ts: number; // epoch ms
+  level: 'log' | 'info' | 'warn' | 'error' | 'debug';
+  text: string;
+  truncated?: boolean; // the serialized text was over the cap and clipped
 };

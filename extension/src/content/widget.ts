@@ -399,7 +399,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     e.stopPropagation();
     if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
     try {
-      if (pickedElements.length < 50) pickedElements.push(describeElement(t));
+      if (pickedElements.length < 50) pickedElements.push({ ...describeElement(t), ts: Date.now() });
     } catch {
       /* ignore — never break the page over one bad element */
     }

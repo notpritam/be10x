@@ -11,6 +11,9 @@ import {
   parseRawHeaders,
   extractRequestBody,
   captureWsFrame,
+  serializeConsoleArgs,
+  stringifyConsoleArg,
+  CONSOLE_TEXT_CAP,
   newId,
   pruneByAge,
   finalizeEntry,
@@ -219,5 +222,36 @@ describe('finalizeEntry', () => {
     const e = finalizeEntry(base(), 500, {}); // ended before started (clock skew) → clamp to 0
     expect(e.durationMs).toBe(0);
     expect(e.responseBody).toBeNull();
+  });
+});
+
+describe('console serialization', () => {
+  it('joins primitive args with spaces, verbatim strings', () => {
+    expect(serializeConsoleArgs(['hello', 42, true]).text).toBe('hello 42 true');
+    expect(serializeConsoleArgs(['x', null, undefined]).text).toBe('x null undefined');
+  });
+
+  it('serializes plain objects/arrays as JSON', () => {
+    expect(stringifyConsoleArg({ a: 1, b: 'two' })).toBe('{"a":1,"b":"two"}');
+    expect(stringifyConsoleArg([1, 2, 3])).toBe('[1,2,3]');
+  });
+
+  it('renders an Error with name, message, and stack', () => {
+    const out = stringifyConsoleArg(new TypeError('boom'));
+    expect(out.startsWith('TypeError: boom')).toBe(true);
+  });
+
+  it('survives circular references without throwing', () => {
+    const o: Record<string, unknown> = { a: 1 };
+    o.self = o;
+    const out = stringifyConsoleArg(o);
+    expect(out).toContain('[Circular]');
+  });
+
+  it('marks functions and caps very long output', () => {
+    expect(stringifyConsoleArg(function foo() {})).toBe('[function foo]');
+    const big = serializeConsoleArgs(['z'.repeat(CONSOLE_TEXT_CAP + 500)]);
+    expect(big.truncated).toBe(true);
+    expect(big.text.length).toBe(CONSOLE_TEXT_CAP);
   });
 });

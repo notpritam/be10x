@@ -6,6 +6,7 @@ export const REQ_BODY_CAP = 10 * 1024;
 export const RES_BODY_CAP = 50 * 1024;
 export const WS_FRAME_CAP = 2 * 1024; // per-frame text cap for WebSocket messages
 export const WS_MAX_FRAMES = 200; // per-connection frame ring — keep the most recent to bound memory
+export const CONSOLE_TEXT_CAP = 8 * 1024; // per-entry cap for a serialized console call
 
 export function clamp(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) : s;
@@ -155,6 +156,52 @@ export function captureWsFrame(dir: 'send' | 'recv', data: unknown, t: number): 
   } catch {
     return { dir, data: '[unserializable]', t };
   }
+}
+
+// One console argument reduced to a readable string: primitives verbatim, Errors as name+message+stack,
+// objects/arrays as circular-safe JSON (functions → "[fn]"), functions as "[function name]". Never throws.
+export function stringifyConsoleArg(a: unknown): string {
+  if (typeof a === 'string') return a;
+  if (a === null) return 'null';
+  if (a === undefined) return 'undefined';
+  const t = typeof a;
+  if (t === 'number' || t === 'boolean' || t === 'bigint') return String(a);
+  if (t === 'symbol') return String(a);
+  if (t === 'function') {
+    const name = (a as { name?: string }).name;
+    return name ? `[function ${name}]` : '[function]';
+  }
+  if (a instanceof Error) return `${a.name}: ${a.message}${a.stack ? '\n' + a.stack : ''}`;
+  try {
+    const seen = new WeakSet<object>();
+    const json = JSON.stringify(a, (_k, v) => {
+      if (typeof v === 'bigint') return String(v);
+      if (typeof v === 'function') return '[fn]';
+      if (typeof v === 'object' && v !== null) {
+        if (seen.has(v)) return '[Circular]';
+        seen.add(v);
+      }
+      return v;
+    });
+    return json ?? String(a);
+  } catch {
+    try {
+      return String(a);
+    } catch {
+      return '[unserializable]';
+    }
+  }
+}
+
+// Serialize a console.* call's args to one capped line, joined by spaces (mirrors devtools). Pure.
+export function serializeConsoleArgs(args: unknown[]): { text: string; truncated: boolean } {
+  let s: string;
+  try {
+    s = args.map(stringifyConsoleArg).join(' ');
+  } catch {
+    s = '[unserializable]';
+  }
+  return clampWithFlag(s, CONSOLE_TEXT_CAP);
 }
 
 // Stable-ish unique id for correlating a request with its response row in the dashboard.

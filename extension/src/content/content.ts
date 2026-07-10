@@ -29,7 +29,11 @@ async function report(form: ReportForm): Promise<ReportResult> {
   let payload: Record<string, unknown>;
   try {
     const recording = recorder.collectRecording();
-    const network = pruneByAge(await collectNetwork(), recording.endedAt, recording.endedAt - recording.startedAt + NET_WINDOW_SLACK_MS);
+    const windowMs = recording.endedAt - recording.startedAt + NET_WINDOW_SLACK_MS;
+    const hook = await collectNetwork();
+    const network = pruneByAge(hook.network, recording.endedAt, windowMs);
+    // Align console to the same recording window as network so the activity rail matches the replay clock.
+    const consoleEntries = hook.console.filter((c) => c.ts >= recording.endedAt - windowMs);
     const dom = captureDom();
     const identity = extractIdentity(network);
     const notes = form.notes ?? '';
@@ -46,6 +50,7 @@ async function report(form: ReportForm): Promise<ReportResult> {
       meta: {
         notes,
         pickedElements: form.pickedElements ?? [],
+        console: consoleEntries,
         markers: recording.markers,
         visits: recording.visits,
         recording: {
