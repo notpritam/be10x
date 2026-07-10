@@ -47,6 +47,65 @@ function h<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+// A 24×24 line icon (lucide-style: currentColor stroke, no fill) from child shape specs. `fill` swaps to a
+// solid glyph (record/stop). Returned as a Node so it drops straight into an h(...) child list. Clean,
+// minimal, monochrome — inherits the button's color, so hover/active/dark-mode all just work.
+function icon(shapes: [string, Record<string, string>][], fill = false): SVGElement {
+  const el = document.createElementNS(SVG_NS, 'svg');
+  el.setAttribute('viewBox', '0 0 24 24');
+  el.setAttribute('fill', fill ? 'currentColor' : 'none');
+  el.setAttribute('stroke', fill ? 'none' : 'currentColor');
+  el.setAttribute('stroke-width', '2');
+  el.setAttribute('stroke-linecap', 'round');
+  el.setAttribute('stroke-linejoin', 'round');
+  el.setAttribute('aria-hidden', 'true');
+  for (const [tag, attrs] of shapes) {
+    const s = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) s.setAttribute(k, v);
+    el.append(s);
+  }
+  return el;
+}
+
+const ICONS = {
+  bug: (): SVGElement =>
+    icon([
+      ['rect', { x: '8', y: '7', width: '8', height: '11', rx: '4' }],
+      ['line', { x1: '8', y1: '11', x2: '4', y2: '9' }],
+      ['line', { x1: '8', y1: '14', x2: '3.5', y2: '14' }],
+      ['line', { x1: '8', y1: '17', x2: '5', y2: '20' }],
+      ['line', { x1: '16', y1: '11', x2: '20', y2: '9' }],
+      ['line', { x1: '16', y1: '14', x2: '20.5', y2: '14' }],
+      ['line', { x1: '16', y1: '17', x2: '19', y2: '20' }],
+      ['line', { x1: '10', y1: '7', x2: '9', y2: '3.5' }],
+      ['line', { x1: '14', y1: '7', x2: '15', y2: '3.5' }],
+    ]),
+  crosshair: (): SVGElement =>
+    icon([
+      ['circle', { cx: '12', cy: '12', r: '9' }],
+      ['line', { x1: '12', y1: '2.5', x2: '12', y2: '6.5' }],
+      ['line', { x1: '12', y1: '17.5', x2: '12', y2: '21.5' }],
+      ['line', { x1: '2.5', y1: '12', x2: '6.5', y2: '12' }],
+      ['line', { x1: '17.5', y1: '12', x2: '21.5', y2: '12' }],
+    ]),
+  note: (): SVGElement =>
+    icon([
+      ['path', { d: 'M15 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }],
+      ['path', { d: 'M14 3v6h6' }],
+      ['line', { x1: '8.5', y1: '13', x2: '15', y2: '13' }],
+      ['line', { x1: '8.5', y1: '16.5', x2: '13', y2: '16.5' }],
+    ]),
+  flag: (): SVGElement =>
+    icon([
+      ['path', { d: 'M5 21V4' }],
+      ['path', { d: 'M5 4h11l-2 3.5L16 11H5' }],
+    ]),
+  record: (): SVGElement => icon([['circle', { cx: '12', cy: '12', r: '6' }]], true),
+  stop: (): SVGElement => icon([['rect', { x: '7', y: '7', width: '10', height: '10', rx: '2' }]], true),
+  chevronDown: (): SVGElement => icon([['path', { d: 'M6 9l6 6 6-6' }]]),
+};
+
 function fmtElapsed(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   const mm = String(Math.floor(s / 60)).padStart(2, '0');
@@ -64,9 +123,11 @@ const CSS = `
   }
   .bubble {
     width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer;
-    background: #2563eb; color: #fff; font-size: 18px; line-height: 44px; text-align: center;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #2563eb; color: #fff;
     box-shadow: 0 6px 20px rgba(0,0,0,.28); transition: transform .12s ease;
   }
+  .bubble svg { width: 22px; height: 22px; }
   .bubble:hover { transform: translateY(-1px); }
   .bubble.rec { background: #c0392b; animation: pulse 1.4s ease-in-out infinite; }
   .card {
@@ -79,11 +140,13 @@ const CSS = `
   .dot.on { background: #c0392b; animation: pulse 1.4s ease-in-out infinite; }
   .stat-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sub { font-weight: 400; font-variant-numeric: tabular-nums; opacity: .6; }
-  .icon { border: 0; background: transparent; cursor: pointer; color: inherit; opacity: .55; font-size: 15px; padding: 2px 6px; border-radius: 6px; }
+  .icon { border: 0; background: transparent; cursor: pointer; color: inherit; opacity: .5; padding: 5px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; }
   .icon:hover { opacity: 1; background: rgba(0,0,0,.06); }
+  .icon svg { width: 16px; height: 16px; }
   .body { padding: 12px; display: grid; gap: 10px; }
   .row { display: flex; gap: 8px; align-items: center; }
-  .btn { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(0,0,0,.12); background: #f5f5f7; color: #17171a; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .btn { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(0,0,0,.12); background: #f5f5f7; color: #17171a; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .btn svg { width: 14px; height: 14px; }
   .btn:hover { background: #ececef; }
   .btn:disabled { opacity: .5; cursor: default; }
   .btn.primary { background: #2563eb; color: #fff; border-color: transparent; }
@@ -133,7 +196,11 @@ const CSS = `
     font: 12px/1.4 -apple-system, system-ui, sans-serif;
   }
   .pick-banner.on { display: flex; }
+  .pick-banner .lead { display: inline-flex; align-items: center; gap: 7px; }
+  .pick-banner svg { width: 15px; height: 15px; }
   .pick-banner .count { font-variant-numeric: tabular-nums; opacity: .7; }
+  .rec-icon { display: inline-flex; align-items: center; }
+  .btn.rec.on .rec-icon { color: #fff; }
   .pill-btn {
     border: 0; cursor: pointer; border-radius: 999px; padding: 4px 10px; font: inherit; font-weight: 600;
     background: rgba(255,255,255,.14); color: #fff;
@@ -168,26 +235,30 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   const root = h('div', { class: 'root', role: 'region', 'aria-label': 'be10x bug recorder' });
 
   // Collapsed affordance
-  const bubble = h('button', { class: 'bubble', type: 'button', 'aria-label': 'Open be10x bug recorder', title: 'be10x bug recorder' }, '●');
+  const bubble = h('button', { class: 'bubble', type: 'button', 'aria-label': 'Open be10x bug recorder', title: 'be10x bug recorder' }, ICONS.bug());
 
   // Expanded card
   const dot = h('span', { class: 'dot' });
   const statText = h('span', { class: 'stat-text' }, 'Ready');
   const sub = h('span', { class: 'sub' });
   const stat = h('span', { class: 'stat' }, dot, statText, sub);
-  const pickBtn = h('button', { class: 'icon pick-toggle', type: 'button', 'aria-label': 'Pick element', 'aria-pressed': 'false', title: 'Pick element' }, '🎯');
-  const notesBtn = h('button', { class: 'icon notes-toggle', type: 'button', 'aria-label': 'QA notes', 'aria-expanded': 'false', title: 'QA notes' }, '📝');
-  const collapseBtn = h('button', { class: 'icon', type: 'button', 'aria-label': 'Collapse recorder', title: 'Collapse' }, '–');
+  const pickBtn = h('button', { class: 'icon pick-toggle', type: 'button', 'aria-label': 'Pick element', 'aria-pressed': 'false', title: 'Pick element' }, ICONS.crosshair());
+  const notesBtn = h('button', { class: 'icon notes-toggle', type: 'button', 'aria-label': 'QA notes', 'aria-expanded': 'false', title: 'QA notes' }, ICONS.note());
+  const collapseBtn = h('button', { class: 'icon', type: 'button', 'aria-label': 'Collapse recorder', title: 'Collapse' }, ICONS.chevronDown());
   const hd = h('div', { class: 'hd' }, stat, pickBtn, notesBtn, collapseBtn);
 
-  const recBtn = h('button', { class: 'btn rec', type: 'button' }, '● Start');
-  const markBtn = h('button', { class: 'btn', type: 'button', 'aria-label': 'Mark the bug moment' }, '⚑ Mark');
+  // Record button: a swappable icon + a text label kept in its own span so the recording-state update can
+  // retitle it without clobbering the icon.
+  const recIconWrap = h('span', { class: 'rec-icon' }, ICONS.record());
+  const recLabel = h('span', {}, 'Start');
+  const recBtn = h('button', { class: 'btn rec', type: 'button' }, recIconWrap, recLabel);
+  const markBtn = h('button', { class: 'btn', type: 'button', 'aria-label': 'Mark the bug moment' }, ICONS.flag(), h('span', {}, 'Mark'));
   const reportBtn = h('button', { class: 'btn primary', type: 'button' }, 'Report');
   const actions = h('div', { class: 'row' }, recBtn, markBtn, reportBtn);
 
   // Optional mark-label row
   const markInput = h('input', { class: 'mark-input', type: 'text', 'aria-label': 'Marker label', placeholder: 'This is the bug' });
-  const markConfirm = h('button', { class: 'btn primary', type: 'button', 'aria-label': 'Place marker' }, '⚑');
+  const markConfirm = h('button', { class: 'btn primary', type: 'button', 'aria-label': 'Place marker' }, ICONS.flag());
   const markRow = h('div', { class: 'row hidden' }, markInput, markConfirm);
 
   // Report form
@@ -244,7 +315,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   const pickBanner = h(
     'div',
     { class: 'pick-banner', role: 'region', 'aria-label': 'Element picker' },
-    h('span', {}, '🎯 Click elements · Esc to exit'),
+    h('span', { class: 'lead' }, ICONS.crosshair(), h('span', {}, 'Click elements · Esc to exit')),
     pickCount,
     pickClearBtn,
     pickDoneBtn,
@@ -288,7 +359,8 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     pickClearBtn.disabled = pickedElements.length === 0;
 
     const recording = cb.isRecording();
-    recBtn.textContent = recording ? '■ Stop' : '● Start';
+    recLabel.textContent = recording ? 'Stop' : 'Start';
+    recIconWrap.replaceChildren(recording ? ICONS.stop() : ICONS.record());
     recBtn.classList.toggle('on', recording);
     dot.classList.toggle('on', recording);
 
