@@ -1,9 +1,55 @@
 // ABOUTME: The fullscreen replay's right-side activity rail — network requests + console lines merged in time
 // ABOUTME: order, auto-highlighting/scrolling the entry at the playhead and seeking the player on click.
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Activity } from "lucide-react";
 import type { ConsoleEntry, NetEntry } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+/** Pretty-print a captured body when it's JSON; otherwise return it as-is. Never throws. */
+function prettyBody(body: string | null | undefined): string | null {
+  if (body == null || body === "") return null;
+  try {
+    return JSON.stringify(JSON.parse(body), null, 2);
+  } catch {
+    return body;
+  }
+}
+
+/** A labeled key/value block (request/response headers) — hidden when there's nothing to show. */
+function HeaderList({ headers }: { headers: Record<string, string> | undefined }) {
+  const entries = headers ? Object.entries(headers) : [];
+  if (entries.length === 0) return null;
+  return (
+    <dl className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-2 gap-y-0.5">
+      {entries.map(([k, v]) => (
+        <div key={k} className="contents">
+          <dt className="truncate font-mono text-[10px] text-muted-foreground">{k}</dt>
+          <dd className="min-w-0 break-all font-mono text-[10px] text-foreground/80">{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** A titled section inside the expanded detail — a small heading over its body. */
+function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+  if (children == null) return null;
+  return (
+    <div className="space-y-1">
+      <p className="text-[9.5px] font-semibold uppercase tracking-wide text-muted-foreground/70">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+/** A scrollable, monospaced body dump (request/response payloads, console text). */
+function Payload({ text }: { text: string }) {
+  return (
+    <pre className="max-h-56 overflow-auto scroll-thin rounded bg-muted/50 p-2 font-mono text-[10px] leading-relaxed text-foreground/85">
+      {text}
+    </pre>
+  );
+}
 
 /** Map an HTTP status to one of the app's data hues (index.css `--status-*`). 0 = failed/canceled. Mirrors
  *  NetworkPanel's statusColor so the rail's badges read the same as the panel below the player. */
@@ -50,6 +96,61 @@ function formatOffset(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) ms = 0;
   const total = Math.floor(ms / 1000);
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/** The expanded detail for a network row: full URL, status/timing, request + response headers & bodies (or
+ *  WebSocket frames). Everything a QA or an agent needs to read the call inline, without the panel below. */
+function NetDetail({ e }: { e: NetEntry }) {
+  const reqBody = prettyBody(e.requestBody);
+  const resBody = prettyBody(e.responseBody);
+  const reqH = Object.keys(e.requestHeaders || {}).length > 0;
+  const resH = Object.keys(e.responseHeaders || {}).length > 0;
+  return (
+    <div className="mx-2 mb-1.5 space-y-2 rounded-md border border-border/50 bg-card/60 p-2">
+      <div className="break-all font-mono text-[10px] text-foreground/80">
+        <span className="font-semibold">{displayMethod(e)}</span> {e.url}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10px] text-muted-foreground">
+        <span>
+          status {e.status || "—"}
+          {e.statusText ? ` ${e.statusText}` : ""}
+        </span>
+        {Number.isFinite(e.durationMs) && <span>{Math.round(e.durationMs)} ms</span>}
+      </div>
+      {e.kind === "ws" ? (
+        <DetailSection title={`Frames (${e.frames?.length ?? 0})`}>
+          {e.frames && e.frames.length > 0 ? (
+            <Payload text={e.frames.map((f) => `${f.dir === "send" ? "▲ send" : "▼ recv"}  ${f.data}`).join("\n")} />
+          ) : (
+            <p className="text-[10px] text-muted-foreground/70">No frames captured.</p>
+          )}
+        </DetailSection>
+      ) : (
+        <>
+          {reqH && (
+            <DetailSection title="Request headers">
+              <HeaderList headers={e.requestHeaders} />
+            </DetailSection>
+          )}
+          {reqBody && (
+            <DetailSection title="Request body">
+              <Payload text={reqBody} />
+            </DetailSection>
+          )}
+          {resH && (
+            <DetailSection title="Response headers">
+              <HeaderList headers={e.responseHeaders} />
+            </DetailSection>
+          )}
+          {resBody && (
+            <DetailSection title="Response body">
+              <Payload text={resBody} />
+            </DetailSection>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 /** A network request or a console line, tagged with the timeline instant (epoch ms) it sits at. */
@@ -106,6 +207,14 @@ export function ActivityRail({ network, consoleEntries, clock, currentTime, onSe
     activeRef.current?.scrollIntoView({ block: "nearest" });
   }, [activeIndex]);
 
+  // Clicking a row expands its detail (headers/body/frames or the full console line) AND seeks the player
+  // to that instant — so the QA/agent reads the call's values in place without leaving the replay.
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const onRow = (key: string, seekTo: number) => {
+    setExpandedKey((k) => (k === key ? null : key));
+    onSeek?.(seekTo);
+  };
+
   const start = clock?.start ?? items[0]?.ts ?? 0;
   const netCount = items.filter((it) => it.kind === "net").length;
   const conCount = items.length - netCount;
@@ -130,6 +239,7 @@ export function ActivityRail({ network, consoleEntries, clock, currentTime, onSe
             const active = i === activeIndex;
             const offset = it.ts - start;
             const seekTo = it.ts;
+            const expanded = expandedKey === it.key;
 
             if (it.kind === "net") {
               const e = it.entry;
@@ -142,14 +252,13 @@ export function ActivityRail({ network, consoleEntries, clock, currentTime, onSe
                 <li key={it.key} ref={active ? activeRef : undefined}>
                   <button
                     type="button"
-                    disabled={!onSeek}
-                    onClick={() => onSeek?.(seekTo)}
+                    onClick={() => onRow(it.key, seekTo)}
                     title={e.url}
+                    aria-expanded={expanded}
                     className={cn(
-                      "grid w-full grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
-                      hot ? "bg-primary/[0.07]" : "hover:bg-accent/50",
-                      active && "ring-1 ring-inset ring-primary/40",
-                      onSeek ? "cursor-pointer" : "cursor-default",
+                      "grid w-full cursor-pointer grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+                      hot || expanded ? "bg-primary/[0.07]" : "hover:bg-accent/50",
+                      (active || expanded) && "ring-1 ring-inset ring-primary/40",
                     )}
                   >
                     <span className="font-mono text-[9.5px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -170,6 +279,7 @@ export function ActivityRail({ network, consoleEntries, clock, currentTime, onSe
                       {formatOffset(offset)}
                     </span>
                   </button>
+                  {expanded && <NetDetail e={e} />}
                 </li>
               );
             }
@@ -180,13 +290,12 @@ export function ActivityRail({ network, consoleEntries, clock, currentTime, onSe
               <li key={it.key} ref={active ? activeRef : undefined}>
                 <button
                   type="button"
-                  disabled={!onSeek}
-                  onClick={() => onSeek?.(seekTo)}
+                  onClick={() => onRow(it.key, seekTo)}
                   title={c.text}
+                  aria-expanded={expanded}
                   className={cn(
-                    "grid w-full grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
-                    active ? "bg-primary/[0.07] ring-1 ring-inset ring-primary/40" : "hover:bg-accent/50",
-                    onSeek ? "cursor-pointer" : "cursor-default",
+                    "grid w-full cursor-pointer grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+                    active || expanded ? "bg-primary/[0.07] ring-1 ring-inset ring-primary/40" : "hover:bg-accent/50",
                   )}
                 >
                   <span
@@ -200,6 +309,11 @@ export function ActivityRail({ network, consoleEntries, clock, currentTime, onSe
                     {formatOffset(offset)}
                   </span>
                 </button>
+                {expanded && (
+                  <div className="mx-2 mb-1.5">
+                    <Payload text={c.text} />
+                  </div>
+                )}
               </li>
             );
           })}
