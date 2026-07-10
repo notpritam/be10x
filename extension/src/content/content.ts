@@ -28,6 +28,7 @@ type ReportResult = { ok: boolean; message: string };
 type SwReply = { ok?: boolean; error?: string; warning?: string; bug?: { humanId?: string } } | undefined;
 
 const NET_WINDOW_SLACK_MS = 2000; // include requests started just before the recording window opened
+const CONSOLE_LOOKBACK_MS = 120000; // console reaches back ~2 min so page-load/setup logs aren't dropped
 
 function sendToSw(payload: Record<string, unknown>): Promise<SwReply> {
   return new Promise((resolve) => {
@@ -51,8 +52,11 @@ async function report(form: ReportForm): Promise<ReportResult> {
     const windowMs = recording.endedAt - recording.startedAt + NET_WINDOW_SLACK_MS;
     const hook = await collectNetwork();
     const network = pruneByAge(hook.network, recording.endedAt, windowMs);
-    // Align console to the same recording window as network so the activity rail matches the replay clock.
-    const consoleEntries = hook.console.filter((c) => c.ts >= recording.endedAt - windowMs);
+    // Console gets a MORE generous window than network: a short explicit take would otherwise drop the
+    // page-load + setup logs that explain the bug. Keep everything from at least the 2-min rolling window
+    // (or the whole take if it ran longer) — the buffer is already count-capped, so this stays bounded.
+    const consoleWindowMs = Math.max(windowMs, CONSOLE_LOOKBACK_MS);
+    const consoleEntries = hook.console.filter((c) => c.ts >= recording.endedAt - consoleWindowMs);
     const dom = captureDom();
     const identity = extractIdentity(network);
     const notes = form.notes ?? '';
