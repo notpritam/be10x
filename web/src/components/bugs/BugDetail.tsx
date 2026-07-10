@@ -1,7 +1,7 @@
 // ABOUTME: A single bug's detail — screenshot + identity + captured metadata, a status/resolution control,
 // ABOUTME: a comment box, and the event timeline. Artifacts load via short-lived signed UploadThing URLs.
 import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
-import { ArrowLeft, Clock, ExternalLink, Loader2, MessageSquare, Send } from "lucide-react";
+import { ArrowLeft, Clock, ExternalLink, Loader2, MessageSquare, Send, StickyNote } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/lib/api";
 import type { Bug, BugEvent, BugStatus } from "@/lib/types";
@@ -19,8 +19,9 @@ const ReplaySection = lazy(() =>
   import("./ReplaySection").then((m) => ({ default: m.ReplaySection })),
 );
 
-/** Meta keys surfaced richly in the replay section — kept out of the generic Details key/value dump. */
-const REPLAY_META_KEYS = ["markers", "visits", "recording"];
+/** Meta keys surfaced richly elsewhere (replay section, notes card, picked-element panel) — kept out of the
+ *  generic Details key/value dump so they aren't double-rendered. */
+const REPLAY_META_KEYS = ["markers", "visits", "recording", "notes", "pickedElements"];
 
 type ShotState =
   | { state: "none" }
@@ -172,6 +173,14 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
               <Card title="Description">
                 <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground/90">
                   {bug.description}
+                </p>
+              </Card>
+            )}
+
+            {bug.meta.notes && (
+              <Card title="QA notes" icon={<StickyNote className="size-4" />}>
+                <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground/90">
+                  {bug.meta.notes}
                 </p>
               </Card>
             )}

@@ -12,6 +12,14 @@ import {
 import { Replayer } from "rrweb";
 import { AlertTriangle, Flag, Pause, Play } from "lucide-react";
 import type { BugMarker } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import {
+  DEFAULT_VIEW_SCALE,
+  PickOverlay,
+  StageShell,
+  ViewControls,
+  type ViewScale,
+} from "./viewControls";
 
 /** The replay clock, in epoch ms + total duration — everything else (markers, network) maps onto this. */
 export interface ReplayClock {
@@ -33,6 +41,8 @@ interface SessionReplayProps {
   onClockReady: (clock: ReplayClock) => void;
   /** Playhead position in epoch ms — throttled to ~20 Hz so downstream (network highlight) stays cheap. */
   onTimeUpdate: (epochMs: number) => void;
+  /** A picked element's page-pixel rect to highlight over the replay, or null. */
+  pickRect?: { x: number; y: number; w: number; h: number } | null;
 }
 
 function formatOffset(ms: number): string {
@@ -44,23 +54,30 @@ function formatOffset(ms: number): string {
 }
 
 export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>(
-  function SessionReplay({ events, markers, viewport, onClockReady, onTimeUpdate }, ref) {
+  function SessionReplay({ events, markers, viewport, onClockReady, onTimeUpdate, pickRect }, ref) {
+    const scrollBoxRef = useRef<HTMLDivElement | null>(null);
     const mountRef = useRef<HTMLDivElement | null>(null);
     const replayerRef = useRef<Replayer | null>(null);
     const clockRef = useRef<ReplayClock | null>(null);
     const rafRef = useRef<number | null>(null);
     const lastEmitRef = useRef(0);
+    const speedRef = useRef(1);
 
     const [offset, setOffset] = useState(0);
     const [total, setTotal] = useState(0);
     const [playing, setPlaying] = useState(false);
     const [error, setError] = useState(false);
+    const [scale, setScale] = useState<ViewScale>(DEFAULT_VIEW_SCALE);
+    const [expanded, setExpanded] = useState(false);
+    const [appliedScale, setAppliedScale] = useState<number | null>(null);
+    const [speed, setSpeed] = useState(1);
 
     const onClockReadyRef = useRef(onClockReady);
     const onTimeUpdateRef = useRef(onTimeUpdate);
     useEffect(() => {
       onClockReadyRef.current = onClockReady;
       onTimeUpdateRef.current = onTimeUpdate;
+      speedRef.current = speed;
     });
 
     const stopRaf = useCallback(() => {
@@ -90,6 +107,34 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
       rafRef.current = requestAnimationFrame(tick);
     }, [stopRaf]);
 
+    // Scale the fixed-size replay iframe to the container per the active Fit/100%/zoom mode. Measured off the
+    // scroll box (not the mount, whose width we set) so zooming past fit yields a scrollable stage, not a
+    // ResizeObserver feedback loop. Mirrored in SnapshotView.
+    const fit = useCallback(() => {
+      const box = scrollBoxRef.current;
+      const mount = mountRef.current;
+      if (!box || !mount) return;
+      const wrapper = mount.querySelector<HTMLElement>(".replayer-wrapper");
+      const iframe = mount.querySelector<HTMLIFrameElement>("iframe");
+      if (!wrapper || !iframe) return;
+      iframe.style.border = "0";
+      const w = viewport && viewport.w > 0 ? viewport.w : Number(iframe.getAttribute("width")) || 1280;
+      const h = viewport && viewport.h > 0 ? viewport.h : Number(iframe.getAttribute("height")) || 800;
+      const boxW = box.clientWidth;
+      const base = scale.base === "actual" ? 1 : boxW > 0 ? boxW / w : 1;
+      const s = Math.min(8, Math.max(0.05, base * scale.zoom));
+      wrapper.style.transform = `scale(${s})`;
+      wrapper.style.transformOrigin = "top left";
+      mount.style.width = `${Math.round(w * s)}px`;
+      mount.style.height = `${Math.round(h * s)}px`;
+      setAppliedScale(s);
+    }, [viewport, scale]);
+
+    const fitRef = useRef(fit);
+    useEffect(() => {
+      fitRef.current = fit;
+    });
+
     useEffect(() => {
       const target = mountRef.current;
       if (!target || !events || events.length === 0) return;
@@ -112,27 +157,19 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
         setTotal(clock.total);
         onClockReadyRef.current(clock);
 
-        // The replay iframe renders at the recorded viewport size; scale the wrapper to fit our column.
-        const fit = () => {
-          const wrapper = target.querySelector<HTMLElement>(".replayer-wrapper");
-          const iframe = target.querySelector<HTMLIFrameElement>("iframe");
-          if (!wrapper || !iframe) return;
-          iframe.style.border = "0";
-          const w = viewport && viewport.w > 0 ? viewport.w : Number(iframe.getAttribute("width")) || 1280;
-          const h = viewport && viewport.h > 0 ? viewport.h : Number(iframe.getAttribute("height")) || 800;
-          const scale = target.clientWidth > 0 ? target.clientWidth / w : 1;
-          wrapper.style.transform = `scale(${scale})`;
-          wrapper.style.transformOrigin = "top left";
-          target.style.height = `${Math.round(h * scale)}px`;
-        };
-        fit();
-        ro = new ResizeObserver(fit);
-        ro.observe(target);
+        // Scale the wrapper to our column (via the shared fit, honoring the current zoom mode), and keep it
+        // fitted as the container resizes.
+        fitRef.current();
+        ro = new ResizeObserver(() => fitRef.current());
+        ro.observe(scrollBoxRef.current ?? target);
 
         replayer.on("finish", () => {
           setPlaying(false);
           stopRaf();
         });
+
+        // Re-apply the selected speed to the fresh replayer (a rebuild, e.g. loading another bug, resets it).
+        if (speedRef.current !== 1) replayer.setConfig({ speed: speedRef.current });
       } catch (e) {
         console.error("[be10x] rrweb Replayer failed:", e);
         setError(true);
@@ -155,7 +192,12 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
         clockRef.current = null;
         if (target) target.innerHTML = "";
       };
-    }, [events, viewport, stopRaf]);
+    }, [events, stopRaf]);
+
+    // Re-fit when the scale mode / expand state / viewport changes (without rebuilding the Replayer).
+    useEffect(() => {
+      fitRef.current();
+    }, [scale, expanded, viewport]);
 
     const play = useCallback(() => {
       const r = replayerRef.current;
@@ -183,6 +225,19 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
       setPlaying(false);
       stopRaf();
     }, [stopRaf]);
+
+    // Playback speed. rrweb's Timer reads its speed live each frame, so setConfig({ speed }) applies
+    // seamlessly whether playing or paused (no re-issue of play() needed); play()/seek() read config.speed
+    // too, so the choice persists across pause/seek. tick() samples getCurrentTime(), which already tracks
+    // the accelerated clock — no math change here.
+    const changeSpeed = useCallback((next: number) => {
+      setSpeed(next);
+      try {
+        replayerRef.current?.setConfig({ speed: next });
+      } catch {
+        /* best-effort */
+      }
+    }, []);
 
     const seekOffset = useCallback(
       (off: number) => {
@@ -237,11 +292,35 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
     }
 
     return (
-      <div className="flex flex-col gap-3">
-        {/* rrweb's Replayer mounts its own iframe here; never React-managed children. */}
-        <div className="be10x-rrweb overflow-hidden rounded-lg border border-border/60 bg-white">
-          <div ref={mountRef} />
-        </div>
+      <StageShell
+        expanded={expanded}
+        onCollapse={() => setExpanded(false)}
+        title="Session replay"
+        controls={
+          <ViewControls
+            scale={scale}
+            onScale={setScale}
+            appliedScale={appliedScale}
+            expanded={expanded}
+            onToggleExpand={() => setExpanded((e) => !e)}
+          />
+        }
+      >
+        <div className="flex flex-col gap-3">
+          {/* rrweb's Replayer mounts its own iframe here; never React-managed children. */}
+          <div
+            ref={scrollBoxRef}
+            className={cn(
+              "be10x-rrweb relative overflow-auto rounded-lg border border-border/60 bg-white",
+              expanded && "max-h-[calc(100vh-9rem)]",
+            )}
+          >
+            {/* Content-sized wrapper so the picked-element overlay scrolls in lockstep with the iframe. */}
+            <div className="relative inline-block align-top">
+              <div ref={mountRef} className="block" />
+              <PickOverlay rect={pickRect ?? null} scale={appliedScale} />
+            </div>
+          </div>
 
         {/* Controls: play/pause + a self-owned marker/playhead track synced to the replayer. */}
         <div className="select-none">
@@ -258,6 +337,7 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
               <span className="font-mono">
                 {formatOffset(offset)} <span className="text-muted-foreground/50">/ {formatOffset(total)}</span>
               </span>
+              <SpeedControl speed={speed} onChange={changeSpeed} />
             </div>
             <span className="inline-flex items-center gap-1">
               <Flag className="size-3" style={{ color: "var(--status-blocked)" }} />
@@ -317,7 +397,40 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
             ))}
           </div>
         </div>
-      </div>
+        </div>
+      </StageShell>
     );
   },
 );
+
+const SPEEDS = [0.5, 1, 2, 4, 8];
+
+/** A compact segmented playback-speed control matching the view controls, shown next to Play/Pause. */
+function SpeedControl({ speed, onChange }: { speed: number; onChange: (s: number) => void }) {
+  return (
+    <div
+      className="inline-flex items-center gap-0.5 rounded-lg bg-muted p-0.5"
+      role="group"
+      aria-label="Playback speed"
+    >
+      {SPEEDS.map((s) => {
+        const active = speed === s;
+        return (
+          <button
+            key={s}
+            type="button"
+            onClick={() => onChange(s)}
+            aria-pressed={active}
+            title={`${s}× speed`}
+            className={cn(
+              "rounded-md px-1.5 py-0.5 font-mono text-[10.5px] font-medium tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
+              active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {s}×
+          </button>
+        );
+      })}
+    </div>
+  );
+}

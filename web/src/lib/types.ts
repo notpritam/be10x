@@ -279,7 +279,18 @@ export interface BugMeta {
   pageTitle?: string;
   userAgent?: string;
   viewport?: { w: number; h: number };
+  /** The QA reporter's free-text investigation notes, surfaced as a card on the bug. */
+  notes?: string;
+  /** Elements the reporter picked on the page — highlighted over the replay/snapshot. */
+  pickedElements?: PickedElement[];
   [key: string]: unknown;
+}
+
+/** One message exchanged over a captured WebSocket. `t` is epoch ms (same wall clock as the replay). */
+export interface WsFrame {
+  dir: "send" | "recv";
+  data: string;
+  t: number;
 }
 
 /** One timestamped network call in `network.json` — synced to the replay clock so the panel can highlight
@@ -298,6 +309,33 @@ export interface NetEntry {
   endedAt: number;
   durationMs: number;
   type?: string;
+  /** How the call was made — drives special rendering (WebSocket frames). Older captures omit it. */
+  kind?: "fetch" | "xhr" | "ws";
+  /** The recorder caps bodies (req 10KB / resp 50KB); these flag a clipped payload so the UI can say so. */
+  requestBodyTruncated?: boolean;
+  responseBodyTruncated?: boolean;
+  /** For `kind: "ws"` — the messages sent/received over the socket, in capture order. */
+  frames?: WsFrame[];
+}
+
+/** One element the QA reporter picked on the captured page — its selector identity, on-page geometry, and
+ *  (when the page was a React app the extension could introspect) the owning component + props. `rect` is in
+ *  page pixels, so the replay/snapshot overlay maps it onto the scaled stage. All but the core fields are
+ *  optional — older captures and non-React pages omit them. */
+export interface PickedElement {
+  selector: string;
+  xpath?: string;
+  tag: string;
+  id?: string;
+  classes?: string[];
+  text?: string;
+  rect: { x: number; y: number; w: number; h: number };
+  react?: {
+    component?: string;
+    props?: Record<string, unknown>;
+    source?: string;
+    chain?: string[];
+  };
 }
 
 /** The `session.json` artifact — rrweb's `record()` output plus the capture window. `events` is passed

@@ -10,11 +10,12 @@ import {
   Navigation,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import type { Bug, BugMarker, BugVisit, NetEntry, RrwebSession } from "@/lib/types";
+import type { Bug, BugMarker, BugVisit, NetEntry, PickedElement, RrwebSession } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { SessionReplay, type ReplayClock, type SessionReplayHandle } from "./SessionReplay";
 import { NetworkPanel } from "./NetworkPanel";
 import { SnapshotView } from "./SnapshotView";
+import { PickedElements } from "./PickedElements";
 
 type Mode = "replay" | "snapshot";
 type Fetch<T> = { state: "loading" } | { state: "ready"; data: T } | { state: "error" };
@@ -57,8 +58,17 @@ export function ReplaySection({ bug, screenshotUrl }: { bug: Bug; screenshotUrl:
 
   const markers = useMemo<BugMarker[]>(() => bug.meta.markers ?? [], [bug.meta.markers]);
   const visits = useMemo<BugVisit[]>(() => bug.meta.visits ?? [], [bug.meta.visits]);
+  const pickedElements = useMemo<PickedElement[]>(
+    () => bug.meta.pickedElements ?? [],
+    [bug.meta.pickedElements],
+  );
   const recording = bug.meta.recording;
   const viewport = bug.meta.viewport;
+
+  // The picked element currently hovered in the list — highlighted over whichever stage is showing.
+  const [activePick, setActivePick] = useState<number | null>(null);
+  const activePickRect =
+    activePick != null && pickedElements[activePick] ? pickedElements[activePick].rect : null;
 
   const [mode, setMode] = useState<Mode>(hasReplay ? "replay" : "snapshot");
   const [snapshotMounted, setSnapshotMounted] = useState(!hasReplay);
@@ -188,10 +198,16 @@ export function ReplaySection({ bug, screenshotUrl }: { bug: Bug; screenshotUrl:
                   viewport={viewport}
                   onClockReady={handleClockReady}
                   onTimeUpdate={handleTimeUpdate}
+                  pickRect={activePickRect}
                 />
                 <div className="flex min-w-0 flex-col gap-4">
                   <MarkerList markers={markers} clock={clock} onSeek={seekToEpoch} />
                   <VisitList visits={visits} clock={clock} onSeek={seekToEpoch} />
+                  <PickedElements
+                    elements={pickedElements}
+                    activeIndex={activePick}
+                    onActivate={setActivePick}
+                  />
                 </div>
               </div>
               {hasNetwork && (
@@ -213,7 +229,18 @@ export function ReplaySection({ bug, screenshotUrl }: { bug: Bug; screenshotUrl:
       {/* --- Snapshot / static view (kept mounted once opened so switching back to Replay is instant) --- */}
       {(mode === "snapshot" || snapshotMounted || !hasReplay) && (
         <div className={cn(hasReplay && mode !== "snapshot" && "hidden", "space-y-4")}>
-          <SnapshotView bugId={bug.id} domKey={bug.domKey} screenshotUrl={screenshotUrl} />
+          <SnapshotView
+            bugId={bug.id}
+            domKey={bug.domKey}
+            screenshotUrl={screenshotUrl}
+            viewport={viewport}
+            pickRect={activePickRect}
+          />
+          <PickedElements
+            elements={pickedElements}
+            activeIndex={activePick}
+            onActivate={setActivePick}
+          />
           {/* Older bugs (no session) still surface their captured network + markers, just un-synced. */}
           {!hasReplay && hasNetwork && (
             <NetworkPanel
