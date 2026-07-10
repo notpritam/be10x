@@ -9,7 +9,7 @@ import {
   Loader2,
   Navigation,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import type { ArtifactSource } from "@/lib/api";
 import type {
   Bug,
   BugMarker,
@@ -61,7 +61,16 @@ function extractEntries(raw: unknown): NetEntry[] {
   return [];
 }
 
-export function ReplaySection({ bug, screenshotUrl }: { bug: Bug; screenshotUrl: string | null }) {
+export function ReplaySection({
+  bug,
+  screenshotUrl,
+  artifacts,
+}: {
+  bug: Bug;
+  screenshotUrl: string | null;
+  /** Where captured artifacts are fetched from — dashboard (bug-id, cookie) or public share (token). */
+  artifacts: ArtifactSource;
+}) {
   const hasReplay = !!bug.sessionKey;
   const hasNetwork = !!bug.networkKey;
 
@@ -100,8 +109,8 @@ export function ReplaySection({ bug, screenshotUrl }: { bug: Bug; screenshotUrl:
     if (!hasReplay) return;
     let cancelled = false;
     setSession({ state: "loading" });
-    api
-      .loadBugArtifactJson<RrwebSession | unknown[]>(bug.id, "session")
+    artifacts
+      .loadJson<RrwebSession | unknown[]>("session")
       .then((raw) => {
         if (cancelled) return;
         const events = extractEvents(raw);
@@ -111,21 +120,21 @@ export function ReplaySection({ bug, screenshotUrl }: { bug: Bug; screenshotUrl:
     return () => {
       cancelled = true;
     };
-  }, [bug.id, hasReplay]);
+  }, [artifacts, hasReplay]);
 
   // Fetch the timestamped network timeline (only when present).
   useEffect(() => {
     if (!hasNetwork) return;
     let cancelled = false;
     setNetwork({ state: "loading" });
-    api
-      .loadBugArtifactJson<unknown>(bug.id, "network")
+    artifacts
+      .loadJson<unknown>("network")
       .then((raw) => !cancelled && setNetwork({ state: "ready", data: extractEntries(raw) }))
       .catch(() => !cancelled && setNetwork({ state: "error" }));
     return () => {
       cancelled = true;
     };
-  }, [bug.id, hasNetwork]);
+  }, [artifacts, hasNetwork]);
 
   const handleClockReady = useCallback((c: ReplayClock) => {
     setClock(c);
@@ -165,13 +174,13 @@ export function ReplaySection({ bug, screenshotUrl }: { bug: Bug; screenshotUrl:
   const openRaw = useCallback(
     async (kind: "network" | "dom" | "session") => {
       try {
-        const { url } = await api.bugArtifactUrl(bug.id, kind);
+        const { url } = await artifacts.url(kind);
         window.open(url, "_blank", "noopener,noreferrer");
       } catch {
         /* best-effort secondary affordance */
       }
     },
-    [bug.id],
+    [artifacts],
   );
 
   const networkEntries = network.state === "ready" ? network.data : [];
@@ -274,7 +283,7 @@ export function ReplaySection({ bug, screenshotUrl }: { bug: Bug; screenshotUrl:
       {(mode === "snapshot" || snapshotMounted || !hasReplay) && (
         <div className={cn(hasReplay && mode !== "snapshot" && "hidden", "space-y-4")}>
           <SnapshotView
-            bugId={bug.id}
+            artifacts={artifacts}
             domKey={bug.domKey}
             screenshotUrl={screenshotUrl}
             viewport={viewport}

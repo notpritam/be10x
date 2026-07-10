@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Replayer } from "rrweb";
 import { Camera, ImageOff, Loader2 } from "lucide-react";
-import { api } from "@/lib/api";
+import type { ArtifactSource } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_VIEW_SCALE,
@@ -27,13 +27,14 @@ function unwrapNode(raw: unknown): unknown {
 }
 
 export function SnapshotView({
-  bugId,
+  artifacts,
   domKey,
   screenshotUrl,
   viewport,
   pickRect,
 }: {
-  bugId: string;
+  /** Where the DOM snapshot is fetched from — dashboard (bug-id, cookie) or public share (token). */
+  artifacts: ArtifactSource;
   domKey: string | null;
   screenshotUrl: string | null;
   /** The recorded viewport — sizes the snapshot iframe (falls back to a sensible default when absent). */
@@ -93,8 +94,8 @@ export function SnapshotView({
     setStatus({ state: "loading" });
 
     let ro: ResizeObserver | null = null;
-    api
-      .loadBugArtifactJson<unknown>(bugId, "dom")
+    artifacts
+      .loadJson<unknown>("dom")
       .then((raw) => {
         if (cancelled || !mount) return;
         mount.innerHTML = "";
@@ -136,7 +137,7 @@ export function SnapshotView({
       replayerRef.current = null;
       if (mount) mount.innerHTML = "";
     };
-  }, [bugId, domKey, viewport]);
+  }, [artifacts, domKey, viewport]);
 
   // Re-fit when the scale mode or expand state changes (without rebuilding the Replayer).
   useEffect(() => {

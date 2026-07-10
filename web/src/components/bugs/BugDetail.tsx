@@ -1,9 +1,18 @@
 // ABOUTME: A single bug's detail — screenshot + identity + captured metadata, a status/resolution control,
 // ABOUTME: a comment box, and the event timeline. Artifacts load via short-lived signed UploadThing URLs.
-import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
-import { ArrowLeft, Clock, ExternalLink, Loader2, MessageSquare, Send, StickyNote } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  ArrowLeft,
+  Clock,
+  ExternalLink,
+  Loader2,
+  MessageSquare,
+  Send,
+  Share2,
+  StickyNote,
+} from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/lib/api";
+import { api, dashboardArtifacts, errorMessage } from "@/lib/api";
 import type { Bug, BugEvent, BugStatus } from "@/lib/types";
 import { useApp } from "@/state/app-store";
 import { cn, formatDateTime, humanizeKey, relativeTime } from "@/lib/utils";
@@ -12,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BUG_STATUS_META, BUG_STATUS_ORDER, BugSeverityPill, BugStatusBadge } from "./bug-bits";
+import { BugShareDialog } from "./BugShareDialog";
 
 /** The replay UI pulls in rrweb-player + rrweb-snapshot (~200 KB); load it as its own chunk only when a
  *  bug detail is actually opened, so it never weighs down the rest of the dashboard's initial bundle. */
@@ -41,6 +51,10 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
 
   const [comment, setComment] = useState("");
   const [postingComment, setPostingComment] = useState(false);
+
+  const [shareOpen, setShareOpen] = useState(false);
+  // Stable per bug so the replay components' fetch effects don't re-run on every render.
+  const artifacts = useMemo(() => dashboardArtifacts(bugId), [bugId]);
 
   const load = useCallback(
     async (signal?: { cancelled: boolean }) => {
@@ -149,6 +163,15 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
                 </span>
                 <BugStatusBadge status={bug.status} />
                 <BugSeverityPill severity={bug.severity} />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShareOpen(true)}
+                  className="ml-auto text-[12.5px]"
+                >
+                  <Share2 className="size-3.5" />
+                  Share
+                </Button>
               </div>
               <h1 className="text-[20px] font-bold leading-snug tracking-tight text-foreground">
                 {bug.title}
@@ -189,7 +212,11 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
                 bugs with only a screenshot (falls back to the static poster). */}
             {(bug.sessionKey || bug.networkKey || bug.domKey || bug.screenshotKey) && (
               <Suspense fallback={<ReplayFallback />}>
-                <ReplaySection bug={bug} screenshotUrl={shot.state === "ready" ? shot.url : null} />
+                <ReplaySection
+                  bug={bug}
+                  artifacts={artifacts}
+                  screenshotUrl={shot.state === "ready" ? shot.url : null}
+                />
               </Suspense>
             )}
 
@@ -294,6 +321,8 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
                 {events.length === 0 && <EmptyNote>No activity yet.</EmptyNote>}
               </ol>
             </Card>
+
+            <BugShareDialog bugId={bug.id} open={shareOpen} onOpenChange={setShareOpen} />
           </>
         )}
       </div>

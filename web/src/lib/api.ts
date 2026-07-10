@@ -116,6 +116,24 @@ export interface BugFilter {
  *  kind→key map in GET /api/bugs/:id/artifact/:kind (screenshot|dom|network|session). */
 export type BugArtifactKind = "screenshot" | "dom" | "network" | "session";
 
+/** A minted public bug-share link (camelCase, as the bug-share routes return it). The token IS the
+ *  credential — anyone holding it sees the full, un-redacted capture at /b/<token>. */
+export interface BugShareLink {
+  id: string;
+  token: string;
+  createdAt: number;
+  revokedAt: number | null;
+  createdBy: string | null;
+}
+
+/** Where the replay components pull a bug's captured artifacts from — the authed dashboard (session cookie,
+ *  keyed by bug id) or the public share page (token-scoped, no cookie). Injected so ReplaySection and
+ *  SnapshotView render identically in both contexts. */
+export type ArtifactSource = {
+  url(kind: BugArtifactKind): Promise<{ url: string }>;
+  loadJson<T>(kind: BugArtifactKind): Promise<T>;
+};
+
 export interface CreateTaskInput {
   type: TaskType;
   scope: string;
@@ -337,6 +355,16 @@ export const api = {
     }
   },
 
+  // Public bug sharing — owner-only (session): mint / list / revoke a bug's public, read-only links. The
+  // read side (view + artifacts) is token-scoped and needs no cookie — see getPublicBug + publicArtifacts().
+  createBugShare: (id: string) => post<{ share: BugShareLink }>(`/api/bugs/${id}/share`),
+  listBugShares: (id: string) => request<{ shares: BugShareLink[] }>(`/api/bugs/${id}/shares`),
+  revokeBugShare: (token: string) =>
+    request<{ ok: boolean }>(`/api/bug-share/${encodeURIComponent(token)}`, { method: "DELETE" }),
+  /** The public, token-scoped bug behind a share link — the same Bug shape GET /api/bugs/:id returns as
+   *  `.bug`. No session cookie; the token is the credential. */
+  getPublicBug: (token: string) => request<{ bug: Bug }>(`/api/bug-share/${encodeURIComponent(token)}`),
+
   // Shareable, permissioned review links.
   // Owner-only (session): mint / list / revoke a task's links.
   createShareLink: (taskId: string, permission: SharePermission) =>
@@ -353,6 +381,41 @@ export const api = {
   shareRunAgent: (token: string, message: string, author: string) =>
     post<{ ok: true; wake: unknown }>(`/api/share/${encodeURIComponent(token)}/run-agent`, { message, author }),
 };
+
+/** The dashboard's artifact source — session cookie, same-origin, keyed by bug id. */
+export function dashboardArtifacts(bugId: string): ArtifactSource {
+  return {
+    url: (kind: BugArtifactKind) => api.bugArtifactUrl(bugId, kind),
+    loadJson: <T>(kind: BugArtifactKind) => api.loadBugArtifactJson<T>(bugId, kind),
+  };
+}
+
+/** The public share page's artifact source — token-scoped, no cookie. `url` returns a short-lived signed
+ *  URL from the token route; `loadJson` fetches + parses it cross-origin (no credentials), mirroring the
+ *  same-origin `loadBugArtifactJson` error shape exactly. */
+export function publicArtifacts(token: string): ArtifactSource {
+  return {
+    url: (kind: BugArtifactKind) =>
+      request<{ url: string }>(`/api/bug-share/${encodeURIComponent(token)}/artifact/${kind}`),
+    loadJson: async <T>(kind: BugArtifactKind): Promise<T> => {
+      const { url } = await request<{ url: string }>(
+        `/api/bug-share/${encodeURIComponent(token)}/artifact/${kind}`,
+      );
+      let res: Response;
+      try {
+        res = await fetch(url, { credentials: "omit" });
+      } catch {
+        throw new ApiError("ARTIFACT_NETWORK", 0);
+      }
+      if (!res.ok) throw new ApiError("ARTIFACT_FETCH", res.status);
+      try {
+        return (await res.json()) as T;
+      } catch {
+        throw new ApiError("ARTIFACT_PARSE", res.status);
+      }
+    },
+  };
+}
 
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {

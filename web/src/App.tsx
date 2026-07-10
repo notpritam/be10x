@@ -10,6 +10,7 @@ import { AuthScreen } from "@/components/auth/AuthScreen";
 import { AppShell } from "@/components/shell/AppShell";
 import { BootSplash } from "@/components/common/BootSplash";
 import { ShareReviewPage } from "@/components/share/ShareReviewPage";
+import { PublicBugReplay } from "@/components/bugs/PublicBugReplay";
 import { DeviceApprovePage } from "@/components/agent/DeviceApprovePage";
 import { LandingPage } from "@/components/landing/LandingPage";
 import { AdminDashboard } from "@/components/admin/AdminDashboard";
@@ -40,6 +41,10 @@ export function App() {
   const shareToken =
     typeof window !== "undefined" ? /^\/share\/([^/]+)\/?$/.exec(window.location.pathname)?.[1] : undefined;
 
+  // A public bug-share link (/b/<token>) renders the read-only bug page without an account.
+  const bugShareToken =
+    typeof window !== "undefined" ? /^\/b\/([^/]+)\/?$/.exec(window.location.pathname)?.[1] : undefined;
+
   // The admin dashboard (/admin) has its own bearer-token gate, independent of the session cookie
   // entirely — it renders before session resolution so it never waits on (or requires) a login.
   const isAdminRoute = typeof window !== "undefined" && window.location.pathname === "/admin";
@@ -57,6 +62,8 @@ export function App() {
         <AdminDashboard />
       ) : shareToken ? (
         <ShareReviewPage token={decodeURIComponent(shareToken)} />
+      ) : bugShareToken ? (
+        <PublicBugReplay token={decodeURIComponent(bugShareToken)} />
       ) : session === "loading" ? (
         <BootSplash />
       ) : connectCode !== undefined && session ? (
