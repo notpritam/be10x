@@ -788,6 +788,23 @@ const AGENT_ROUTES = [
 export function createApp(db) {
   return http.createServer(async (req, res) => {
     try {
+      // CORS + Private Network Access. Chrome (Local Network Access, 130+) sends a preflight carrying
+      // `Access-Control-Request-Private-Network: true` before any fetch to a loopback/private address —
+      // including an extension service worker with host_permissions — and BLOCKS the real request unless
+      // the target ACKs it here. Bearer-token auth (not cookies) means an echoed/`*` origin is safe. This
+      // is inert on public HTTPS deploys: browsers only enforce PNA when the target is a private address.
+      const origin = req.headers.origin;
+      res.setHeader('Access-Control-Allow-Origin', origin || '*');
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Private-Network', 'true');
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': req.headers['access-control-request-headers'] || 'authorization, content-type',
+          'Access-Control-Max-Age': '86400',
+        });
+        return res.end();
+      }
       const pathname = new URL(req.url, 'http://x').pathname;
       if (!pathname.startsWith('/api/')) { if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(req, res); res.writeHead(404); return res.end(); }
       // Agent/runner API: token (Bearer) auth, dispatched before the human/session routes.

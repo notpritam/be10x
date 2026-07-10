@@ -91,3 +91,30 @@ test('serves the static board at /', async () => {
     assert.match(html, /be10x/);
   });
 });
+
+test('CORS/PNA preflight is ACKed so a private-network extension fetch is not blocked', async () => {
+  await withServer(async (base) => {
+    const res = await fetch(base + '/api/agent/bugs', {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'chrome-extension://abcdef',
+        'access-control-request-method': 'POST',
+        'access-control-request-private-network': 'true',
+        'access-control-request-headers': 'authorization, content-type',
+      },
+    });
+    assert.equal(res.status, 204);
+    // The PNA ACK is what unblocks Chrome's Local Network Access preflight.
+    assert.equal(res.headers.get('access-control-allow-private-network'), 'true');
+    assert.equal(res.headers.get('access-control-allow-origin'), 'chrome-extension://abcdef');
+    assert.match(res.headers.get('access-control-allow-methods') || '', /POST/);
+  });
+});
+
+test('actual agent responses carry the Allow-Origin header', async () => {
+  await withServer(async (base) => {
+    // Unauthorized on purpose (no token) — we only assert the CORS header rides along on the real response.
+    const res = await fetch(base + '/api/agent/bugs', { method: 'POST', headers: { origin: 'chrome-extension://abcdef' }, body: '{}' });
+    assert.equal(res.headers.get('access-control-allow-origin'), 'chrome-extension://abcdef');
+  });
+});
