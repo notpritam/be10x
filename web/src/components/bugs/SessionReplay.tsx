@@ -1,16 +1,16 @@
-// ABOUTME: Mounts rrweb-player for a bug's captured session and draws a self-owned marker/playhead track
-// ABOUTME: beneath it (clickable pins seek the player). Exposes an imperative seekToEpoch for markers/visits.
+// ABOUTME: Session replay built on rrweb's core Replayer (constructs synchronously — no rrweb-player Svelte
+// ABOUTME: onMount race). Owns play/pause + a marker/playhead scrub track; exposes seekToEpoch imperatively.
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
   useState,
 } from "react";
-import rrwebPlayer from "rrweb-player";
-import "rrweb-player/dist/style.css";
-import { AlertTriangle, Flag } from "lucide-react";
+import { Replayer } from "rrweb";
+import { AlertTriangle, Flag, Pause, Play } from "lucide-react";
 import type { BugMarker } from "@/lib/types";
 
 /** The replay clock, in epoch ms + total duration — everything else (markers, network) maps onto this. */
@@ -25,17 +25,10 @@ export interface SessionReplayHandle {
   seekToEpoch: (epochMs: number) => void;
 }
 
-/** rrweb-player is a compiled Svelte component; its instance carries $set/$destroy from the Svelte base
- *  (not surfaced on the exported prop types), so we widen the constructed instance to reach them safely. */
-type PlayerInstance = InstanceType<typeof rrwebPlayer> & {
-  $set?: (props: Record<string, unknown>) => void;
-  $destroy?: () => void;
-};
-
 interface SessionReplayProps {
   events: unknown[];
   markers: BugMarker[];
-  /** The recorded viewport, used to keep the player's aspect ratio faithful when it's absent we assume 16:10. */
+  /** The recorded viewport — used to scale the fixed-size replay iframe to fit our container. */
   viewport?: { w: number; h: number };
   onClockReady: (clock: ReplayClock) => void;
   /** Playhead position in epoch ms — throttled to ~20 Hz so downstream (network highlight) stays cheap. */
@@ -53,16 +46,16 @@ function formatOffset(ms: number): string {
 export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>(
   function SessionReplay({ events, markers, viewport, onClockReady, onTimeUpdate }, ref) {
     const mountRef = useRef<HTMLDivElement | null>(null);
-    const playerRef = useRef<PlayerInstance | null>(null);
+    const replayerRef = useRef<Replayer | null>(null);
     const clockRef = useRef<ReplayClock | null>(null);
+    const rafRef = useRef<number | null>(null);
     const lastEmitRef = useRef(0);
 
     const [offset, setOffset] = useState(0);
     const [total, setTotal] = useState(0);
+    const [playing, setPlaying] = useState(false);
     const [error, setError] = useState(false);
 
-    // Keep the latest callbacks in refs so the (heavy) player-construction effect can stay events-only and
-    // never tears the Svelte component down just because a parent re-rendered with new closure identities.
     const onClockReadyRef = useRef(onClockReady);
     const onTimeUpdateRef = useRef(onTimeUpdate);
     useEffect(() => {
@@ -70,94 +63,144 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
       onTimeUpdateRef.current = onTimeUpdate;
     });
 
+    const stopRaf = useCallback(() => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    }, []);
+
+    // While playing, sample the replayer clock each frame → drive the scrubber + the network highlight.
+    const tick = useCallback(() => {
+      const r = replayerRef.current;
+      const clock = clockRef.current;
+      if (!r || !clock) return;
+      const cur = Math.min(r.getCurrentTime(), clock.total);
+      setOffset(cur);
+      const now = performance.now();
+      if (now - lastEmitRef.current >= 50) {
+        lastEmitRef.current = now;
+        onTimeUpdateRef.current(clock.start + cur);
+      }
+      if (cur >= clock.total) {
+        setPlaying(false);
+        stopRaf();
+        return;
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    }, [stopRaf]);
+
     useEffect(() => {
       const target = mountRef.current;
       if (!target || !events || events.length === 0) return;
+      target.innerHTML = "";
 
-      let player: PlayerInstance | null = null;
+      let replayer: Replayer | null = null;
+      let ro: ResizeObserver | null = null;
       try {
-        const width = target.clientWidth || 720;
-        const aspect = viewport && viewport.w > 0 ? viewport.h / viewport.w : 0.62;
-        const height = Math.round(Math.min(Math.max(width * aspect, 320), 560));
-        player = new rrwebPlayer({
-          target,
-          props: {
-            events: events as ConstructorParameters<typeof rrwebPlayer>[0]["props"]["events"],
-            showController: true,
-            autoPlay: false,
-            mouseTail: false,
-            width,
-            height,
-          },
-        }) as PlayerInstance;
-
-        const meta = player.getMetaData();
-        const clock: ReplayClock = {
-          start: meta.startTime,
-          end: meta.endTime,
-          total: meta.totalTime,
-        };
+        replayer = new Replayer(events as ConstructorParameters<typeof Replayer>[0], {
+          root: target,
+          skipInactive: true,
+          showWarning: false,
+          mouseTail: false,
+        });
+        // rrweb's Replayer is ready synchronously — getMetaData works right away (this is the whole reason
+        // we dropped rrweb-player, whose Svelte onMount created the replayer a tick too late).
+        const meta = replayer.getMetaData();
+        const clock: ReplayClock = { start: meta.startTime, end: meta.endTime, total: meta.totalTime };
         clockRef.current = clock;
         setTotal(clock.total);
         onClockReadyRef.current(clock);
 
-        player.addEventListener("ui-update-current-time", (payload) => {
-          const off = (payload as { payload: number }).payload;
-          setOffset(off);
-          const now = performance.now();
-          if (now - lastEmitRef.current >= 50) {
-            lastEmitRef.current = now;
-            onTimeUpdateRef.current(clock.start + off);
-          }
+        // The replay iframe renders at the recorded viewport size; scale the wrapper to fit our column.
+        const fit = () => {
+          const wrapper = target.querySelector<HTMLElement>(".replayer-wrapper");
+          const iframe = target.querySelector<HTMLIFrameElement>("iframe");
+          if (!wrapper || !iframe) return;
+          iframe.style.border = "0";
+          const w = viewport && viewport.w > 0 ? viewport.w : Number(iframe.getAttribute("width")) || 1280;
+          const h = viewport && viewport.h > 0 ? viewport.h : Number(iframe.getAttribute("height")) || 800;
+          const scale = target.clientWidth > 0 ? target.clientWidth / w : 1;
+          wrapper.style.transform = `scale(${scale})`;
+          wrapper.style.transformOrigin = "top left";
+          target.style.height = `${Math.round(h * scale)}px`;
+        };
+        fit();
+        ro = new ResizeObserver(fit);
+        ro.observe(target);
+
+        replayer.on("finish", () => {
+          setPlaying(false);
+          stopRaf();
         });
-      } catch {
+      } catch (e) {
+        console.error("[be10x] rrweb Replayer failed:", e);
         setError(true);
       }
-      playerRef.current = player;
-
-      // Keep the player fitted to its container as the panel resizes (real responsiveness, not just at mount).
-      const ro = new ResizeObserver(() => {
-        const p = playerRef.current;
-        if (!p || !target.clientWidth) return;
-        const w = target.clientWidth;
-        const aspect = viewport && viewport.w > 0 ? viewport.h / viewport.w : 0.62;
-        const h = Math.round(Math.min(Math.max(w * aspect, 320), 560));
-        try {
-          p.$set?.({ width: w, height: h });
-          p.triggerResize();
-        } catch {
-          /* fitting is best-effort — never throw into the host view */
-        }
-      });
-      ro.observe(target);
+      replayerRef.current = replayer;
 
       return () => {
-        ro.disconnect();
+        stopRaf();
         try {
-          playerRef.current?.$destroy?.();
+          ro?.disconnect();
         } catch {
-          /* teardown is best-effort */
+          /* ignore */
         }
-        playerRef.current = null;
+        try {
+          replayerRef.current?.pause();
+        } catch {
+          /* ignore */
+        }
+        replayerRef.current = null;
         clockRef.current = null;
-        // The Svelte component removes its own nodes, but clear the mount defensively for HMR / remounts.
         if (target) target.innerHTML = "";
       };
-    }, [events, viewport]);
+    }, [events, viewport, stopRaf]);
 
-    const seekOffset = (off: number) => {
+    const play = useCallback(() => {
+      const r = replayerRef.current;
       const clock = clockRef.current;
-      const player = playerRef.current;
-      if (!clock || !player) return;
-      const clamped = Math.max(0, Math.min(clock.total, off));
+      if (!r || !clock) return;
+      const from = offset >= clock.total ? 0 : offset;
       try {
-        player.goto(clamped);
-        setOffset(clamped);
-        onTimeUpdateRef.current(clock.start + clamped);
+        r.play(from);
       } catch {
-        /* seek is best-effort */
+        return;
       }
-    };
+      setPlaying(true);
+      stopRaf();
+      rafRef.current = requestAnimationFrame(tick);
+    }, [offset, stopRaf, tick]);
+
+    const pause = useCallback(() => {
+      const r = replayerRef.current;
+      if (!r) return;
+      try {
+        r.pause();
+      } catch {
+        /* ignore */
+      }
+      setPlaying(false);
+      stopRaf();
+    }, [stopRaf]);
+
+    const seekOffset = useCallback(
+      (off: number) => {
+        const r = replayerRef.current;
+        const clock = clockRef.current;
+        if (!r || !clock) return;
+        const clamped = Math.max(0, Math.min(clock.total, off));
+        try {
+          if (playing) r.play(clamped);
+          else r.pause(clamped);
+          setOffset(clamped);
+          onTimeUpdateRef.current(clock.start + clamped);
+        } catch {
+          /* seek is best-effort */
+        }
+      },
+      [playing],
+    );
 
     useImperativeHandle(ref, () => ({
       seekToEpoch: (epochMs: number) => {
@@ -195,17 +238,27 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
 
     return (
       <div className="flex flex-col gap-3">
-        {/* rrweb-player mounts here; it owns its own DOM (never React-managed children). */}
-        <div className="be10x-rrweb overflow-hidden rounded-lg border border-border/60 bg-card">
+        {/* rrweb's Replayer mounts its own iframe here; never React-managed children. */}
+        <div className="be10x-rrweb overflow-hidden rounded-lg border border-border/60 bg-white">
           <div ref={mountRef} />
         </div>
 
-        {/* Self-owned marker + playhead track, synced to the player and robust to its internal DOM. */}
+        {/* Controls: play/pause + a self-owned marker/playhead track synced to the replayer. */}
         <div className="select-none">
           <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-muted-foreground">
-            <span className="font-mono">
-              {formatOffset(offset)} <span className="text-muted-foreground/50">/ {formatOffset(total)}</span>
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => (playing ? pause() : play())}
+                className="grid size-7 place-items-center rounded-md bg-primary text-primary-foreground outline-none transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50"
+                aria-label={playing ? "Pause replay" : "Play replay"}
+              >
+                {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+              </button>
+              <span className="font-mono">
+                {formatOffset(offset)} <span className="text-muted-foreground/50">/ {formatOffset(total)}</span>
+              </span>
+            </div>
             <span className="inline-flex items-center gap-1">
               <Flag className="size-3" style={{ color: "var(--status-blocked)" }} />
               {pins.length} {pins.length === 1 ? "marker" : "markers"}
@@ -227,6 +280,10 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
             onKeyDown={(e) => {
               if (e.key === "ArrowRight") seekOffset(offset + 1000);
               else if (e.key === "ArrowLeft") seekOffset(offset - 1000);
+              else if (e.key === " ") {
+                e.preventDefault();
+                playing ? pause() : play();
+              }
             }}
           >
             <div
