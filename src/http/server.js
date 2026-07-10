@@ -29,6 +29,7 @@ import { prepareWake, settleWake } from '../runner/runner.js';
 import { taskDebug } from '../tasks/debug.js';
 import { listProjectsForUser, registerProject, detectProjectKey, getProject } from '../projects/projects.js';
 import { createShareLink, listShareLinksForTask, revokeShareLink, getActiveShareLinkByToken, shareView } from '../share/share.js';
+import { createBugShareLink, listBugShareLinksForBug, revokeBugShareLink, getActiveBugShareByToken, bugShareView } from '../share/bug-share.js';
 import { listPlanVersions, getPlanVersion } from '../plans/versions.js';
 import { recordTelemetryBatch } from '../telemetry/store.js';
 import { adminOverview, listUsersForAdmin, userDetailForAdmin } from '../admin/admin.js';
@@ -162,6 +163,11 @@ function serveStatic(req, res) {
   res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': 'no-store' });
   // HEAD (proxies, preloaders, uptime checks) gets the same headers with no body.
   res.end(isHead ? undefined : readFileSync(fp));
+}
+
+// A bug_shares row (snake_case, from bug-share.js) mapped to the camelCase shape the web client consumes.
+function toBugShare(r) {
+  return { id: r.id, token: r.token, createdAt: r.created_at, revokedAt: r.revoked_at, createdBy: r.created_by };
 }
 
 // Route table: [method, pattern, needsAuth, handler(ctx)] where ctx = { db, req, res, params, body, user }
@@ -661,6 +667,48 @@ const ROUTES = [
     const key = { screenshot: 'screenshotKey', dom: 'domKey', network: 'networkKey', session: 'sessionKey' }[params.kind];
     const fileKey = key ? bug[key] : null;
     if (!fileKey) throw new Error('NOT_FOUND');
+    send(res, 200, { url: signAccessUrl(fileKey) });
+  }],
+
+  // --- Public, view-only bug share links ------------------------------------------------------------
+  // Mirror the task-share routes above, but for a captured QA bug and with NO permission tiers — a public
+  // link is always read-only and exposes the FULL raw bug (screenshot / DOM / network / rrweb session),
+  // deliberately un-redacted (the product owner's explicit choice). Any authenticated member can mint /
+  // list / revoke: bugs are a shared triage surface, and the dashboard bug routes above are member-wide
+  // too (no per-reporter gate), so a per-reporter gate here would be inconsistent.
+  ['POST', '/api/bugs/:id/share', true, async ({ db, res, params, user }) => {
+    const bug = getBugById(db, params.id);
+    if (!bug) throw new Error('NOT_FOUND');
+    const share = createBugShareLink(db, { bugId: params.id, createdBy: user.id });
+    send(res, 200, { share: toBugShare(share) });
+  }],
+  ['GET', '/api/bugs/:id/shares', true, async ({ db, res, params }) => {
+    const bug = getBugById(db, params.id);
+    if (!bug) throw new Error('NOT_FOUND');
+    send(res, 200, { shares: listBugShareLinksForBug(db, params.id).map(toBugShare) });
+  }],
+  ['DELETE', '/api/bug-share/:token', true, async ({ db, res, params }) => {
+    if (!revokeBugShareLink(db, params.token)) return send(res, 404, { error: 'NO_SUCH_SHARE' });
+    send(res, 200, { ok: true });
+  }],
+  // Public (no session): the bearer of the token is the credential. The view returns the whole bug; the
+  // artifact sub-route hands back a short-lived signed UploadThing read URL, authorized by the share token
+  // instead of a session (mirrors the authed /api/bugs/:id/artifact/:kind). Segment counts keep these apart
+  // under match(): /api/bug-share/:token (four) vs /api/bug-share/:token/artifact/:kind (six), and both use
+  // the literal `bug-share` segment, distinct from the task `/api/share/:token` and from `/api/bugs/:id`.
+  ['GET', '/api/bug-share/:token', false, async ({ db, res, params }) => {
+    const v = bugShareView(db, params.token);
+    if (!v) return send(res, 404, { error: 'NOT_FOUND' });
+    send(res, 200, { bug: v });
+  }],
+  ['GET', '/api/bug-share/:token/artifact/:kind', false, async ({ db, res, params }) => {
+    const share = getActiveBugShareByToken(db, params.token);
+    if (!share) return send(res, 404, { error: 'NOT_FOUND' });
+    const bug = getBugById(db, share.bug_id);
+    if (!bug) return send(res, 404, { error: 'NOT_FOUND' });
+    const key = { screenshot: 'screenshotKey', dom: 'domKey', network: 'networkKey', session: 'sessionKey' }[params.kind];
+    const fileKey = key ? bug[key] : null;
+    if (!fileKey) return send(res, 404, { error: 'NO_ARTIFACT' });
     send(res, 200, { url: signAccessUrl(fileKey) });
   }],
 ];

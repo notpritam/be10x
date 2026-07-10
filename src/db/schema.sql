@@ -306,3 +306,19 @@ CREATE TABLE IF NOT EXISTS bug_events (
   created_at   INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_bug_events_bug ON bug_events (bug_id, created_at);
+
+-- A public, view-only share link to a bug — mirrors share_links but for bugs and WITHOUT a permission
+-- column: there are no tiers here, the link is always read-only. The owner mints one; anyone holding the
+-- token is the credential (unguessable random hex), so the link itself grants access — no session needed.
+-- A public link exposes the FULL raw bug (screenshot / DOM / network / rrweb session, identity, meta) —
+-- deliberately no redaction, the product owner's explicit choice. revoked_at (once stamped) makes the
+-- token read as gone, so a leaked-then-revoked link stops working. created_by is the minting user
+-- (nullable, standalone — the person they hand it to may be anonymous).
+CREATE TABLE IF NOT EXISTS bug_shares (
+  id         TEXT PRIMARY KEY,
+  bug_id     TEXT NOT NULL REFERENCES bugs(id) ON DELETE CASCADE,
+  token      TEXT NOT NULL UNIQUE,
+  created_by TEXT,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER
+);
