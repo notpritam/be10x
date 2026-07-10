@@ -14,6 +14,9 @@ export type SessionReportPayload = {
   network?: NetEntry[];
   dom?: unknown;
   identity?: Identity | null;
+  teamId?: string | null; // triage routing: the team/project/tags the reporter assigned in the widget
+  projectId?: string | null;
+  tags?: string[];
   meta?: Record<string, unknown>;
 };
 
@@ -203,6 +206,9 @@ export async function reportSession(boardUrl: string, token: string, tab: chrome
       sessionKey: keyBySlot.session ?? null,
       networkKey: keyBySlot.network ?? null,
       domKey: keyBySlot.dom ?? null,
+      teamId: payload.teamId ?? null,
+      projectId: payload.projectId ?? null,
+      tags: payload.tags ?? [],
       identity,
       meta: payload.meta ?? {},
     });

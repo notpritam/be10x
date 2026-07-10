@@ -36,3 +36,26 @@ export async function mintUploadUrls(
 export async function fileBug(f: Fetch, boardUrl: string, token: string, payload: Record<string, unknown>) {
   return post(f, boardUrl + '/api/agent/bugs', payload, token);
 }
+
+async function get(f: Fetch, url: string, token: string) {
+  const res = await f(url, { headers: { Authorization: 'Bearer ' + token } });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((json && (json as any).error) || `HTTP_${res.status}`);
+  return json as any;
+}
+
+export type Team = { id: string; name: string; slug?: string };
+export type Project = { id: string; name: string; key?: string };
+
+// The reporter's teams + projects, so the widget can tag a bug to one. Each half degrades to [] on its own
+// error — a board without the agent taxonomy routes (or a project-less user) just yields empty pickers.
+export async function getTaxonomy(f: Fetch, boardUrl: string, token: string): Promise<{ teams: Team[]; projects: Project[] }> {
+  const [t, p] = await Promise.all([
+    get(f, boardUrl + '/api/agent/teams', token).catch(() => ({ teams: [] })),
+    get(f, boardUrl + '/api/agent/projects', token).catch(() => ({ projects: [] })),
+  ]);
+  return {
+    teams: Array.isArray(t.teams) ? t.teams : [],
+    projects: Array.isArray(p.projects) ? p.projects : [],
+  };
+}

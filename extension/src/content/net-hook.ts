@@ -398,6 +398,37 @@ function installConsoleHook(): void {
   }
 }
 
+// Capture uncaught errors + unhandled promise rejections as error-level console entries. They ride the
+// same meta.console channel and surface in the dashboard's activity rail alongside the page's own logs —
+// no new plumbing — giving a QA the JS failures that coincide with the bug, with stack traces.
+function installErrorHook(): void {
+  try {
+    window.addEventListener(
+      'error',
+      (e: ErrorEvent) => {
+        try {
+          const loc = e.filename ? `(${e.filename}:${e.lineno || 0}:${e.colno || 0})` : '';
+          const { text, truncated } = serializeConsoleArgs(['Uncaught', e.error ?? e.message ?? 'error', loc].filter((x) => x !== ''));
+          consoleBuffer.push({ ts: Date.now(), level: 'error', text, ...(truncated ? { truncated: true } : {}) });
+        } catch {
+          /* never let capture break the page */
+        }
+      },
+      true, // capture phase — see the error before a handler might stop it
+    );
+    window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => {
+      try {
+        const { text, truncated } = serializeConsoleArgs(['Unhandled promise rejection:', e.reason]);
+        consoleBuffer.push({ ts: Date.now(), level: 'error', text, ...(truncated ? { truncated: true } : {}) });
+      } catch {
+        /* ignore */
+      }
+    });
+  } catch {
+    /* leave error events unhooked */
+  }
+}
+
 // Answer the collector's round-trip: correlate on the source tag + nonce, reply with the current log.
 function installCollectResponder(): void {
   try {
@@ -419,5 +450,6 @@ installFetchHook();
 installXhrHook();
 installWebSocketHook();
 installConsoleHook();
+installErrorHook();
 installNavHook();
 installCollectResponder();

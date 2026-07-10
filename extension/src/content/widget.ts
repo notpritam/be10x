@@ -10,7 +10,24 @@ export type ReportForm = {
   description: string;
   notes: string; // composed QA notes (freeform + expected/actual); '' when the drawer was left empty
   pickedElements: PickedElement[]; // elements the QA pinpointed with the picker; [] when none
+  teamId?: string | null; // triage routing chosen in the pickers — null when left unset
+  projectId?: string | null;
+  tags?: string[]; // freeform labels; [] when none
 };
+
+// A team or project the bug can be routed to — the minimal shape the pickers need.
+export type Taxon = { id: string; name: string };
+
+// Split a comma/newline-separated tag field into clean labels (trimmed, de-duped, capped, <=40 chars each).
+function parseTags(raw: string): string[] {
+  const seen = new Set<string>();
+  for (const part of raw.split(/[,\n]/)) {
+    const t = part.trim().slice(0, 40);
+    if (t) seen.add(t);
+    if (seen.size >= 20) break;
+  }
+  return [...seen];
+}
 
 // Fold the notes drawer's fields into one string for meta.notes / description seeding.
 function composeNotes(text: string, expected: string, actual: string): string {
@@ -28,6 +45,7 @@ export type WidgetCallbacks = {
   onStop: () => void;
   onMark: (label?: string) => void;
   onReport: (form: ReportForm) => Promise<{ ok: boolean; message: string }>;
+  loadTaxonomy?: () => Promise<{ teams: Taxon[]; projects: Taxon[] }>; // teams/projects for the pickers
 };
 
 const HOST_ID = 'be10x-recorder-widget';
@@ -270,6 +288,11 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     fSev.append(opt);
   }
   const fDesc = h('textarea', { class: 'f-desc', placeholder: 'What happened? Steps, expected vs actual…' });
+  // Triage routing — team/project selects are filled from the board on first open (loadTaxonomyOnce); a
+  // board with no teams/projects just keeps the "none" option. Tags are freeform, comma-separated.
+  const fTeam = h('select', { class: 'f-team', 'aria-label': 'Team' }, h('option', { value: '' }, '— No team —'));
+  const fProject = h('select', { class: 'f-project', 'aria-label': 'Project' }, h('option', { value: '' }, '— No project —'));
+  const fTags = h('input', { class: 'f-tags', type: 'text', placeholder: 'e.g. checkout, billing' });
   const cancelBtn = h('button', { class: 'btn', type: 'button' }, 'Cancel');
   const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, 'Send report');
   const msg = h('div', { class: 'msg', role: 'status', 'aria-live': 'polite' });
@@ -278,6 +301,13 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     { class: 'form hidden' },
     h('label', { class: 'field' }, h('span', {}, 'Title'), fTitle),
     h('label', { class: 'field' }, h('span', {}, 'Severity'), fSev),
+    h(
+      'div',
+      { class: 'grid2' },
+      h('label', { class: 'field' }, h('span', {}, 'Team'), fTeam),
+      h('label', { class: 'field' }, h('span', {}, 'Project'), fProject),
+    ),
+    h('label', { class: 'field' }, h('span', {}, 'Tags'), fTags),
     h('label', { class: 'field' }, h('span', {}, 'Description'), fDesc),
     h('div', { class: 'row' }, cancelBtn, submitBtn),
     msg,
@@ -572,10 +602,27 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     }
   });
 
+  // Fill the team/project pickers from the board the first time the form opens. Best-effort — no callback,
+  // a disconnected board, or a fetch error just leaves the "none" options (and lets the next open retry).
+  let taxonomyLoaded = false;
+  const loadTaxonomyOnce = () => {
+    if (taxonomyLoaded || !cb.loadTaxonomy) return;
+    taxonomyLoaded = true;
+    cb.loadTaxonomy().then(
+      ({ teams, projects }) => {
+        for (const t of teams) fTeam.append(h('option', { value: t.id }, t.name));
+        for (const p of projects) fProject.append(h('option', { value: p.id }, p.name));
+      },
+      () => {
+        taxonomyLoaded = false;
+      },
+    );
+  };
   reportBtn.addEventListener('click', () => {
     formOpen = true;
     markOpen = false;
     notesOpen = false;
+    loadTaxonomyOnce();
     setMsg('');
     render();
     fTitle.focus();
@@ -599,13 +646,23 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     setMsg('Capturing & uploading…');
     render();
     const notes = composeNotes(nText.value, nExpected.value, nActual.value);
-    cb.onReport({ title, severity: fSev.value, description: fDesc.value.trim(), notes, pickedElements: pickedElements.slice() })
+    cb.onReport({
+      title,
+      severity: fSev.value,
+      description: fDesc.value.trim(),
+      notes,
+      pickedElements: pickedElements.slice(),
+      teamId: fTeam.value || null,
+      projectId: fProject.value || null,
+      tags: parseTags(fTags.value),
+    })
       .then((r) => {
         busy = false;
         setMsg(r.message, r.ok ? 'ok' : 'err');
         if (r.ok) {
           fTitle.value = '';
           fDesc.value = '';
+          fTags.value = ''; // tags are per-bug; team/project persist for filing a batch to the same place
           nText.value = '';
           nExpected.value = '';
           nActual.value = '';

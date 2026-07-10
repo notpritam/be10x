@@ -1,6 +1,6 @@
 // ABOUTME: MV3 service worker — owns auth, screenshot, upload, and bug filing. Message router for the popup.
 // ABOUTME: All board/UploadThing egress runs here (CORS-exempt via host_permissions), never a content script.
-import { deviceStart, devicePoll } from '../lib/board';
+import { deviceStart, devicePoll, getTaxonomy } from '../lib/board';
 import { getConfig, setConfig, clearAuth, normalizeBoardUrl } from '../storage';
 import { reportCurrentTab, reportSession, type SessionReportPayload } from './capture';
 
@@ -33,6 +33,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg?.type === 'status') {
     getConfig().then((c) => sendResponse({ connected: !!c.token, boardUrl: c.boardUrl, user: c.user }));
+    return true;
+  }
+  if (msg?.type === 'taxonomy') {
+    // The widget's team/project pickers: fetch the reporter's teams + projects; degrade to empty (never
+    // throws into the content script) when disconnected or the board lacks the taxonomy routes.
+    getConfig()
+      .then((c) => {
+        if (!c.token || !c.boardUrl) return sendResponse({ teams: [], projects: [] });
+        return getTaxonomy(fetch, c.boardUrl, c.token).then(sendResponse);
+      })
+      .catch(() => sendResponse({ teams: [], projects: [] }));
     return true;
   }
   if (msg?.type === 'report') {

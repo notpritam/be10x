@@ -4,6 +4,25 @@ import { getRecorder } from './recorder';
 import { mountWidget, type ReportForm } from './widget';
 import { installCollectHandler, collectNetwork, captureDom, extractIdentity } from './collector';
 import { pruneByAge } from './net-entry';
+import type { Team, Project } from '../lib/board';
+
+// Ask the SW (which holds the board token) for the reporter's teams + projects for the widget's pickers.
+// Degrades to empty on any failure so the widget never blocks on it.
+function loadTaxonomy(): Promise<{ teams: Team[]; projects: Project[] }> {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({ type: 'taxonomy' }, (reply: { teams?: unknown; projects?: unknown } | undefined) => {
+        if (chrome.runtime.lastError) return resolve({ teams: [], projects: [] });
+        resolve({
+          teams: Array.isArray(reply?.teams) ? (reply.teams as Team[]) : [],
+          projects: Array.isArray(reply?.projects) ? (reply.projects as Project[]) : [],
+        });
+      });
+    } catch {
+      resolve({ teams: [], projects: [] });
+    }
+  });
+}
 
 type ReportResult = { ok: boolean; message: string };
 type SwReply = { ok?: boolean; error?: string; warning?: string; bug?: { humanId?: string } } | undefined;
@@ -47,6 +66,9 @@ async function report(form: ReportForm): Promise<ReportResult> {
       network,
       dom,
       identity,
+      teamId: form.teamId ?? null,
+      projectId: form.projectId ?? null,
+      tags: form.tags ?? [],
       meta: {
         notes,
         pickedElements: form.pickedElements ?? [],
@@ -89,6 +111,7 @@ function boot(): void {
     onStop: () => recorder.stop(),
     onMark: (label) => recorder.mark(label),
     onReport: report,
+    loadTaxonomy,
   });
 
   // Clean teardown on navigation away — stops rrweb observers and removes the widget.
