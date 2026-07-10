@@ -741,6 +741,7 @@ const AGENT_ROUTES = [
       severity: body.severity,
       projectId: body.projectId,
       teamId: body.teamId,
+      tags: body.tags,
       screenshotKey: body.screenshotKey,
       domKey: body.domKey,
       networkKey: body.networkKey,
@@ -757,6 +758,12 @@ const AGENT_ROUTES = [
     const files = Array.isArray(body.files) ? body.files : [];
     send(res, 200, { uploads: mintUploadUrls(files) });
   }],
+
+  // The extension's team/project pickers. The human dashboard reads these from the session routes
+  // GET /api/teams and /api/projects, but the extension authenticates with a Bearer token, so it needs
+  // these agent-side twins — same response shapes, resolved for the token's user (auth.userId).
+  ['GET', '/api/agent/teams', async ({ db, res, auth }) => send(res, 200, { teams: teamsForUser(db, auth.userId) })],
+  ['GET', '/api/agent/projects', async ({ db, res, auth }) => send(res, 200, { projects: listProjectsForUser(db, auth.userId) })],
 
   // A connector declares a repo it serves so tasks can target it and `claim` can match it. The project is
   // path-less on a hosted board (the repo lives on the member's machine, not the server). Idempotent.

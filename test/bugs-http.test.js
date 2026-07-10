@@ -117,3 +117,88 @@ test('extension ingests a bug (Bearer); dashboard lists, reads, resolves it (ses
     assert.equal(noAuth.status, 401);
   });
 });
+
+test('a bug ingested with tags + teamId + projectId round-trips through GET /api/bugs/:id', async () => {
+  await withServer(async (base) => {
+    const { cookie } = await signup(base);
+    const token = await mintToken(base, cookie);
+
+    // A real team (session route) and a real project (Bearer route the extension uses) to attach to.
+    const team = (
+      await json(
+        await fetch(base + '/api/teams', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', cookie },
+          body: JSON.stringify({ name: 'Checkout Squad' }),
+        })
+      )
+    ).body.team;
+    const project = (
+      await json(
+        await fetch(base + '/api/agent/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify({ key: 'github.com/acme/store', name: 'store' }),
+        })
+      )
+    ).body.project;
+
+    const ingest = await json(
+      await fetch(base + '/api/agent/bugs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({
+          pageUrl: 'https://app.example.com/x',
+          title: 'Tagged bug',
+          teamId: team.id,
+          projectId: project.id,
+          tags: ['checkout', 'regression'],
+        }),
+      })
+    );
+    assert.equal(ingest.status, 200);
+    assert.deepEqual(ingest.body.bug.tags, ['checkout', 'regression']);
+    assert.equal(ingest.body.bug.teamId, team.id);
+    assert.equal(ingest.body.bug.projectId, project.id);
+    const bugId = ingest.body.bug.id;
+
+    // Round-trips through the dashboard detail route: tags is an array, team/project stick.
+    const detail = await json(await fetch(base + '/api/bugs/' + bugId, { headers: { cookie } }));
+    assert.deepEqual(detail.body.bug.tags, ['checkout', 'regression']);
+    assert.equal(detail.body.bug.teamId, team.id);
+    assert.equal(detail.body.bug.projectId, project.id);
+  });
+});
+
+test('GET /api/agent/teams and /api/agent/projects return the caller\'s teams/projects (Bearer), 401 without a token', async () => {
+  await withServer(async (base) => {
+    const { cookie } = await signup(base);
+    const token = await mintToken(base, cookie);
+    const auth = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
+
+    const team = (
+      await json(
+        await fetch(base + '/api/teams', { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify({ name: 'Payments' }) })
+      )
+    ).body.team;
+    const project = (
+      await json(
+        await fetch(base + '/api/agent/projects', { method: 'POST', headers: auth, body: JSON.stringify({ key: 'github.com/acme/pay', name: 'pay' }) })
+      )
+    ).body.project;
+
+    // Bearer: the token's user sees their team (same {id,name,slug} shape as the session route) ...
+    const teams = await json(await fetch(base + '/api/agent/teams', { headers: auth }));
+    assert.equal(teams.status, 200);
+    assert.ok(teams.body.teams.some((t) => t.id === team.id && t.name === 'Payments' && typeof t.slug === 'string'));
+
+    // ... and their project.
+    const projects = await json(await fetch(base + '/api/agent/projects', { headers: auth }));
+    assert.equal(projects.status, 200);
+    assert.ok(projects.body.projects.some((p) => p.id === project.id && p.key === 'github.com/acme/pay'));
+
+    // No Bearer token → 401 on both.
+    assert.equal((await fetch(base + '/api/agent/teams')).status, 401);
+    assert.equal((await fetch(base + '/api/agent/projects')).status, 401);
+  });
+});

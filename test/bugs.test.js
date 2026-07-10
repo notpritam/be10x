@@ -66,6 +66,37 @@ test('createBug rejects an unknown severity and missing fields', () => {
   assert.throws(() => createBug(db, { reporterId: u.id, title: 't' }), /MISSING_FIELD:pageUrl/);
 });
 
+test('createBug stores tags as a JSON array and getBug hydrates them; sanitizes input', () => {
+  const db = openDb(':memory:');
+  const u = seedUser(db);
+  // A clean set round-trips as an array.
+  const tagged = createBug(db, {
+    reporterId: u.id,
+    pageUrl: 'p',
+    title: 'tagged',
+    tags: ['checkout', 'regression'],
+  });
+  assert.deepEqual(tagged.tags, ['checkout', 'regression']);
+  assert.deepEqual(getBug(db, tagged.id).tags, ['checkout', 'regression']);
+
+  // No tags → empty array, never null/undefined.
+  const untagged = createBug(db, { reporterId: u.id, pageUrl: 'p', title: 'untagged' });
+  assert.deepEqual(untagged.tags, []);
+
+  // Sanitization: trims, drops blanks/non-strings, clips each label to 40 chars, caps the count at 20.
+  const messy = createBug(db, {
+    reporterId: u.id,
+    pageUrl: 'p',
+    title: 'messy',
+    tags: ['  spaced  ', '', '   ', 42, null, 'x'.repeat(60), ...Array.from({ length: 25 }, (_, i) => 'n' + i)],
+  });
+  assert.equal(messy.tags[0], 'spaced'); // trimmed
+  assert.ok(!messy.tags.includes('')); // blanks dropped
+  assert.equal(messy.tags[1].length, 40); // long label clipped to 40
+  assert.equal(messy.tags.length, 20); // capped at 20
+  assert.ok(messy.tags.every((t) => typeof t === 'string')); // non-strings dropped
+});
+
 test('listBugs returns newest-first and filters by status and reporter', () => {
   const db = openDb(':memory:');
   const a = seedUser(db, 'a@b.co');

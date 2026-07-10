@@ -7,6 +7,38 @@ export const VALID_SEVERITY = ['low', 'medium', 'high', 'critical'];
 // The "closed" statuses — a bug in one of these no longer counts as open on a reporter's rollup.
 const CLOSED_STATUS = ['resolved', 'not_a_bug', 'wont_fix'];
 
+// Tags are free-form triage labels stored as a JSON array of strings. Caps keep a malformed or hostile
+// payload from bloating the row: at most MAX_TAGS labels, each trimmed and clipped to MAX_TAG_LEN chars.
+const MAX_TAGS = 20;
+const MAX_TAG_LEN = 40;
+
+// Coerce whatever the caller sends into a clean array of trimmed, non-empty strings (drops non-strings and
+// blanks, clips length, caps count). Always returns an array — [] for anything that isn't a usable list.
+function sanitizeTags(tags) {
+  if (!Array.isArray(tags)) return [];
+  const out = [];
+  for (const t of tags) {
+    if (typeof t !== 'string') continue;
+    const trimmed = t.trim();
+    if (!trimmed) continue;
+    out.push(trimmed.slice(0, MAX_TAG_LEN));
+    if (out.length >= MAX_TAGS) break;
+  }
+  return out;
+}
+
+// Parse the stored tags column back into an array. NULL (older bug, pre-tags) and any malformed/non-array
+// JSON both hydrate to [] so callers never have to null-check or type-guard the field.
+function parseTags(raw) {
+  if (raw == null) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function hydrate(row) {
   return {
     id: row.id,
@@ -25,6 +57,7 @@ function hydrate(row) {
     domKey: row.dom_key,
     networkKey: row.network_key,
     sessionKey: row.session_key,
+    tags: parseTags(row.tags),
     identity: JSON.parse(row.identity_json),
     meta: JSON.parse(row.meta_json),
     createdAt: row.created_at,
@@ -59,6 +92,7 @@ export function createBug(db, spec = {}) {
     domKey = null,
     networkKey = null,
     sessionKey = null,
+    tags = [],
     identity = {},
     meta = {},
   } = spec;
@@ -71,11 +105,11 @@ export function createBug(db, spec = {}) {
   const now = Date.now();
   db.prepare(
     `INSERT INTO bugs (id, human_id, reporter_id, project_id, team_id, page_url, title, description,
-       status, severity, screenshot_key, dom_key, network_key, session_key, identity_json, meta_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       status, severity, screenshot_key, dom_key, network_key, session_key, tags, identity_json, meta_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id, humanId, reporterId, projectId, teamId, pageUrl, title, description,
-    severity, screenshotKey, domKey, networkKey, sessionKey, JSON.stringify(identity), JSON.stringify(meta), now, now
+    severity, screenshotKey, domKey, networkKey, sessionKey, JSON.stringify(sanitizeTags(tags)), JSON.stringify(identity), JSON.stringify(meta), now, now
   );
   appendBugEvent(db, id, reporterId, 'created', { title, severity, pageUrl });
   return getBug(db, id);
