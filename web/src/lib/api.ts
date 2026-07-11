@@ -4,6 +4,7 @@ import type {
   AgentConfig,
   Artifact,
   Bug,
+  BugAnalysis,
   BugEvent,
   BugStats,
   BugStatus,
@@ -323,7 +324,8 @@ export const api = {
     const qs = q.toString();
     return request<{ bugs: Bug[] }>(`/api/bugs${qs ? `?${qs}` : ""}`);
   },
-  getBug: (id: string) => request<{ bug: Bug; events: BugEvent[] }>(`/api/bugs/${id}`),
+  getBug: (id: string) =>
+    request<{ bug: Bug; events: BugEvent[]; analysis?: BugAnalysis }>(`/api/bugs/${id}`),
   updateBugStatus: (id: string, status: BugStatus, resolution?: string) =>
     post<{ bug: Bug }>(`/api/bugs/${id}/status`, {
       status,
@@ -367,7 +369,8 @@ export const api = {
     request<{ ok: boolean }>(`/api/bug-share/${encodeURIComponent(token)}`, { method: "DELETE" }),
   /** The public, token-scoped bug behind a share link — the same Bug shape GET /api/bugs/:id returns as
    *  `.bug`. No session cookie; the token is the credential. */
-  getPublicBug: (token: string) => request<{ bug: Bug }>(`/api/bug-share/${encodeURIComponent(token)}`),
+  getPublicBug: (token: string) =>
+    request<{ bug: Bug; analysis?: BugAnalysis }>(`/api/bug-share/${encodeURIComponent(token)}`),
 
   // Shareable, permissioned review links.
   // Owner-only (session): mint / list / revoke a task's links.

@@ -202,3 +202,42 @@ test('GET /api/agent/teams and /api/agent/projects return the caller\'s teams/pr
     assert.equal((await fetch(base + '/api/agent/projects')).status, 401);
   });
 });
+
+test('GET /api/bugs/:id attaches a heuristic root-cause analysis derived from the capture', async () => {
+  await withServer(async (base) => {
+    const { cookie } = await signup(base);
+    const token = await mintToken(base, cookie);
+    const ingest = await json(
+      await fetch(base + '/api/agent/bugs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({
+          pageUrl: 'https://app.example.com/checkout',
+          title: 'Pay dead',
+          severity: 'high',
+          meta: {
+            errorCount: 1,
+            console: [{ ts: 1000, level: 'error', text: "TypeError: total is undefined\n at Pay.tsx:42" }],
+            pickedElements: [{ selector: 'button#pay', tag: 'BUTTON', rect: { x: 0, y: 0, w: 1, h: 1 }, react: { component: 'PayButton', source: 'src/checkout/Pay.tsx:42' } }],
+            recording: { startedAt: 0, endedAt: 5000, durationMs: 5000, mode: 'explicit' },
+          },
+        }),
+      })
+    );
+    const bugId = ingest.body.bug.id;
+    const detail = await json(await fetch(base + '/api/bugs/' + bugId, { headers: { cookie } }));
+    assert.equal(detail.status, 200);
+    assert.ok(detail.body.analysis, 'analysis is attached to the bug detail');
+    assert.match(detail.body.analysis.suspectedCause, /TypeError/);
+    assert.equal(detail.body.analysis.suspectedComponent, 'PayButton');
+    assert.equal(detail.body.analysis.confidence, 'high');
+
+    // The public share view carries the same analysis.
+    const share = await json(
+      await fetch(base + '/api/bugs/' + bugId + '/share', { method: 'POST', headers: { cookie } })
+    );
+    const token2 = share.body.share.token;
+    const pub = await json(await fetch(base + '/api/bug-share/' + token2));
+    assert.equal(pub.body.analysis.suspectedComponent, 'PayButton');
+  });
+});

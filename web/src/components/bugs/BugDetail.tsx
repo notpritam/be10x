@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, dashboardArtifacts, errorMessage } from "@/lib/api";
-import type { Bug, BugEvent, BugStatus } from "@/lib/types";
+import type { Bug, BugAnalysis, BugEvent, BugStatus } from "@/lib/types";
 import { useApp } from "@/state/app-store";
 import { cn, formatDateTime, humanizeKey, relativeTime } from "@/lib/utils";
 import { UserAvatar } from "@/components/common/bits";
@@ -32,6 +32,7 @@ import {
   BugTagChips,
   CredentialsCard,
   EnvironmentCard,
+  RootCauseCard,
 } from "./bug-bits";
 import { BugShareDialog } from "./BugShareDialog";
 import { SourcePanel } from "./SourcePanel";
@@ -64,7 +65,7 @@ type ShotState =
 
 export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void }) {
   const { user, teams, projects } = useApp();
-  const [data, setData] = useState<{ bug: Bug; events: BugEvent[] } | null>(null);
+  const [data, setData] = useState<{ bug: Bug; events: BugEvent[]; analysis?: BugAnalysis } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [shot, setShot] = useState<ShotState>({ state: "loading" });
 
@@ -105,6 +106,7 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
 
   const bug = data?.bug ?? null;
   const events = data?.events ?? [];
+  const analysis = data?.analysis ?? null;
   const screenshotKey = bug?.screenshotKey ?? null;
   // A session recording or network timeline needs the wider layout for the player + DevTools panel.
   const wide = !!(bug?.sessionKey || bug?.networkKey);
@@ -292,6 +294,9 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
                 </p>
               </Card>
             )}
+
+            {/* Heuristic root-cause summary — the "start here" analysis derived from the captured signals. */}
+            {analysis && <RootCauseCard analysis={analysis} />}
 
             {/* Session replay ⇄ snapshot + the playhead-synced network panel. Renders gracefully for older
                 bugs with only a screenshot (falls back to the static poster). */}

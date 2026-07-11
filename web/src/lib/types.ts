@@ -480,6 +480,26 @@ export interface BugEvent {
   createdAt: number;
 }
 
+/** The heuristic root-cause analysis of a bug (server-derived from its captured signals — console errors,
+ *  error markers, picked component/source, notes). Mirrors analyzeBug() in src/bugs/analyze.js. Rides on the
+ *  GET /api/bugs/:id and public-share responses; never null (degrades to a low-confidence "review" summary). */
+export interface BugAnalysis {
+  suspectedCause: string;
+  confidence: "low" | "medium" | "high";
+  evidence: string[];
+  reproSteps: string[];
+  suspectedComponent: string | null;
+  suspectedSource: string | null;
+  errorCount: number;
+  signals: {
+    consoleErrors: number;
+    errorMarkers: number;
+    pickedElements: number;
+    hasNotes: boolean;
+    hasReplay: boolean;
+  };
+}
+
 /** Per-reporter rollup for the profile card. Mirrors bugStatsForUser(). */
 export interface BugStats {
   reported: number;

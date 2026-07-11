@@ -1,9 +1,9 @@
 // ABOUTME: Shared presentational atoms for the Bugs dashboard — a soft status badge (colored dot + label),
 // ABOUTME: a severity pill (with `critical`), tag chips, and the reporter's test-credentials card.
 import { useState } from "react";
-import { Copy, Cpu, Eye, EyeOff, Gauge, Globe, KeyRound, Monitor, Smartphone, Wifi } from "lucide-react";
+import { Copy, Cpu, Eye, EyeOff, Gauge, Globe, KeyRound, Lightbulb, Monitor, Smartphone, Wifi } from "lucide-react";
 import { toast } from "sonner";
-import type { BugEnvironment, BugSeverity, BugStatus, TestCredentials } from "@/lib/types";
+import type { BugAnalysis, BugEnvironment, BugSeverity, BugStatus, TestCredentials } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /** Bug status → sentence-case label + a hue. Reuses the board's --status-* custom properties where they
@@ -63,6 +63,65 @@ export function BugTagChips({ tags, className }: { tags: string[]; className?: s
         </span>
       ))}
     </span>
+  );
+}
+
+/** The heuristic root-cause summary — the "start here" card. Server-derived (analyzeBug), so it's the same on
+ *  the dashboard and public share page. Renders nothing when the bug has no analyzable signal. */
+export function RootCauseCard({ analysis }: { analysis: BugAnalysis }) {
+  const meaningful = analysis.evidence.length > 0 || !!analysis.suspectedComponent || analysis.errorCount > 0;
+  if (!meaningful) return null;
+  return (
+    <section className="rounded-[8px] border border-border/60 bg-card p-5 shadow-card">
+      <div className="mb-3 flex items-center gap-2">
+        <Lightbulb className="size-4 text-primary" />
+        <h2 className="text-[13px] font-semibold text-foreground">Likely root cause</h2>
+        <span
+          className={cn(
+            "ml-auto rounded-full px-2 py-0.5 text-[10.5px] font-medium capitalize",
+            analysis.confidence === "high" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
+          )}
+        >
+          {analysis.confidence} confidence
+        </span>
+      </div>
+      <p className="text-[13.5px] font-medium leading-relaxed text-foreground">{analysis.suspectedCause}</p>
+      {(analysis.suspectedComponent || analysis.suspectedSource) && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11.5px]">
+          {analysis.suspectedComponent && (
+            <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-foreground">{`<${analysis.suspectedComponent}>`}</span>
+          )}
+          {analysis.suspectedSource && (
+            <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-muted-foreground" title={analysis.suspectedSource}>
+              {analysis.suspectedSource}
+            </span>
+          )}
+        </div>
+      )}
+      {analysis.evidence.length > 0 && (
+        <div className="mt-3">
+          <p className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground/70">Evidence</p>
+          <ul className="space-y-1">
+            {analysis.evidence.map((e, i) => (
+              <li key={i} className="flex gap-1.5 text-[12.5px] text-foreground/85">
+                <span className="mt-1.5 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                <span className="min-w-0">{e}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {analysis.reproSteps.length > 0 && (
+        <div className="mt-3">
+          <p className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground/70">Suggested repro</p>
+          <ol className="list-decimal space-y-0.5 pl-4 text-[12.5px] text-foreground/85 marker:text-muted-foreground/60">
+            {analysis.reproSteps.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </section>
   );
 }
 

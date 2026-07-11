@@ -4,11 +4,11 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Clock, ExternalLink, Loader2, Share2, StickyNote } from "lucide-react";
 import { api, publicArtifacts } from "@/lib/api";
-import type { Bug } from "@/lib/types";
+import type { Bug, BugAnalysis } from "@/lib/types";
 import { cn, formatDateTime, humanizeKey, relativeTime } from "@/lib/utils";
 import { UserAvatar } from "@/components/common/bits";
 import { BrandTile, Wordmark } from "@/components/common/Brandmark";
-import { BugSeverityPill, BugStatusBadge, CredentialsCard, EnvironmentCard } from "./bug-bits";
+import { BugSeverityPill, BugStatusBadge, CredentialsCard, EnvironmentCard, RootCauseCard } from "./bug-bits";
 import { SourcePanel } from "./SourcePanel";
 
 /** The replay UI pulls in rrweb (~200 KB); load it as its own chunk only when a shared bug is opened — the
@@ -34,6 +34,7 @@ const REPLAY_META_KEYS = [
 export function PublicBugReplay({ token }: { token: string }) {
   const [state, setState] = useState<"loading" | "error" | "ready">("loading");
   const [bug, setBug] = useState<Bug | null>(null);
+  const [analysis, setAnalysis] = useState<BugAnalysis | null>(null);
   const [shotUrl, setShotUrl] = useState<string | null>(null);
 
   // Token-scoped artifact source (no cookie). Stable per token so the replay fetch effects don't re-run.
@@ -47,6 +48,7 @@ export function PublicBugReplay({ token }: { token: string }) {
       .then((res) => {
         if (!active) return;
         setBug(res.bug);
+        setAnalysis(res.analysis ?? null);
         setState("ready");
         document.title = `${res.bug.humanId} · ${res.bug.title}`;
       })
@@ -158,6 +160,9 @@ export function PublicBugReplay({ token }: { token: string }) {
             </p>
           </Card>
         )}
+
+        {/* Heuristic root-cause summary — same server-derived analysis as the dashboard. */}
+        {analysis && <RootCauseCard analysis={analysis} />}
 
         {/* Session replay ⇄ snapshot + the playhead-synced network panel — token-scoped artifacts. */}
         {hasCapture && (

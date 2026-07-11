@@ -20,6 +20,7 @@ import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateCont
 import { listEvents, appendEvent } from '../tasks/events.js';
 import { createBug, getBug as getBugById, listBugs, updateBugStatus, addBugComment, listBugEvents, bugStatsForUser } from '../bugs/bugs.js';
 import { handoffBugToTask } from '../bugs/handoff.js';
+import { analyzeBug } from '../bugs/analyze.js';
 import { mintUploadUrls, signAccessUrl } from '../bugs/uploadthing.js';
 import { requestReview, submitReview } from '../reviews/reviews.js';
 import { requestInput, answerInput, getOpenInputRequest, getRequestTaskId } from '../tasks/input_requests.js';
@@ -651,7 +652,7 @@ const ROUTES = [
   ['GET', '/api/bugs/:id', true, async ({ db, res, params }) => {
     const bug = getBugById(db, params.id);
     if (!bug) throw new Error('NOT_FOUND');
-    send(res, 200, { bug, events: listBugEvents(db, params.id) });
+    send(res, 200, { bug, events: listBugEvents(db, params.id), analysis: analyzeBug(bug) });
   }],
   ['POST', '/api/bugs/:id/status', true, async ({ db, res, params, body, user }) => {
     send(res, 200, { bug: updateBugStatus(db, params.id, body.status, user.id, { resolution: body.resolution }) });
@@ -706,7 +707,7 @@ const ROUTES = [
   ['GET', '/api/bug-share/:token', false, async ({ db, res, params }) => {
     const v = bugShareView(db, params.token);
     if (!v) return send(res, 404, { error: 'NOT_FOUND' });
-    send(res, 200, { bug: v });
+    send(res, 200, { bug: v, analysis: analyzeBug(v) });
   }],
   ['GET', '/api/bug-share/:token/artifact/:kind', false, async ({ db, res, params }) => {
     const share = getActiveBugShareByToken(db, params.token);
