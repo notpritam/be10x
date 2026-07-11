@@ -291,6 +291,8 @@ CREATE TABLE IF NOT EXISTS bugs (
   -- Free-form triage labels: a JSON array of strings (e.g. ["checkout","regression"]). NULL on rows
   -- filed before tags existed; the store hydrates that (and any parse failure) to an empty array.
   tags           TEXT,
+  -- The agent-board task this bug was handed off to be fixed in (be10x "send to an agent to fix"), or NULL.
+  task_id        TEXT REFERENCES tasks(id) ON DELETE SET NULL,
   identity_json  TEXT NOT NULL DEFAULT '{}',
   meta_json      TEXT NOT NULL DEFAULT '{}',
   created_at     INTEGER NOT NULL,

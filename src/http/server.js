@@ -19,6 +19,7 @@ import { assertCan, assertCanAccessTask, canAccessProject } from '../authz/authz
 import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
 import { createBug, getBug as getBugById, listBugs, updateBugStatus, addBugComment, listBugEvents, bugStatsForUser } from '../bugs/bugs.js';
+import { handoffBugToTask } from '../bugs/handoff.js';
 import { mintUploadUrls, signAccessUrl } from '../bugs/uploadthing.js';
 import { requestReview, submitReview } from '../reviews/reviews.js';
 import { requestInput, answerInput, getOpenInputRequest, getRequestTaskId } from '../tasks/input_requests.js';
@@ -657,6 +658,12 @@ const ROUTES = [
   }],
   ['POST', '/api/bugs/:id/comment', true, async ({ db, res, params, body, user }) => {
     send(res, 200, { event: addBugComment(db, params.id, user.id, body.body) });
+  }],
+  // Hand a bug off to the agent board: create a code-issue task composed from the capture (symptom, suspected
+  // component/source, repro, test login) + seed its RCA artifact, and link the bug ⇄ task. Re-posting a bug
+  // that's already linked returns the existing link (alreadyLinked) instead of spawning a duplicate task.
+  ['POST', '/api/bugs/:id/handoff', true, async ({ db, res, params, body, user }) => {
+    send(res, 200, handoffBugToTask(db, { bugId: params.id, actorId: user.id, projectId: body?.projectId ?? null, teamId: body?.teamId ?? null }));
   }],
   // Hand the dashboard a short-lived signed UploadThing read URL for one captured artifact. kind picks the
   // key column (screenshot|dom|network|session); 404 when the bug or that particular key is absent. Six path

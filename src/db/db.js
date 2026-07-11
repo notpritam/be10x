@@ -23,6 +23,7 @@ const COLUMN_MIGRATIONS = [
   { table: 'runs', column: 'cost_usd', ddl: 'ALTER TABLE runs ADD COLUMN cost_usd REAL' },
   { table: 'bugs', column: 'session_key', ddl: 'ALTER TABLE bugs ADD COLUMN session_key TEXT' },
   { table: 'bugs', column: 'tags', ddl: 'ALTER TABLE bugs ADD COLUMN tags TEXT' },
+  { table: 'bugs', column: 'task_id', ddl: 'ALTER TABLE bugs ADD COLUMN task_id TEXT' },
 ];
 
 // One-time rebuild for `projects`: the original table had a global UNIQUE(key) column constraint and no

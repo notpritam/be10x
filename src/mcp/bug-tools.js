@@ -6,6 +6,7 @@ import { getBug, getBugByHumanId, listBugs } from '../bugs/bugs.js';
 import { bugShareView } from '../share/bug-share.js';
 import { signAccessUrl } from '../bugs/uploadthing.js';
 import { analyzeBug } from '../bugs/analyze.js';
+import { handoffBugToTask } from '../bugs/handoff.js';
 
 // --- bug resolution -------------------------------------------------------------
 // Accept whatever a human pastes: a raw uuid, a human id (BUG-009), a dashboard URL, or a public share URL
@@ -358,6 +359,24 @@ export const BUG_TOOLS = [
         mutationsSince: mutations.map((e) => ({ offsetMs: (e.timestamp ?? start) - start, source: e.data?.source, data: e.data })),
         mutationCount: mutations.length,
       };
+    },
+  },
+  {
+    name: 'bug_handoff',
+    description: 'Hand this bug off to the agent board to be FIXED: create a code-issue task composed from the capture (symptom, suspected component/source, repro steps, test login) with the heuristic RCA seeded as its artifact, and link the bug ⇄ task. Returns the created task. If the bug was already handed off, returns the existing link (alreadyLinked) without creating a duplicate.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...BUG_ARG,
+        projectId: { type: 'string', description: 'File the task under this project id (scope=project).' },
+        teamId: { type: 'string', description: 'File the task under this team id (scope=team).' },
+      },
+      required: ['bug'],
+      additionalProperties: false,
+    },
+    handler: (db, ctx, args) => {
+      const bug = resolveBug(db, args.bug);
+      return handoffBugToTask(db, { bugId: bug.id, actorId: ctx.userId, projectId: args.projectId ?? null, teamId: args.teamId ?? null });
     },
   },
   {

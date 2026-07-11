@@ -433,6 +433,8 @@ export interface Bug {
   networkKey: string | null;
   /** The rrweb session-recording artifact key — the scrubbable replay. Null on bugs filed before replay. */
   sessionKey: string | null;
+  /** The agent-board task this bug was handed off to be fixed in ("send to an agent to fix"), or null. */
+  taskId: string | null;
   identity: BugIdentity;
   meta: BugMeta;
   createdAt: number;

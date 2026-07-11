@@ -58,6 +58,7 @@ function hydrate(row) {
     networkKey: row.network_key,
     sessionKey: row.session_key,
     tags: parseTags(row.tags),
+    taskId: row.task_id ?? null,
     identity: JSON.parse(row.identity_json),
     meta: JSON.parse(row.meta_json),
     createdAt: row.created_at,
@@ -150,6 +151,16 @@ export function updateBugStatus(db, id, status, actor, { resolution } = {}) {
     db.prepare('UPDATE bugs SET status = ?, updated_at = ? WHERE id = ?').run(status, now, id);
   }
   appendBugEvent(db, id, actor, 'status', { from: bug.status, to: status, resolution: resolution ?? null });
+  return getBug(db, id);
+}
+
+// Link a bug to the agent-board task opened to fix it (be10x "send to an agent to fix"). Idempotent-ish:
+// re-linking just overwrites task_id. Records a 'handoff' event so the bug timeline shows the hand-off.
+export function linkBugToTask(db, id, taskId, actor) {
+  const bug = getBug(db, id);
+  if (!bug) throw new Error('NOT_FOUND');
+  db.prepare('UPDATE bugs SET task_id = ?, updated_at = ? WHERE id = ?').run(taskId, Date.now(), id);
+  appendBugEvent(db, id, actor ?? bug.reporterId, 'handoff', { taskId });
   return getBug(db, id);
 }
 

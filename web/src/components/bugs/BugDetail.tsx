@@ -3,6 +3,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
+  Bot,
   Clock,
   ExternalLink,
   FolderGit2,
@@ -12,6 +13,7 @@ import {
   Share2,
   StickyNote,
   Users,
+  Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, dashboardArtifacts, errorMessage } from "@/lib/api";
@@ -73,6 +75,7 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
   const [postingComment, setPostingComment] = useState(false);
 
   const [shareOpen, setShareOpen] = useState(false);
+  const [handingOff, setHandingOff] = useState(false);
   // Stable per bug so the replay components' fetch effects don't re-run on every render.
   const artifacts = useMemo(() => dashboardArtifacts(bugId), [bugId]);
 
@@ -138,6 +141,25 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
     }
   }
 
+  async function handoff() {
+    if (!bug || handingOff) return;
+    setHandingOff(true);
+    try {
+      const res = await api.handoffBug(bug.id);
+      const humanId = res.task?.humanId;
+      toast.success(
+        res.alreadyLinked
+          ? "Already handed off — opening the existing task."
+          : `Filed ${humanId ?? "a task"} — an agent can pick it up.`,
+      );
+      await load();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setHandingOff(false);
+    }
+  }
+
   async function postComment() {
     if (!bug) return;
     const body = comment.trim();
@@ -183,15 +205,29 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
                 </span>
                 <BugStatusBadge status={bug.status} />
                 <BugSeverityPill severity={bug.severity} />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShareOpen(true)}
-                  className="ml-auto text-[12.5px]"
-                >
-                  <Share2 className="size-3.5" />
-                  Share
-                </Button>
+                <div className="ml-auto flex items-center gap-2">
+                  {!bug.taskId && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handoff()}
+                      disabled={handingOff}
+                      className="text-[12.5px]"
+                    >
+                      {handingOff ? <Loader2 className="size-3.5 animate-spin" /> : <Bot className="size-3.5" />}
+                      Send to an agent
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShareOpen(true)}
+                    className="text-[12.5px]"
+                  >
+                    <Share2 className="size-3.5" />
+                    Share
+                  </Button>
+                </div>
               </div>
               <h1 className="text-[20px] font-bold leading-snug tracking-tight text-foreground">
                 {bug.title}
@@ -226,6 +262,19 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
                 </div>
               )}
             </header>
+
+            {bug.taskId && (
+              <a
+                href={`/t/${bug.taskId}/full`}
+                className="flex items-center gap-2.5 rounded-[8px] border border-primary/30 bg-primary/[0.06] px-4 py-2.5 text-[13px] transition-colors hover:bg-primary/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <Wrench className="size-4 shrink-0 text-primary" />
+                <span className="font-medium text-foreground">Handed off to an agent to fix</span>
+                <span className="ml-auto inline-flex shrink-0 items-center gap-1 font-medium text-primary">
+                  Open task <ExternalLink className="size-3.5" />
+                </span>
+              </a>
+            )}
 
             {bug.description && (
               <Card title="Description">
