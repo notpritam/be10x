@@ -108,3 +108,23 @@ export type ConsoleEntry = {
   text: string;
   truncated?: boolean; // the serialized text was over the cap and clipped
 };
+
+// The reporter's device + browser + page-load environment, read from the ISOLATED world at report time.
+// Every field is best-effort/optional (older browsers, privacy modes). Rides in meta.environment; the
+// dashboard renders it as an "Environment" card and parses `userAgent`/`brands` into a browser+OS line.
+export type BugEnvironment = {
+  userAgent?: string;
+  platform?: string; // navigator.userAgentData.platform ?? navigator.platform
+  brands?: string[]; // "Chromium 152", … from userAgentData (Chromium only)
+  mobile?: boolean; // userAgentData.mobile
+  language?: string;
+  languages?: string[]; // capped to a few
+  timezone?: string; // IANA zone from Intl
+  online?: boolean;
+  cores?: number; // navigator.hardwareConcurrency
+  memoryGb?: number; // navigator.deviceMemory (coarse)
+  screen?: { w: number; h: number; dpr: number; colorDepth?: number };
+  connection?: { effectiveType?: string; downlinkMbps?: number; rttMs?: number; saveData?: boolean };
+  performance?: { ttfbMs?: number; domInteractiveMs?: number; domContentLoadedMs?: number; loadMs?: number; fcpMs?: number };
+  capturedAt?: number; // epoch ms
+};

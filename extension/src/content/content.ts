@@ -4,7 +4,59 @@ import { getRecorder } from './recorder';
 import { mountWidget, type ReportForm } from './widget';
 import { installCollectHandler, collectNetwork, captureDom, extractIdentity } from './collector';
 import { pruneByAge } from './net-entry';
+import type { BugEnvironment } from './protocol';
 import type { Team, Project } from '../lib/board';
+
+// The reporter's device/browser/page-load environment — read from the ISOLATED world at report time. Every
+// probe is wrapped so a missing/blocked API never breaks the report; unknown fields are simply omitted.
+function collectEnvironment(): BugEnvironment {
+  const env: BugEnvironment = {};
+  const nav = navigator as Navigator & {
+    userAgentData?: { platform?: string; mobile?: boolean; brands?: { brand: string; version: string }[] };
+    deviceMemory?: number;
+    connection?: { effectiveType?: string; downlink?: number; rtt?: number; saveData?: boolean };
+  };
+  const set = (fn: () => void) => {
+    try {
+      fn();
+    } catch {
+      /* best-effort probe */
+    }
+  };
+  set(() => (env.userAgent = navigator.userAgent));
+  set(() => (env.platform = nav.userAgentData?.platform || navigator.platform || undefined));
+  set(() => {
+    const b = nav.userAgentData?.brands;
+    if (Array.isArray(b)) env.brands = b.map((x) => `${x.brand} ${x.version}`).filter(Boolean).slice(0, 6);
+    if (typeof nav.userAgentData?.mobile === 'boolean') env.mobile = nav.userAgentData.mobile;
+  });
+  set(() => (env.language = navigator.language));
+  set(() => (env.languages = Array.isArray(navigator.languages) ? navigator.languages.slice(0, 6) : undefined));
+  set(() => (env.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone));
+  set(() => (env.online = navigator.onLine));
+  set(() => (env.cores = navigator.hardwareConcurrency));
+  set(() => (env.memoryGb = nav.deviceMemory));
+  set(() => (env.screen = { w: screen.width, h: screen.height, dpr: window.devicePixelRatio, colorDepth: screen.colorDepth }));
+  set(() => {
+    const c = nav.connection;
+    if (c) env.connection = { effectiveType: c.effectiveType, downlinkMbps: c.downlink, rttMs: c.rtt, saveData: c.saveData };
+  });
+  set(() => {
+    const navE = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    const perf: NonNullable<BugEnvironment['performance']> = {};
+    if (navE) {
+      if (navE.responseStart > 0) perf.ttfbMs = Math.round(navE.responseStart);
+      if (navE.domInteractive > 0) perf.domInteractiveMs = Math.round(navE.domInteractive);
+      if (navE.domContentLoadedEventEnd > 0) perf.domContentLoadedMs = Math.round(navE.domContentLoadedEventEnd);
+      if (navE.loadEventEnd > 0) perf.loadMs = Math.round(navE.loadEventEnd);
+    }
+    const fcp = performance.getEntriesByName?.('first-contentful-paint')?.[0];
+    if (fcp) perf.fcpMs = Math.round(fcp.startTime);
+    if (Object.keys(perf).length > 0) env.performance = perf;
+  });
+  env.capturedAt = Date.now();
+  return env;
+}
 
 // Ask the SW (which holds the board token) for the reporter's teams + projects for the widget's pickers.
 // Degrades to empty on any failure so the widget never blocks on it.
@@ -91,6 +143,7 @@ async function report(form: ReportForm): Promise<ReportResult> {
         pageTitle: document.title,
         userAgent: navigator.userAgent,
         viewport: { w: window.innerWidth, h: window.innerHeight },
+        environment: collectEnvironment(),
       },
     };
   } catch (e) {

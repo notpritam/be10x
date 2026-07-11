@@ -296,6 +296,26 @@ export interface TestCredentials {
   notes?: string;
 }
 
+/** The reporter's device + browser + page-load environment, captured at report time. Every field is
+ *  best-effort/optional. Shared contract with the capture extension (`meta.environment`); the dashboard
+ *  parses `userAgent`/`brands` into a browser+OS line and renders the rest as a facts grid. */
+export interface BugEnvironment {
+  userAgent?: string;
+  platform?: string;
+  brands?: string[];
+  mobile?: boolean;
+  language?: string;
+  languages?: string[];
+  timezone?: string;
+  online?: boolean;
+  cores?: number;
+  memoryGb?: number;
+  screen?: { w: number; h: number; dpr: number; colorDepth?: number };
+  connection?: { effectiveType?: string; downlinkMbps?: number; rttMs?: number; saveData?: boolean };
+  performance?: { ttfbMs?: number; domInteractiveMs?: number; domContentLoadedMs?: number; loadMs?: number; fcpMs?: number };
+  capturedAt?: number;
+}
+
 /** Small capture metadata that rides in the bug's `meta_json` (no columns). Known replay fields are typed;
  *  the index signature keeps it open-ended and lets the Details card still enumerate unknown keys. */
 export interface BugMeta {
@@ -316,6 +336,8 @@ export interface BugMeta {
   drawings?: DrawStroke[];
   /** The login the reporter used while reproducing — surfaced as its own card (password masked by default). */
   credentials?: TestCredentials;
+  /** The reporter's device/browser/page-load environment — surfaced as an "Environment" card. */
+  environment?: BugEnvironment;
   [key: string]: unknown;
 }
 

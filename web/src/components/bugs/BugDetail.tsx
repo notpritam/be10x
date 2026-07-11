@@ -29,6 +29,7 @@ import {
   BugStatusBadge,
   BugTagChips,
   CredentialsCard,
+  EnvironmentCard,
 } from "./bug-bits";
 import { BugShareDialog } from "./BugShareDialog";
 
@@ -49,6 +50,7 @@ const REPLAY_META_KEYS = [
   "drawings",
   "credentials",
   "console",
+  "environment",
 ];
 
 type ShotState =
@@ -260,6 +262,9 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
 
             {/* Test credentials the reporter supplied — the account to sign in with to reproduce. */}
             {bug.meta.credentials && <CredentialsCard credentials={bug.meta.credentials} />}
+
+            {/* Device / browser / page-load environment the reporter was on. */}
+            {bug.meta.environment && <EnvironmentCard env={bug.meta.environment} />}
 
             {/* Metadata */}
             <Card title="Details">

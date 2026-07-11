@@ -1,9 +1,9 @@
 // ABOUTME: Shared presentational atoms for the Bugs dashboard — a soft status badge (colored dot + label),
 // ABOUTME: a severity pill (with `critical`), tag chips, and the reporter's test-credentials card.
 import { useState } from "react";
-import { Copy, Eye, EyeOff, KeyRound } from "lucide-react";
+import { Copy, Cpu, Eye, EyeOff, Gauge, Globe, KeyRound, Monitor, Smartphone, Wifi } from "lucide-react";
 import { toast } from "sonner";
-import type { BugSeverity, BugStatus, TestCredentials } from "@/lib/types";
+import type { BugEnvironment, BugSeverity, BugStatus, TestCredentials } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /** Bug status → sentence-case label + a hue. Reuses the board's --status-* custom properties where they
@@ -63,6 +63,164 @@ export function BugTagChips({ tags, className }: { tags: string[]; className?: s
         </span>
       ))}
     </span>
+  );
+}
+
+/** Best-effort browser label — prefers the structured `brands` (Chromium UA-CH), else parses `userAgent`. */
+function browserLabel(env: BugEnvironment): string | undefined {
+  const brands = env.brands?.filter((b) => !/not.?a.?brand/i.test(b));
+  if (brands && brands.length > 0) {
+    return brands.find((b) => /chrome|edge|opera|brave|arc/i.test(b)) || brands.find((b) => !/chromium/i.test(b)) || brands[0];
+  }
+  const ua = env.userAgent ?? "";
+  const m =
+    ua.match(/Edg\/(\d+)/) ??
+    ua.match(/OPR\/(\d+)/) ??
+    ua.match(/Firefox\/(\d+)/) ??
+    ua.match(/Chrome\/(\d+)/) ??
+    (/Safari/.test(ua) ? ua.match(/Version\/(\d+)/) : null);
+  if (!m) return undefined;
+  const name = /Edg\//.test(ua)
+    ? "Edge"
+    : /OPR\//.test(ua)
+      ? "Opera"
+      : /Firefox\//.test(ua)
+        ? "Firefox"
+        : /Chrome\//.test(ua)
+          ? "Chrome"
+          : "Safari";
+  return `${name} ${m[1]}`;
+}
+
+/** Best-effort OS label from the userAgent. */
+function osLabel(env: BugEnvironment): string | undefined {
+  const ua = env.userAgent ?? "";
+  if (env.platform && /win|mac|linux|android|ios/i.test(env.platform)) {
+    if (/win/i.test(env.platform)) return "Windows";
+    if (/mac/i.test(env.platform)) return "macOS";
+    if (/android/i.test(env.platform)) return "Android";
+    if (/ios|iphone|ipad/i.test(env.platform)) return "iOS";
+    if (/linux/i.test(env.platform)) return "Linux";
+  }
+  if (/Windows/.test(ua)) return "Windows";
+  if (/Mac OS X/.test(ua)) return "macOS";
+  if (/Android/.test(ua)) return "Android";
+  if (/iPhone|iPad|iOS/.test(ua)) return "iOS";
+  if (/Linux/.test(ua)) return "Linux";
+  return undefined;
+}
+
+function fmtMs(ms?: number): string | null {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
+  return ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`;
+}
+
+/** The reporter's device / browser / page-load environment — the "what were they on" card. Self-contained so
+ *  both the dashboard detail and the public share page drop it in. Renders nothing when no environment was
+ *  captured (older bugs). */
+export function EnvironmentCard({ env }: { env: BugEnvironment }) {
+  const browser = browserLabel(env);
+  const os = osLabel(env);
+  const facts: { icon: typeof Monitor; label: string; value: string }[] = [];
+  if (env.screen) {
+    const s = env.screen;
+    facts.push({
+      icon: Monitor,
+      label: "Screen",
+      value: `${s.w}×${s.h}${s.dpr ? ` @${s.dpr}×` : ""}${s.colorDepth ? ` · ${s.colorDepth}-bit` : ""}`,
+    });
+  }
+  if (env.timezone) facts.push({ icon: Globe, label: "Timezone", value: env.timezone });
+  if (env.language) facts.push({ icon: Globe, label: "Language", value: env.language });
+  if (env.cores != null || env.memoryGb != null) {
+    facts.push({
+      icon: Cpu,
+      label: "Hardware",
+      value: [env.cores != null ? `${env.cores} cores` : null, env.memoryGb != null ? `${env.memoryGb} GB` : null]
+        .filter(Boolean)
+        .join(" · "),
+    });
+  }
+  if (env.connection) {
+    const c = env.connection;
+    facts.push({
+      icon: Wifi,
+      label: "Network",
+      value:
+        [c.effectiveType, c.downlinkMbps != null ? `${c.downlinkMbps} Mbps` : null, c.rttMs != null ? `${c.rttMs} ms` : null]
+          .filter(Boolean)
+          .join(" · ") + (c.saveData ? " · Save-Data" : ""),
+    });
+  }
+  const perf = env.performance ?? {};
+  const perfChips: { label: string; value: string }[] = [];
+  const pushPerf = (label: string, ms?: number) => {
+    const v = fmtMs(ms);
+    if (v) perfChips.push({ label, value: v });
+  };
+  pushPerf("TTFB", perf.ttfbMs);
+  pushPerf("FCP", perf.fcpMs);
+  pushPerf("DOM ready", perf.domContentLoadedMs);
+  pushPerf("Load", perf.loadMs);
+
+  if (!browser && !os && facts.length === 0 && perfChips.length === 0) return null;
+
+  return (
+    <section className="rounded-[8px] border border-border/60 bg-card p-5 shadow-card">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-muted-foreground">{env.mobile ? <Smartphone className="size-4" /> : <Monitor className="size-4" />}</span>
+        <h2 className="text-[13px] font-semibold text-foreground">Environment</h2>
+      </div>
+      {(browser || os) && (
+        <p className="mb-3 flex flex-wrap items-center gap-1.5 text-[13px] font-medium text-foreground">
+          {browser && <span>{browser}</span>}
+          {browser && os && <span className="text-muted-foreground/50">·</span>}
+          {os && <span>{os}</span>}
+          {env.mobile && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] font-medium text-muted-foreground">
+              <Smartphone className="size-2.5" /> Mobile
+            </span>
+          )}
+          {env.online === false && (
+            <span className="rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10.5px] font-medium text-destructive">
+              Offline
+            </span>
+          )}
+        </p>
+      )}
+      {facts.length > 0 && (
+        <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+          {facts.map((f) => {
+            const Icon = f.icon;
+            return (
+              <div key={f.label} className="flex items-start gap-2">
+                <Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
+                <div className="min-w-0">
+                  <dt className="text-[10.5px] uppercase tracking-wide text-muted-foreground/70">{f.label}</dt>
+                  <dd className="truncate text-[12.5px] text-foreground" title={f.value}>
+                    {f.value}
+                  </dd>
+                </div>
+              </div>
+            );
+          })}
+        </dl>
+      )}
+      {perfChips.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-3">
+          <Gauge className="size-3.5 text-muted-foreground/70" />
+          {perfChips.map((c) => (
+            <span
+              key={c.label}
+              className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-1.5 py-0.5 text-[11px] text-foreground"
+            >
+              <span className="text-muted-foreground">{c.label}</span>
+              <span className="font-mono font-medium">{c.value}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

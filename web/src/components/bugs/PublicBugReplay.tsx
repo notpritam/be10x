@@ -8,7 +8,7 @@ import type { Bug } from "@/lib/types";
 import { cn, formatDateTime, humanizeKey, relativeTime } from "@/lib/utils";
 import { UserAvatar } from "@/components/common/bits";
 import { BrandTile, Wordmark } from "@/components/common/Brandmark";
-import { BugSeverityPill, BugStatusBadge, CredentialsCard } from "./bug-bits";
+import { BugSeverityPill, BugStatusBadge, CredentialsCard, EnvironmentCard } from "./bug-bits";
 
 /** The replay UI pulls in rrweb (~200 KB); load it as its own chunk only when a shared bug is opened — the
  *  same lazy split the dashboard's BugDetail uses. */
@@ -27,6 +27,7 @@ const REPLAY_META_KEYS = [
   "drawings",
   "credentials",
   "console",
+  "environment",
 ];
 
 export function PublicBugReplay({ token }: { token: string }) {
@@ -171,6 +172,9 @@ export function PublicBugReplay({ token }: { token: string }) {
 
         {/* Test credentials the reporter supplied — full raw capture by design on shared links. */}
         {bug.meta.credentials && <CredentialsCard credentials={bug.meta.credentials} />}
+
+        {/* Device / browser / page-load environment the reporter was on. */}
+        {bug.meta.environment && <EnvironmentCard env={bug.meta.environment} />}
 
         {/* Details */}
         <Card title="Details">
