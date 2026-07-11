@@ -671,7 +671,7 @@ const ROUTES = [
   ['GET', '/api/bugs/:id/artifact/:kind', true, async ({ db, res, params }) => {
     const bug = getBugById(db, params.id);
     if (!bug) throw new Error('NOT_FOUND');
-    const key = { screenshot: 'screenshotKey', dom: 'domKey', network: 'networkKey', session: 'sessionKey' }[params.kind];
+    const key = { screenshot: 'screenshotKey', dom: 'domKey', network: 'networkKey', session: 'sessionKey', source: 'sourceKey' }[params.kind];
     const fileKey = key ? bug[key] : null;
     if (!fileKey) throw new Error('NOT_FOUND');
     send(res, 200, { url: signAccessUrl(fileKey) });
@@ -713,7 +713,7 @@ const ROUTES = [
     if (!share) return send(res, 404, { error: 'NOT_FOUND' });
     const bug = getBugById(db, share.bug_id);
     if (!bug) return send(res, 404, { error: 'NOT_FOUND' });
-    const key = { screenshot: 'screenshotKey', dom: 'domKey', network: 'networkKey', session: 'sessionKey' }[params.kind];
+    const key = { screenshot: 'screenshotKey', dom: 'domKey', network: 'networkKey', session: 'sessionKey', source: 'sourceKey' }[params.kind];
     const fileKey = key ? bug[key] : null;
     if (!fileKey) return send(res, 404, { error: 'NO_ARTIFACT' });
     send(res, 200, { url: signAccessUrl(fileKey) });
@@ -753,6 +753,7 @@ const AGENT_ROUTES = [
       domKey: body.domKey,
       networkKey: body.networkKey,
       sessionKey: body.sessionKey,
+      sourceKey: body.sourceKey,
       identity: body.identity || {},
       meta: body.meta || {},
     });

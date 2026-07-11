@@ -114,7 +114,7 @@ export interface BugFilter {
 
 /** The captured artifact kinds the dashboard can request a signed URL for. Mirrors the server's
  *  kind→key map in GET /api/bugs/:id/artifact/:kind (screenshot|dom|network|session). */
-export type BugArtifactKind = "screenshot" | "dom" | "network" | "session";
+export type BugArtifactKind = "screenshot" | "dom" | "network" | "session" | "source";
 
 /** A minted public bug-share link (camelCase, as the bug-share routes return it). The token IS the
  *  credential — anyone holding it sees the full, un-redacted capture at /b/<token>. */

@@ -4,8 +4,89 @@ import { getRecorder } from './recorder';
 import { mountWidget, type ReportForm } from './widget';
 import { installCollectHandler, collectNetwork, captureDom, extractIdentity } from './collector';
 import { pruneByAge } from './net-entry';
-import type { BugEnvironment } from './protocol';
+import type { BugEnvironment, BugSource } from './protocol';
 import type { Team, Project } from '../lib/board';
+
+// --- page source capture -------------------------------------------------------
+const HTML_CAP = 3_000_000; // 3MB rendered HTML
+const SCRIPT_CAP = 262_144; // 256KB per inline script
+const SCRIPTS_TOTAL_CAP = 1_500_000;
+const STYLE_CAP = 262_144;
+const RESOURCES_CAP = 800;
+
+function clip(s: string, cap: number): { text: string; truncated: boolean } {
+  return s.length > cap ? { text: s.slice(0, cap), truncated: true } : { text: s, truncated: false };
+}
+
+// Capture the page's readable source: rendered HTML + inline scripts/styles + external refs + the resource
+// manifest (PerformanceResourceTiming). Every probe is best-effort so a hostile/odd page never breaks the
+// report. Uploaded as its own source.json artifact (not meta) — it can be multi-MB.
+function collectSource(): BugSource {
+  const src: BugSource = { capturedAt: Date.now() };
+  try {
+    const html = document.documentElement ? document.documentElement.outerHTML : '';
+    const c = clip(html, HTML_CAP);
+    src.html = c.text;
+    src.htmlBytes = html.length;
+    if (c.truncated) src.htmlTruncated = true;
+  } catch {
+    /* ignore */
+  }
+  try {
+    const scripts: NonNullable<BugSource['scripts']> = [];
+    let total = 0;
+    for (const el of Array.from(document.scripts)) {
+      if (el.src) continue; // external → in the resource manifest, not inline
+      const text = el.textContent || '';
+      if (!text.trim()) continue;
+      const c = clip(text, SCRIPT_CAP);
+      total += c.text.length;
+      scripts.push({ type: el.type || 'text/javascript', bytes: text.length, text: c.text, truncated: c.truncated });
+      if (scripts.length >= 50 || total >= SCRIPTS_TOTAL_CAP) break;
+    }
+    src.scripts = scripts;
+    src.externalScripts = Array.from(document.scripts)
+      .filter((s) => s.src)
+      .map((s) => ({ src: s.src, type: s.type || undefined, async: s.async, defer: s.defer }))
+      .slice(0, 200);
+  } catch {
+    /* ignore */
+  }
+  try {
+    const styles: NonNullable<BugSource['styles']> = [];
+    for (const el of Array.from(document.querySelectorAll('style'))) {
+      const text = el.textContent || '';
+      if (!text.trim()) continue;
+      const c = clip(text, STYLE_CAP);
+      styles.push({ bytes: text.length, text: c.text, truncated: c.truncated });
+      if (styles.length >= 50) break;
+    }
+    src.styles = styles;
+    src.stylesheets = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'))
+      .map((l) => l.href)
+      .filter(Boolean)
+      .slice(0, 100);
+  } catch {
+    /* ignore */
+  }
+  try {
+    const res = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+    src.resourceCount = res.length;
+    src.resources = res.slice(0, RESOURCES_CAP).map((r) => ({
+      url: r.name,
+      type: r.initiatorType,
+      transferBytes: Math.round(r.transferSize || 0),
+      encodedBytes: Math.round(r.encodedBodySize || 0),
+      decodedBytes: Math.round(r.decodedBodySize || 0),
+      durationMs: Math.round(r.duration || 0),
+      startMs: Math.round(r.startTime || 0),
+    }));
+    if (res.length > RESOURCES_CAP) src.resourcesTruncated = true;
+  } catch {
+    /* ignore */
+  }
+  return src;
+}
 
 // The reporter's device/browser/page-load environment — read from the ISOLATED world at report time. Every
 // probe is wrapped so a missing/blocked API never breaks the report; unknown fields are simply omitted.
@@ -138,6 +219,7 @@ async function report(form: ReportForm): Promise<ReportResult> {
       session: { events: recording.events, startedAt: recording.startedAt, endedAt: recording.endedAt },
       network,
       dom,
+      source: collectSource(),
       identity,
       teamId: form.teamId ?? null,
       projectId: form.projectId ?? null,

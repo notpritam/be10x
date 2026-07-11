@@ -9,6 +9,7 @@ import { cn, formatDateTime, humanizeKey, relativeTime } from "@/lib/utils";
 import { UserAvatar } from "@/components/common/bits";
 import { BrandTile, Wordmark } from "@/components/common/Brandmark";
 import { BugSeverityPill, BugStatusBadge, CredentialsCard, EnvironmentCard } from "./bug-bits";
+import { SourcePanel } from "./SourcePanel";
 
 /** The replay UI pulls in rrweb (~200 KB); load it as its own chunk only when a shared bug is opened — the
  *  same lazy split the dashboard's BugDetail uses. */
@@ -164,6 +165,9 @@ export function PublicBugReplay({ token }: { token: string }) {
             <ReplaySection bug={bug} artifacts={artifacts} screenshotUrl={shotUrl} />
           </Suspense>
         )}
+
+        {/* Captured page source: rendered HTML + inline scripts/styles + the resource manifest. */}
+        {bug.sourceKey && <SourcePanel artifacts={artifacts} />}
 
         {/* Identity */}
         <Card title="Identity">

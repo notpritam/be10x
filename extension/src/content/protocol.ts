@@ -110,6 +110,35 @@ export type ConsoleEntry = {
   truncated?: boolean; // the serialized text was over the cap and clipped
 };
 
+// One loaded resource from PerformanceResourceTiming — the manifest of what the page pulled (scripts, css,
+// images, fonts, xhr) with sizes + timing. Bytes are 0 for cross-origin resources without Timing-Allow-Origin.
+export type SourceResource = {
+  url: string;
+  type?: string; // initiatorType (script | css | img | fetch | xmlhttprequest | link | …)
+  transferBytes?: number;
+  encodedBytes?: number;
+  decodedBytes?: number;
+  durationMs?: number;
+  startMs?: number;
+};
+
+// The page's source bundle, captured at report time and uploaded as source.json. Rendered HTML + inline
+// script/style text + external references + the resource manifest — so a dev can read the actual markup/JS
+// that shipped and see everything the page loaded. Bounded caps keep the artifact from ballooning.
+export type BugSource = {
+  html?: string; // documentElement.outerHTML, capped
+  htmlBytes?: number;
+  htmlTruncated?: boolean;
+  scripts?: { type?: string; bytes: number; text: string; truncated?: boolean }[]; // inline <script> only
+  styles?: { bytes: number; text: string; truncated?: boolean }[]; // inline <style> only
+  stylesheets?: string[]; // external <link rel=stylesheet> hrefs
+  externalScripts?: { src: string; type?: string; async?: boolean; defer?: boolean }[];
+  resources?: SourceResource[];
+  resourceCount?: number;
+  resourcesTruncated?: boolean;
+  capturedAt?: number;
+};
+
 // The reporter's device + browser + page-load environment, read from the ISOLATED world at report time.
 // Every field is best-effort/optional (older browsers, privacy modes). Rides in meta.environment; the
 // dashboard renders it as an "Environment" card and parses `userAgent`/`brands` into a browser+OS line.

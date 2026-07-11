@@ -288,6 +288,9 @@ CREATE TABLE IF NOT EXISTS bugs (
   -- Scrubbable rrweb session recording (session.json on UploadThing) — the primary replay artifact.
   -- Markers + recording window ride in meta_json, so only this key needs a column.
   session_key    TEXT,
+  -- Page source bundle (source.json on UploadThing): rendered HTML + inline scripts/styles + a resource
+  -- manifest (PerformanceResourceTiming). Lets a dev read the actual markup/JS that shipped.
+  source_key     TEXT,
   -- Free-form triage labels: a JSON array of strings (e.g. ["checkout","regression"]). NULL on rows
   -- filed before tags existed; the store hydrates that (and any parse failure) to an empty array.
   tags           TEXT,

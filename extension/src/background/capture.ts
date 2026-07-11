@@ -4,7 +4,7 @@ import { mintUploadUrls, fileBug } from '../lib/board';
 import type { Identity, NetEntry } from '../content/protocol';
 
 type Collected = { dom: unknown; network: NetEntry[]; identity: Identity | null };
-type Artifact = { slot: 'screenshot' | 'dom' | 'network' | 'session'; name: string; blob: Blob; type: string };
+type Artifact = { slot: 'screenshot' | 'dom' | 'network' | 'session' | 'source'; name: string; blob: Blob; type: string };
 
 // Everything the ISOLATED content script gathered for a widget-initiated session report.
 export type SessionReportPayload = {
@@ -13,6 +13,7 @@ export type SessionReportPayload = {
   session: { events: unknown[]; startedAt: number; endedAt: number };
   network?: NetEntry[];
   dom?: unknown;
+  source?: unknown; // rendered HTML + inline scripts/styles + resource manifest (BugSource), uploaded as source.json
   identity?: Identity | null;
   teamId?: string | null; // triage routing: the team/project/tags the reporter assigned in the widget
   projectId?: string | null;
@@ -186,6 +187,7 @@ export async function reportSession(boardUrl: string, token: string, tab: chrome
   artifacts.push({ slot: 'session', name: 'session.json', blob: jsonBlob(payload.session), type: 'application/json' });
   if (network.length > 0) artifacts.push({ slot: 'network', name: 'network.json', blob: jsonBlob(network), type: 'application/json' });
   if (payload.dom != null) artifacts.push({ slot: 'dom', name: 'dom.json', blob: jsonBlob(payload.dom), type: 'application/json' });
+  if (payload.source != null) artifacts.push({ slot: 'source', name: 'source.json', blob: jsonBlob(payload.source), type: 'application/json' });
 
   const keys = await uploadArtifacts(boardUrl, token, artifacts);
   const keyBySlot: Partial<Record<Artifact['slot'], string | null>> = {};
@@ -206,6 +208,7 @@ export async function reportSession(boardUrl: string, token: string, tab: chrome
       sessionKey: keyBySlot.session ?? null,
       networkKey: keyBySlot.network ?? null,
       domKey: keyBySlot.dom ?? null,
+      sourceKey: keyBySlot.source ?? null,
       teamId: payload.teamId ?? null,
       projectId: payload.projectId ?? null,
       tags: payload.tags ?? [],

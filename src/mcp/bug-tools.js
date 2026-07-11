@@ -43,7 +43,7 @@ function resolveBug(db, ref) {
 }
 
 // --- artifact fetch -------------------------------------------------------------
-const ARTIFACT_KEY_FIELD = { dom: 'domKey', network: 'networkKey', session: 'sessionKey', screenshot: 'screenshotKey' };
+const ARTIFACT_KEY_FIELD = { dom: 'domKey', network: 'networkKey', session: 'sessionKey', screenshot: 'screenshotKey', source: 'sourceKey' };
 
 // Sign + fetch a captured artifact JSON (dom/network/session) from UploadThing. Needs UPLOADTHING_TOKEN in the
 // MCP process env (to sign the read URL); without it the sync tools still work — only these degrade.
@@ -359,6 +359,42 @@ export const BUG_TOOLS = [
         mutationsSince: mutations.map((e) => ({ offsetMs: (e.timestamp ?? start) - start, source: e.data?.source, data: e.data })),
         mutationCount: mutations.length,
       };
+    },
+  },
+  {
+    name: 'bug_source',
+    description: "The page's captured source bundle: rendered HTML, inline scripts + styles, external script/stylesheet references, and the resource manifest (URL/type/size/timing). Pass part='resources'|'scripts'|'styles'|'html'|'meta' to get just one slice (html can be large). Needs UPLOADTHING_TOKEN.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...BUG_ARG,
+        part: { type: 'string', description: "Return only this slice: resources | scripts | styles | html | external | meta (default: everything except html)." },
+      },
+      required: ['bug'],
+      additionalProperties: false,
+    },
+    handler: async (db, _ctx, args) => {
+      const bug = resolveBug(db, args.bug);
+      const source = await fetchArtifact(bug, 'source');
+      switch (args.part) {
+        case 'resources':
+          return { resourceCount: source.resourceCount, resourcesTruncated: source.resourcesTruncated, resources: source.resources ?? [] };
+        case 'scripts':
+          return { scripts: source.scripts ?? [], externalScripts: source.externalScripts ?? [] };
+        case 'styles':
+          return { styles: source.styles ?? [], stylesheets: source.stylesheets ?? [] };
+        case 'html':
+          return { html: source.html ?? null, htmlBytes: source.htmlBytes, htmlTruncated: source.htmlTruncated };
+        case 'external':
+          return { externalScripts: source.externalScripts ?? [], stylesheets: source.stylesheets ?? [] };
+        case 'meta':
+          return { htmlBytes: source.htmlBytes, resourceCount: source.resourceCount, scripts: (source.scripts ?? []).length, styles: (source.styles ?? []).length, capturedAt: source.capturedAt };
+        default: {
+          // Everything except the (potentially multi-MB) html blob — ask for part:'html' to get that.
+          const { html, ...rest } = source;
+          return { ...rest, htmlAvailable: html != null, htmlBytes: source.htmlBytes };
+        }
+      }
     },
   },
   {

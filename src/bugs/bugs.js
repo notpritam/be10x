@@ -57,6 +57,7 @@ function hydrate(row) {
     domKey: row.dom_key,
     networkKey: row.network_key,
     sessionKey: row.session_key,
+    sourceKey: row.source_key,
     tags: parseTags(row.tags),
     taskId: row.task_id ?? null,
     identity: JSON.parse(row.identity_json),
@@ -93,6 +94,7 @@ export function createBug(db, spec = {}) {
     domKey = null,
     networkKey = null,
     sessionKey = null,
+    sourceKey = null,
     tags = [],
     identity = {},
     meta = {},
@@ -106,11 +108,11 @@ export function createBug(db, spec = {}) {
   const now = Date.now();
   db.prepare(
     `INSERT INTO bugs (id, human_id, reporter_id, project_id, team_id, page_url, title, description,
-       status, severity, screenshot_key, dom_key, network_key, session_key, tags, identity_json, meta_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       status, severity, screenshot_key, dom_key, network_key, session_key, source_key, tags, identity_json, meta_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id, humanId, reporterId, projectId, teamId, pageUrl, title, description,
-    severity, screenshotKey, domKey, networkKey, sessionKey, JSON.stringify(sanitizeTags(tags)), JSON.stringify(identity), JSON.stringify(meta), now, now
+    severity, screenshotKey, domKey, networkKey, sessionKey, sourceKey, JSON.stringify(sanitizeTags(tags)), JSON.stringify(identity), JSON.stringify(meta), now, now
   );
   appendBugEvent(db, id, reporterId, 'created', { title, severity, pageUrl });
   return getBug(db, id);

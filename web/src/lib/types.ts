@@ -299,6 +299,34 @@ export interface TestCredentials {
   notes?: string;
 }
 
+/** One loaded resource from the page's PerformanceResourceTiming manifest. Bytes are 0 for cross-origin
+ *  resources served without Timing-Allow-Origin. Shared contract with the capture extension. */
+export interface SourceResource {
+  url: string;
+  type?: string;
+  transferBytes?: number;
+  encodedBytes?: number;
+  decodedBytes?: number;
+  durationMs?: number;
+  startMs?: number;
+}
+
+/** The page's source bundle (`source.json` artifact) — rendered HTML + inline script/style text + external
+ *  references + the resource manifest, so a dev can read the markup/JS that shipped. Bounded caps upstream. */
+export interface BugSource {
+  html?: string;
+  htmlBytes?: number;
+  htmlTruncated?: boolean;
+  scripts?: { type?: string; bytes: number; text: string; truncated?: boolean }[];
+  styles?: { bytes: number; text: string; truncated?: boolean }[];
+  stylesheets?: string[];
+  externalScripts?: { src: string; type?: string; async?: boolean; defer?: boolean }[];
+  resources?: SourceResource[];
+  resourceCount?: number;
+  resourcesTruncated?: boolean;
+  capturedAt?: number;
+}
+
 /** The reporter's device + browser + page-load environment, captured at report time. Every field is
  *  best-effort/optional. Shared contract with the capture extension (`meta.environment`); the dashboard
  *  parses `userAgent`/`brands` into a browser+OS line and renders the rest as a facts grid. */
@@ -433,6 +461,8 @@ export interface Bug {
   networkKey: string | null;
   /** The rrweb session-recording artifact key — the scrubbable replay. Null on bugs filed before replay. */
   sessionKey: string | null;
+  /** The page-source bundle artifact key (source.json: HTML + inline scripts/styles + resource manifest). */
+  sourceKey: string | null;
   /** The agent-board task this bug was handed off to be fixed in ("send to an agent to fix"), or null. */
   taskId: string | null;
   identity: BugIdentity;
