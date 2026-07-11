@@ -63,6 +63,28 @@ export type PickedElement = {
   rect: { x: number; y: number; w: number; h: number }; // viewport coords at pick time
   react?: ReactInfo;
   ts?: number; // epoch ms the QA picked it — lets the dashboard seek the replay to this moment
+  note?: string; // the reporter's own words on WHY this element matters, capped ~500 chars
+};
+
+// One freehand annotation the QA drew over the page while recording. Points are normalized to the viewport
+// (0..1 of innerWidth/innerHeight at draw time) so the dashboard can scale them onto the replay stage at any
+// zoom. `ts`/`tEnd` are epoch ms, so a stroke surfaces on the replay at the moment it was drawn. Rides in
+// meta.drawings. The drawing canvas lives in the widget's blocked Shadow DOM, so rrweb never bakes it in.
+export type DrawStroke = {
+  ts: number; // epoch ms the stroke began
+  tEnd: number; // epoch ms the stroke ended
+  color: string; // hex from the widget's fixed palette
+  width: number; // pen width in CSS px at draw time
+  points: { x: number; y: number }[]; // viewport-normalized 0..1
+};
+
+// The login the reporter was actually using while they hit the bug — entered by hand in the report form so a
+// developer can reproduce with the same account. Rides in meta.credentials. NOTE: stored and surfaced raw
+// (the product exposes full captures on public share links by design) — this is for test accounts.
+export type TestCredentials = {
+  username?: string; // the email / username they signed in with
+  password?: string; // the test password (surfaced masked-by-default on the dashboard)
+  notes?: string; // anything else needed to reproduce — role, tenant, 2FA seed, etc.
 };
 
 // A route change observed during a recording. Rides in meta.visits.

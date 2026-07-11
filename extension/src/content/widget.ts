@@ -2,7 +2,7 @@
 // ABOUTME: (host wears BLOCK_CLASS so rrweb never records it). Start/Stop, Mark, live indicator, Report form.
 import { BLOCK_CLASS } from './recorder';
 import { describeElement } from './element-pick';
-import type { PickedElement } from './protocol';
+import type { DrawStroke, PickedElement, TestCredentials } from './protocol';
 
 export type ReportForm = {
   title: string;
@@ -10,6 +10,8 @@ export type ReportForm = {
   description: string;
   notes: string; // composed QA notes (freeform + expected/actual); '' when the drawer was left empty
   pickedElements: PickedElement[]; // elements the QA pinpointed with the picker; [] when none
+  drawings: DrawStroke[]; // freehand annotations drawn over the page; [] when none
+  credentials?: TestCredentials; // the login the reporter was testing with; omitted when blank
   teamId?: string | null; // triage routing chosen in the pickers — null when left unset
   projectId?: string | null;
   tags?: string[]; // freeform labels; [] when none
@@ -122,7 +124,46 @@ const ICONS = {
   record: (): SVGElement => icon([['circle', { cx: '12', cy: '12', r: '6' }]], true),
   stop: (): SVGElement => icon([['rect', { x: '7', y: '7', width: '10', height: '10', rx: '2' }]], true),
   chevronDown: (): SVGElement => icon([['path', { d: 'M6 9l6 6 6-6' }]]),
+  pen: (): SVGElement =>
+    icon([
+      ['path', { d: 'M12 20h9' }],
+      ['path', { d: 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z' }],
+    ]),
+  key: (): SVGElement =>
+    icon([
+      ['circle', { cx: '7.5', cy: '15.5', r: '3.5' }],
+      ['path', { d: 'M10 13l6.5-6.5' }],
+      ['path', { d: 'M15 5l3 3' }],
+      ['path', { d: 'M18.5 8.5l2-2' }],
+    ]),
+  eye: (): SVGElement =>
+    icon([
+      ['path', { d: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z' }],
+      ['circle', { cx: '12', cy: '12', r: '3' }],
+    ]),
+  eyeOff: (): SVGElement =>
+    icon([
+      ['path', { d: 'M9.9 5.2A9.8 9.8 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.1' }],
+      ['path', { d: 'M6.1 6.1A17 17 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 4-.9' }],
+      ['path', { d: 'M9.9 9.9a3 3 0 0 0 4.2 4.2' }],
+      ['line', { x1: '3', y1: '3', x2: '21', y2: '21' }],
+    ]),
+  undo: (): SVGElement =>
+    icon([
+      ['path', { d: 'M9 14L4 9l5-5' }],
+      ['path', { d: 'M4 9h11a5 5 0 0 1 0 10h-1' }],
+    ]),
+  trash: (): SVGElement =>
+    icon([
+      ['path', { d: 'M4 7h16' }],
+      ['path', { d: 'M9 7V4h6v3' }],
+      ['path', { d: 'M6 7l1 13h10l1-13' }],
+    ]),
 };
+
+// The pen palette offered in the draw toolbar — a small, high-contrast set that reads on light and dark pages.
+const DRAW_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7', '#111827'];
+const DRAW_WIDTH = 3.5; // pen width in CSS px
 
 function fmtElapsed(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -196,6 +237,7 @@ const CSS = `
   .drawer-hint { font-size: 11px; opacity: .55; margin: -2px 0 0; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .icon.pick-toggle.active { opacity: 1; color: #2563eb; }
+  .icon.draw-toggle.active { opacity: 1; color: #2563eb; }
   .pick-outline {
     position: fixed; top: 0; left: 0; z-index: 2147483646; pointer-events: none; box-sizing: border-box;
     border: 2px solid #2563eb; background: rgba(37,99,235,.12); border-radius: 3px; display: none;
@@ -227,6 +269,46 @@ const CSS = `
   .pill-btn:disabled { opacity: .45; cursor: default; }
   .pill-btn.primary { background: #2563eb; }
   .pill-btn.primary:hover { background: #1d4ed8; }
+  .pick-note {
+    width: 190px; border: 0; border-radius: 999px; padding: 5px 12px; font: inherit;
+    background: rgba(255,255,255,.14); color: #fff; outline: none;
+  }
+  .pick-note::placeholder { color: rgba(255,255,255,.55); }
+  .pick-note:focus { background: rgba(255,255,255,.22); }
+  .pick-note:disabled { opacity: .4; }
+  /* Full-viewport freehand drawing surface — lives in the blocked Shadow DOM so rrweb never records it.
+     Sits under the toolbar/card (max z) but over the page; only interactive while draw mode is on. */
+  .draw-canvas { position: fixed; inset: 0; z-index: 2147483640; display: none; cursor: crosshair; touch-action: none; }
+  .draw-canvas.on { display: block; }
+  .draw-bar {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 2147483647; display: none;
+    align-items: center; gap: 8px; background: #17171a; color: #fff; border-radius: 999px;
+    padding: 6px 8px 6px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.32);
+    font: 12px/1.4 -apple-system, system-ui, sans-serif;
+  }
+  .draw-bar.on { display: flex; }
+  .draw-bar .lead { display: inline-flex; align-items: center; gap: 7px; opacity: .85; }
+  .draw-bar svg { width: 15px; height: 15px; }
+  .draw-bar .sep { width: 1px; height: 18px; background: rgba(255,255,255,.18); }
+  .swatches { display: inline-flex; gap: 5px; }
+  .swatch { width: 18px; height: 18px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+  .swatch.active { border-color: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.3); }
+  .draw-icon-btn {
+    border: 0; cursor: pointer; border-radius: 999px; width: 28px; height: 28px; display: inline-flex;
+    align-items: center; justify-content: center; background: rgba(255,255,255,.14); color: #fff;
+  }
+  .draw-icon-btn:hover { background: rgba(255,255,255,.24); }
+  .draw-icon-btn:disabled { opacity: .4; cursor: default; }
+  .draw-icon-btn svg { width: 15px; height: 15px; }
+  /* Credentials block in the report form — a light inset card the QA can leave blank. */
+  .cred { display: grid; gap: 8px; padding: 10px; border: 1px dashed rgba(0,0,0,.16); border-radius: 8px; background: rgba(0,0,0,.015); }
+  .cred-hint { font-size: 11px; opacity: .55; margin: 0; display: flex; align-items: center; gap: 5px; }
+  .cred-hint svg { width: 13px; height: 13px; }
+  .pw-wrap { position: relative; }
+  .pw-wrap input { padding-right: 34px; }
+  .reveal { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; cursor: pointer; color: inherit; opacity: .5; padding: 5px; border-radius: 6px; display: inline-flex; }
+  .reveal:hover { opacity: 1; }
+  .reveal svg { width: 15px; height: 15px; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
   @media (prefers-color-scheme: dark) {
     .root { color: #ececee; }
@@ -237,6 +319,7 @@ const CSS = `
     .btn:hover { background: #34343a; }
     input, select, textarea { background: #2c2c30; color: #ececee; border-color: #3a3a40; }
     .drawer.open { border-color: rgba(255,255,255,.08); }
+    .cred { border-color: rgba(255,255,255,.14); background: rgba(255,255,255,.02); }
   }
 `;
 
@@ -261,9 +344,10 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   const sub = h('span', { class: 'sub' });
   const stat = h('span', { class: 'stat' }, dot, statText, sub);
   const pickBtn = h('button', { class: 'icon pick-toggle', type: 'button', 'aria-label': 'Pick element', 'aria-pressed': 'false', title: 'Pick element' }, ICONS.crosshair());
+  const drawBtn = h('button', { class: 'icon draw-toggle', type: 'button', 'aria-label': 'Draw on the page', 'aria-pressed': 'false', title: 'Draw on the page' }, ICONS.pen());
   const notesBtn = h('button', { class: 'icon notes-toggle', type: 'button', 'aria-label': 'QA notes', 'aria-expanded': 'false', title: 'QA notes' }, ICONS.note());
   const collapseBtn = h('button', { class: 'icon', type: 'button', 'aria-label': 'Collapse recorder', title: 'Collapse' }, ICONS.chevronDown());
-  const hd = h('div', { class: 'hd' }, stat, pickBtn, notesBtn, collapseBtn);
+  const hd = h('div', { class: 'hd' }, stat, pickBtn, drawBtn, notesBtn, collapseBtn);
 
   // Record button: a swappable icon + a text label kept in its own span so the recording-state update can
   // retitle it without clobbering the icon.
@@ -293,6 +377,24 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   const fTeam = h('select', { class: 'f-team', 'aria-label': 'Team' }, h('option', { value: '' }, '— No team —'));
   const fProject = h('select', { class: 'f-project', 'aria-label': 'Project' }, h('option', { value: '' }, '— No project —'));
   const fTags = h('input', { class: 'f-tags', type: 'text', placeholder: 'e.g. checkout, billing' });
+  // Test credentials — the login the reporter was using, so a developer can reproduce with the same account.
+  // Left blank ⇒ omitted from the report. Password is masked by default with a reveal toggle.
+  const fCredUser = h('input', { class: 'f-cred-user', type: 'text', autocomplete: 'off', placeholder: 'email / username' });
+  const fCredPass = h('input', { class: 'f-cred-pass', type: 'password', autocomplete: 'off', placeholder: 'password' });
+  const revealBtn = h('button', { class: 'reveal', type: 'button', 'aria-label': 'Show password', 'aria-pressed': 'false' }, ICONS.eye());
+  const fCredNotes = h('input', { class: 'f-cred-notes', type: 'text', placeholder: 'role, tenant, 2FA… (optional)' });
+  const credBlock = h(
+    'div',
+    { class: 'cred' },
+    h('p', { class: 'cred-hint' }, ICONS.key(), 'Test login used (optional) — helps devs reproduce'),
+    h(
+      'div',
+      { class: 'grid2' },
+      h('label', { class: 'field' }, h('span', {}, 'Username'), fCredUser),
+      h('label', { class: 'field' }, h('span', {}, 'Password'), h('div', { class: 'pw-wrap' }, fCredPass, revealBtn)),
+    ),
+    h('label', { class: 'field' }, h('span', {}, 'Other'), fCredNotes),
+  );
   const cancelBtn = h('button', { class: 'btn', type: 'button' }, 'Cancel');
   const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, 'Send report');
   const msg = h('div', { class: 'msg', role: 'status', 'aria-live': 'polite' });
@@ -309,6 +411,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     ),
     h('label', { class: 'field' }, h('span', {}, 'Tags'), fTags),
     h('label', { class: 'field' }, h('span', {}, 'Description'), fDesc),
+    credBlock,
     h('div', { class: 'row' }, cancelBtn, submitBtn),
     msg,
   );
@@ -340,17 +443,40 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   const pickOutline = h('div', { class: 'pick-outline', 'aria-hidden': 'true' });
   const pickLabel = h('div', { class: 'pick-label', 'aria-hidden': 'true' });
   const pickCount = h('span', { class: 'count' }, '0 picked');
+  // Annotate the most-recently-picked element — "why does this matter" in the reporter's words.
+  const pickNote = h('input', { class: 'pick-note', type: 'text', 'aria-label': 'Note for the last picked element', placeholder: 'Add a note for this pick…' });
   const pickClearBtn = h('button', { class: 'pill-btn', type: 'button' }, 'Clear');
   const pickDoneBtn = h('button', { class: 'pill-btn primary', type: 'button' }, 'Done');
   const pickBanner = h(
     'div',
     { class: 'pick-banner', role: 'region', 'aria-label': 'Element picker' },
-    h('span', { class: 'lead' }, ICONS.crosshair(), h('span', {}, 'Click elements · Esc to exit')),
+    h('span', { class: 'lead' }, ICONS.crosshair(), h('span', {}, 'Click to pick · Esc to exit')),
     pickCount,
+    pickNote,
     pickClearBtn,
     pickDoneBtn,
   );
-  shadow.append(pickOutline, pickLabel, pickBanner);
+
+  // Full-viewport freehand drawing surface + its toolbar. Both live in the blocked Shadow DOM, so rrweb
+  // never records them — the strokes ride to the dashboard as data and replay as a synced overlay instead.
+  const drawCanvas = h('canvas', { class: 'draw-canvas', 'aria-hidden': 'true' });
+  const drawSwatches = h('div', { class: 'swatches', role: 'group', 'aria-label': 'Pen color' });
+  const drawUndoBtn = h('button', { class: 'draw-icon-btn', type: 'button', 'aria-label': 'Undo last stroke', title: 'Undo' }, ICONS.undo());
+  const drawClearBtn = h('button', { class: 'draw-icon-btn', type: 'button', 'aria-label': 'Clear drawing', title: 'Clear' }, ICONS.trash());
+  const drawDoneBtn = h('button', { class: 'pill-btn primary', type: 'button' }, 'Done');
+  const drawBar = h(
+    'div',
+    { class: 'draw-bar', role: 'region', 'aria-label': 'Draw on the page' },
+    h('span', { class: 'lead' }, ICONS.pen(), h('span', {}, 'Draw to annotate')),
+    h('span', { class: 'sep', 'aria-hidden': 'true' }),
+    drawSwatches,
+    h('span', { class: 'sep', 'aria-hidden': 'true' }),
+    drawUndoBtn,
+    drawClearBtn,
+    drawDoneBtn,
+  );
+
+  shadow.append(pickOutline, pickLabel, pickBanner, drawCanvas, drawBar);
   document.documentElement.append(host);
 
   // --- state ---
@@ -362,6 +488,10 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   let pickMode = false;
   let pickedElements: PickedElement[] = [];
   let collapsedBeforePick = false;
+  let drawMode = false;
+  let drawStrokes: DrawStroke[] = [];
+  let drawColor = DRAW_COLORS[0];
+  let collapsedBeforeDraw = false;
 
   const hasNotes = () => !!(nText.value.trim() || nExpected.value.trim() || nActual.value.trim());
 
@@ -371,8 +501,9 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   };
 
   function render() {
-    // In pick mode the card + bubble tuck away; the picker banner + overlay drive the session.
-    bubble.classList.toggle('hidden', !collapsed || pickMode);
+    // In pick/draw mode the card + bubble tuck away; the mode's banner + overlay drive the session.
+    const overlayMode = pickMode || drawMode;
+    bubble.classList.toggle('hidden', !collapsed || overlayMode);
     card.classList.toggle('hidden', collapsed);
     bubble.classList.toggle('rec', cb.isRecording());
     markRow.classList.toggle('hidden', !markOpen);
@@ -387,6 +518,16 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     pickBanner.classList.toggle('on', pickMode);
     pickCount.textContent = `${pickedElements.length} picked`;
     pickClearBtn.disabled = pickedElements.length === 0;
+    // The note field annotates the most-recent pick; keep it in sync unless the QA is mid-type.
+    const lastPick = pickedElements[pickedElements.length - 1] ?? null;
+    pickNote.disabled = !lastPick;
+    if (shadow.activeElement !== pickNote) pickNote.value = lastPick?.note ?? '';
+    drawBtn.classList.toggle('active', drawMode);
+    drawBtn.setAttribute('aria-pressed', drawMode ? 'true' : 'false');
+    drawBar.classList.toggle('on', drawMode);
+    drawCanvas.classList.toggle('on', drawMode);
+    drawUndoBtn.disabled = drawStrokes.length === 0;
+    drawClearBtn.disabled = drawStrokes.length === 0;
 
     const recording = cb.isRecording();
     recLabel.textContent = recording ? 'Stop' : 'Start';
@@ -543,6 +684,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   };
   function enterPick() {
     if (pickMode) return;
+    if (drawMode) exitDraw(); // pick + draw both take over the screen — only one at a time
     pickMode = true;
     collapsedBeforePick = collapsed;
     collapsed = true; // tuck the card away — the banner + overlay drive the pick session
@@ -567,6 +709,199 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     render();
   });
   pickDoneBtn.addEventListener('click', exitPick);
+  // The note field annotates the most-recently-picked element (the one the overlay just added).
+  pickNote.addEventListener('input', () => {
+    const last = pickedElements[pickedElements.length - 1];
+    if (last) last.note = pickNote.value.slice(0, 500);
+  });
+  pickNote.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      pickNote.blur();
+    }
+    e.stopPropagation(); // don't let Esc/keys bubble to the picker's global shield
+  });
+
+  // --- drawing overlay ---
+  // Pen palette swatches — click to set the active color; the selected one wears a ring.
+  const swatchEls: HTMLButtonElement[] = [];
+  for (const c of DRAW_COLORS) {
+    const b = h('button', { class: 'swatch', type: 'button', 'aria-label': `Pen color ${c}`, title: c });
+    b.style.background = c;
+    if (c === drawColor) b.classList.add('active');
+    b.addEventListener('click', () => {
+      drawColor = c;
+      for (const s of swatchEls) s.classList.toggle('active', s === b);
+    });
+    swatchEls.push(b);
+    drawSwatches.append(b);
+  }
+
+  const drawCtx = () => drawCanvas.getContext('2d');
+  // Size the canvas to the viewport in device pixels, then work in CSS px (crisp lines on HiDPI).
+  const sizeDrawCanvas = () => {
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth;
+    const hgt = window.innerHeight;
+    drawCanvas.width = Math.max(1, Math.round(w * dpr));
+    drawCanvas.height = Math.max(1, Math.round(hgt * dpr));
+    drawCanvas.style.width = w + 'px';
+    drawCanvas.style.height = hgt + 'px';
+    const ctx = drawCtx();
+    if (ctx) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+    }
+  };
+  const paintStroke = (ctx: CanvasRenderingContext2D, s: DrawStroke) => {
+    const w = window.innerWidth;
+    const hgt = window.innerHeight;
+    if (s.points.length === 0) return;
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = s.width;
+    ctx.beginPath();
+    ctx.moveTo(s.points[0].x * w, s.points[0].y * hgt);
+    for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x * w, s.points[i].y * hgt);
+    if (s.points.length === 1) ctx.lineTo(s.points[0].x * w + 0.1, s.points[0].y * hgt); // a single tap ⇒ a dot
+    ctx.stroke();
+  };
+  const redrawDraw = () => {
+    const ctx = drawCtx();
+    if (!ctx) return;
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    for (const s of drawStrokes) paintStroke(ctx, s);
+    if (curStroke) paintStroke(ctx, curStroke);
+  };
+
+  let curStroke: DrawStroke | null = null;
+  let drawing = false;
+  const normPt = (e: PointerEvent) => ({
+    x: Math.min(1, Math.max(0, e.clientX / Math.max(1, window.innerWidth))),
+    y: Math.min(1, Math.max(0, e.clientY / Math.max(1, window.innerHeight))),
+  });
+  const finishStroke = () => {
+    drawing = false;
+    if (!curStroke) return;
+    curStroke.tEnd = Date.now();
+    if (curStroke.points.length > 0 && drawStrokes.length < 500) drawStrokes.push(curStroke);
+    curStroke = null;
+    render();
+  };
+  drawCanvas.addEventListener('pointerdown', (e) => {
+    if (!drawMode || e.button !== 0) return;
+    e.preventDefault();
+    drawing = true;
+    try {
+      drawCanvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    const now = Date.now();
+    curStroke = { ts: now, tEnd: now, color: drawColor, width: DRAW_WIDTH, points: [normPt(e)] };
+    redrawDraw();
+  });
+  drawCanvas.addEventListener('pointermove', (e) => {
+    if (!drawing || !curStroke) return;
+    e.preventDefault();
+    curStroke.points.push(normPt(e));
+    curStroke.tEnd = Date.now();
+    const ctx = drawCtx(); // draw just the new segment — cheap even for long strokes
+    if (ctx && curStroke.points.length >= 2) {
+      const w = window.innerWidth;
+      const hgt = window.innerHeight;
+      const a = curStroke.points[curStroke.points.length - 2];
+      const b = curStroke.points[curStroke.points.length - 1];
+      ctx.strokeStyle = curStroke.color;
+      ctx.lineWidth = curStroke.width;
+      ctx.beginPath();
+      ctx.moveTo(a.x * w, a.y * hgt);
+      ctx.lineTo(b.x * w, b.y * hgt);
+      ctx.stroke();
+    }
+  });
+  const endStroke = (e: PointerEvent) => {
+    if (!drawing) return;
+    e.preventDefault();
+    try {
+      drawCanvas.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    finishStroke();
+  };
+  drawCanvas.addEventListener('pointerup', endStroke);
+  drawCanvas.addEventListener('pointercancel', endStroke);
+
+  const onDrawResize = () => {
+    sizeDrawCanvas();
+    redrawDraw();
+  };
+  const onDrawKey = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    exitDraw();
+  };
+  function enterDraw() {
+    if (drawMode) return;
+    if (pickMode) exitPick();
+    drawMode = true;
+    collapsedBeforeDraw = collapsed;
+    collapsed = true; // tuck the card away — the draw bar + canvas drive the session
+    markOpen = formOpen = notesOpen = false;
+    window.addEventListener('resize', onDrawResize);
+    document.addEventListener('keydown', onDrawKey, true);
+    render(); // flips the canvas to display:block before we size it
+    sizeDrawCanvas();
+    redrawDraw();
+  }
+  function exitDraw() {
+    if (!drawMode) return;
+    finishStroke();
+    drawMode = false;
+    window.removeEventListener('resize', onDrawResize);
+    document.removeEventListener('keydown', onDrawKey, true);
+    collapsed = collapsedBeforeDraw;
+    render();
+  }
+  drawBtn.addEventListener('click', () => {
+    if (drawMode) exitDraw();
+    else enterDraw();
+  });
+  drawDoneBtn.addEventListener('click', exitDraw);
+  drawUndoBtn.addEventListener('click', () => {
+    drawStrokes.pop();
+    redrawDraw();
+    render();
+  });
+  drawClearBtn.addEventListener('click', () => {
+    drawStrokes = [];
+    redrawDraw();
+    render();
+  });
+
+  // Password reveal toggle in the report form.
+  let pwVisible = false;
+  revealBtn.addEventListener('click', () => {
+    pwVisible = !pwVisible;
+    fCredPass.type = pwVisible ? 'text' : 'password';
+    revealBtn.setAttribute('aria-pressed', pwVisible ? 'true' : 'false');
+    revealBtn.setAttribute('aria-label', pwVisible ? 'Hide password' : 'Show password');
+    revealBtn.replaceChildren(pwVisible ? ICONS.eyeOff() : ICONS.eye());
+  });
+  // Build the current credentials block into a TestCredentials, or undefined when every field is blank.
+  const readCredentials = (): TestCredentials | undefined => {
+    const username = fCredUser.value.trim();
+    const password = fCredPass.value; // never trim a password
+    const credNotes = fCredNotes.value.trim();
+    if (!username && !password && !credNotes) return undefined;
+    const c: TestCredentials = {};
+    if (username) c.username = username;
+    if (password) c.password = password;
+    if (credNotes) c.notes = credNotes;
+    return c;
+  };
 
   recBtn.addEventListener('click', () => {
     if (cb.isRecording()) cb.onStop();
@@ -652,6 +987,8 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
       description: fDesc.value.trim(),
       notes,
       pickedElements: pickedElements.slice(),
+      drawings: drawStrokes.slice(),
+      credentials: readCredentials(),
       teamId: fTeam.value || null,
       projectId: fProject.value || null,
       tags: parseTags(fTags.value),
@@ -662,11 +999,14 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
         if (r.ok) {
           fTitle.value = '';
           fDesc.value = '';
-          fTags.value = ''; // tags are per-bug; team/project persist for filing a batch to the same place
+          fTags.value = ''; // tags are per-bug; team/project + test login persist for filing a batch
           nText.value = '';
           nExpected.value = '';
           nActual.value = '';
           pickedElements = [];
+          drawStrokes = [];
+          curStroke = null;
+          redrawDraw();
           formOpen = false;
         }
         render();
@@ -698,6 +1038,8 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
       window.clearInterval(timer);
       root.removeEventListener('keydown', onKey);
       removePickListeners(); // no-op if pick mode was never entered
+      window.removeEventListener('resize', onDrawResize); // no-ops if draw mode was never entered
+      document.removeEventListener('keydown', onDrawKey, true);
       host.remove();
     },
   };

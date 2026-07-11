@@ -76,6 +76,9 @@ async function report(form: ReportForm): Promise<ReportResult> {
       meta: {
         notes,
         pickedElements: form.pickedElements ?? [],
+        drawings: form.drawings ?? [],
+        // Only carried when the reporter filled at least one field — keeps the key off blank reports.
+        ...(form.credentials ? { credentials: form.credentials } : {}),
         console: consoleEntries,
         markers: recording.markers,
         visits: recording.visits,

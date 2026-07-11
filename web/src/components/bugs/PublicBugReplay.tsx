@@ -8,7 +8,7 @@ import type { Bug } from "@/lib/types";
 import { cn, formatDateTime, humanizeKey, relativeTime } from "@/lib/utils";
 import { UserAvatar } from "@/components/common/bits";
 import { BrandTile, Wordmark } from "@/components/common/Brandmark";
-import { BugSeverityPill, BugStatusBadge } from "./bug-bits";
+import { BugSeverityPill, BugStatusBadge, CredentialsCard } from "./bug-bits";
 
 /** The replay UI pulls in rrweb (~200 KB); load it as its own chunk only when a shared bug is opened — the
  *  same lazy split the dashboard's BugDetail uses. */
@@ -16,9 +16,18 @@ const ReplaySection = lazy(() =>
   import("./ReplaySection").then((m) => ({ default: m.ReplaySection })),
 );
 
-/** Meta keys surfaced richly elsewhere (replay section, notes card, picked-element panel) — kept out of the
- *  generic Details dump so they aren't double-rendered. Mirrors BugDetail. */
-const REPLAY_META_KEYS = ["markers", "visits", "recording", "notes", "pickedElements"];
+/** Meta keys surfaced richly elsewhere (replay section, notes card, picked-element panel, credentials card,
+ *  activity rail) — kept out of the generic Details dump so they aren't double-rendered. Mirrors BugDetail. */
+const REPLAY_META_KEYS = [
+  "markers",
+  "visits",
+  "recording",
+  "notes",
+  "pickedElements",
+  "drawings",
+  "credentials",
+  "console",
+];
 
 export function PublicBugReplay({ token }: { token: string }) {
   const [state, setState] = useState<"loading" | "error" | "ready">("loading");
@@ -159,6 +168,9 @@ export function PublicBugReplay({ token }: { token: string }) {
         <Card title="Identity">
           <IdentityBody bug={bug} />
         </Card>
+
+        {/* Test credentials the reporter supplied — full raw capture by design on shared links. */}
+        {bug.meta.credentials && <CredentialsCard credentials={bug.meta.credentials} />}
 
         {/* Details */}
         <Card title="Details">

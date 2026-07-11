@@ -22,7 +22,14 @@ import { UserAvatar } from "@/components/common/bits";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BUG_STATUS_META, BUG_STATUS_ORDER, BugSeverityPill, BugStatusBadge, BugTagChips } from "./bug-bits";
+import {
+  BUG_STATUS_META,
+  BUG_STATUS_ORDER,
+  BugSeverityPill,
+  BugStatusBadge,
+  BugTagChips,
+  CredentialsCard,
+} from "./bug-bits";
 import { BugShareDialog } from "./BugShareDialog";
 
 /** The replay UI pulls in rrweb-player + rrweb-snapshot (~200 KB); load it as its own chunk only when a
@@ -31,9 +38,18 @@ const ReplaySection = lazy(() =>
   import("./ReplaySection").then((m) => ({ default: m.ReplaySection })),
 );
 
-/** Meta keys surfaced richly elsewhere (replay section, notes card, picked-element panel) — kept out of the
- *  generic Details key/value dump so they aren't double-rendered. */
-const REPLAY_META_KEYS = ["markers", "visits", "recording", "notes", "pickedElements"];
+/** Meta keys surfaced richly elsewhere (replay section, notes card, picked-element panel, credentials card,
+ *  activity rail) — kept out of the generic Details key/value dump so they aren't double-rendered. */
+const REPLAY_META_KEYS = [
+  "markers",
+  "visits",
+  "recording",
+  "notes",
+  "pickedElements",
+  "drawings",
+  "credentials",
+  "console",
+];
 
 type ShotState =
   | { state: "none" }
@@ -241,6 +257,9 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
             <Card title="Identity">
               <IdentityBody bug={bug} />
             </Card>
+
+            {/* Test credentials the reporter supplied — the account to sign in with to reproduce. */}
+            {bug.meta.credentials && <CredentialsCard credentials={bug.meta.credentials} />}
 
             {/* Metadata */}
             <Card title="Details">

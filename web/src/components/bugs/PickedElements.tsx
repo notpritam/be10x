@@ -1,7 +1,7 @@
 // ABOUTME: Lists the elements a QA reporter picked on the page — selector identity, text, geometry, and the
 // ABOUTME: owning React component (name/props/source/chain). Hover highlights it over the stage; empty ⇒ null.
 import { memo, useState } from "react";
-import { ChevronRight, Component, Crosshair } from "lucide-react";
+import { ChevronRight, Component, Crosshair, MessageSquareText } from "lucide-react";
 import type { PickedElement } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -130,6 +130,15 @@ const PickRow = memo(function PickRow({
           {el.text && (
             <span className="mt-0.5 block truncate text-[11px] text-muted-foreground" title={el.text}>
               “{el.text}”
+            </span>
+          )}
+          {el.note && (
+            <span
+              className="mt-1 flex items-start gap-1 rounded-md border-l-2 border-primary/60 bg-primary/[0.06] py-1 pl-1.5 pr-1 text-[11px] leading-snug text-foreground/90"
+              title={el.note}
+            >
+              <MessageSquareText className="mt-px size-3 shrink-0 text-primary/70" />
+              <span className="min-w-0">{el.note}</span>
             </span>
           )}
           <span className="mt-0.5 block font-mono text-[10px] text-muted-foreground/70">

@@ -12,7 +12,7 @@ import {
 } from "react";
 import { Replayer } from "rrweb";
 import { AlertTriangle, Flag, Pause, Play } from "lucide-react";
-import type { BugMarker } from "@/lib/types";
+import type { BugMarker, DrawStroke } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_VIEW_SCALE,
@@ -48,10 +48,18 @@ interface SessionReplayProps {
   onTimeUpdate: (epochMs: number) => void;
   /** A picked element's page-pixel rect to highlight over the replay, or null. */
   pickRect?: { x: number; y: number; w: number; h: number } | null;
+  /** Freehand annotations the reporter drew during capture — replayed as a synced overlay (each stroke
+   *  surfaces at its own timestamp, then lingers briefly). Empty/omitted ⇒ no overlay. */
+  drawings?: DrawStroke[];
   /** Extra content rendered as a right-side rail only while the stage is expanded to fullscreen (the
    *  time-synced activity rail). Ignored in the normal inline layout. */
   expandedAside?: ReactNode;
 }
+
+/** A drawn stroke lingers this long after its last point, then fades — so an annotation stays readable a
+ *  beat past the gesture without permanently occluding later content (the replay DOM scrolls/changes). */
+const DRAW_LINGER_MS = 5000;
+const DRAW_FADE_MS = 1200;
 
 function formatOffset(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) ms = 0;
@@ -63,7 +71,7 @@ function formatOffset(ms: number): string {
 
 export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>(
   function SessionReplay(
-    { events, markers, viewport, onClockReady, onTimeUpdate, pickRect, expandedAside },
+    { events, markers, viewport, onClockReady, onTimeUpdate, pickRect, drawings, expandedAside },
     ref,
   ) {
     const scrollBoxRef = useRef<HTMLDivElement | null>(null);
@@ -368,6 +376,12 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
               <div ref={mountRef} className="block" />
               <PickOverlay rect={pickRect ?? null} scale={appliedScale} />
               <PickOverlay rect={selectorRect} scale={appliedScale} />
+              <DrawingsOverlay
+                strokes={drawings}
+                viewport={viewport}
+                scale={appliedScale}
+                currentEpoch={(clockRef.current?.start ?? 0) + offset}
+              />
             </div>
           </div>
 
@@ -455,6 +469,71 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
     );
   },
 );
+
+/** The synced drawing layer over the replay stage. Strokes are stored viewport-normalized (0..1), so they
+ *  scale onto the stage the same way `PickOverlay` maps page-pixel rects: multiply by the recorded viewport
+ *  size × the applied stage scale. Each stroke is shown only around its own moment (from `ts`, lingering past
+ *  `tEnd`), fading out at the end so it doesn't sit over unrelated later content. Colors are the reporter's
+ *  own pen choices (captured data, not a theme token), so they're applied inline. */
+function DrawingsOverlay({
+  strokes,
+  viewport,
+  scale,
+  currentEpoch,
+}: {
+  strokes?: DrawStroke[];
+  viewport?: { w: number; h: number };
+  scale: number | null;
+  currentEpoch: number;
+}) {
+  if (!strokes || strokes.length === 0 || scale == null || !Number.isFinite(scale)) return null;
+  const w = viewport && viewport.w > 0 ? viewport.w : 1280;
+  const h = viewport && viewport.h > 0 ? viewport.h : 800;
+  const sw = w * scale;
+  const sh = h * scale;
+  const active = strokes
+    .map((s) => {
+      const end = (Number.isFinite(s.tEnd) ? s.tEnd : s.ts) + DRAW_LINGER_MS;
+      if (currentEpoch < s.ts || currentEpoch > end) return null;
+      const fadeStart = end - DRAW_FADE_MS;
+      const opacity = currentEpoch <= fadeStart ? 1 : Math.max(0, (end - currentEpoch) / DRAW_FADE_MS);
+      return { s, opacity };
+    })
+    .filter((x): x is { s: DrawStroke; opacity: number } => x !== null);
+  if (active.length === 0) return null;
+
+  return (
+    <svg
+      className="pointer-events-none absolute left-0 top-0 z-30"
+      width={sw}
+      height={sh}
+      viewBox={`0 0 ${sw} ${sh}`}
+      aria-hidden
+    >
+      {active.map(({ s, opacity }, i) => {
+        const stroke = Math.max(1.5, s.width * scale);
+        if (s.points.length === 1) {
+          const p = s.points[0];
+          return (
+            <circle key={i} cx={p.x * sw} cy={p.y * sh} r={stroke / 1.5} fill={s.color} opacity={opacity} />
+          );
+        }
+        return (
+          <polyline
+            key={i}
+            points={s.points.map((p) => `${(p.x * sw).toFixed(1)},${(p.y * sh).toFixed(1)}`).join(" ")}
+            fill="none"
+            stroke={s.color}
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={opacity}
+          />
+        );
+      })}
+    </svg>
+  );
+}
 
 const SPEEDS = [0.5, 1, 2, 4, 8];
 

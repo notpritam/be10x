@@ -8,6 +8,7 @@ import {
   Image as ImageIcon,
   Loader2,
   Navigation,
+  Pencil,
 } from "lucide-react";
 import type { ArtifactSource } from "@/lib/api";
 import type {
@@ -15,6 +16,7 @@ import type {
   BugMarker,
   BugVisit,
   ConsoleEntry,
+  DrawStroke,
   NetEntry,
   PickedElement,
   RrwebSession,
@@ -81,6 +83,7 @@ export function ReplaySection({
     [bug.meta.pickedElements],
   );
   const consoleEntries = useMemo<ConsoleEntry[]>(() => bug.meta.console ?? [], [bug.meta.console]);
+  const drawings = useMemo<DrawStroke[]>(() => bug.meta.drawings ?? [], [bug.meta.drawings]);
   const recording = bug.meta.recording;
   const viewport = bug.meta.viewport;
 
@@ -249,10 +252,12 @@ export function ReplaySection({
                   onClockReady={handleClockReady}
                   onTimeUpdate={handleTimeUpdate}
                   pickRect={activePickRect}
+                  drawings={drawings}
                   expandedAside={activityRail}
                 />
                 <div className="flex min-w-0 flex-col gap-4">
                   <MarkerList markers={markers} clock={clock} onSeek={seekToEpoch} />
+                  <DrawingList drawings={drawings} clock={clock} onSeek={seekToEpoch} />
                   <VisitList visits={visits} clock={clock} onSeek={seekToEpoch} />
                   <PickedElements
                     elements={pickedElements}
@@ -436,6 +441,76 @@ function MarkerList({
           ))}
         </ul>
       )}
+    </RailCard>
+  );
+}
+
+/** Cluster individual strokes into annotation "moments" — strokes drawn within a short gap of each other are
+ *  one gesture, so the rail lists one seekable entry per group rather than a row per pen stroke. */
+const DRAW_GROUP_GAP_MS = 2500;
+function groupStrokes(strokes: DrawStroke[]): { start: number; end: number; count: number; color: string }[] {
+  if (strokes.length === 0) return [];
+  const sorted = [...strokes].sort((a, b) => a.ts - b.ts);
+  const groups: { start: number; end: number; count: number; color: string }[] = [];
+  for (const s of sorted) {
+    const end = Number.isFinite(s.tEnd) ? s.tEnd : s.ts;
+    const last = groups[groups.length - 1];
+    if (last && s.ts - last.end <= DRAW_GROUP_GAP_MS) {
+      last.end = Math.max(last.end, end);
+      last.count += 1;
+    } else {
+      groups.push({ start: s.ts, end, count: 1, color: s.color });
+    }
+  }
+  return groups;
+}
+
+/** The reporter's freehand annotations, grouped into moments — click one to seek the replay to when it was
+ *  drawn (the synced overlay then surfaces it on the stage). Hidden entirely when nothing was drawn. */
+function DrawingList({
+  drawings,
+  clock,
+  onSeek,
+}: {
+  drawings: DrawStroke[];
+  clock: ReplayClock | null;
+  onSeek: ((epochMs: number) => void) | null;
+}) {
+  const groups = useMemo(() => groupStrokes(drawings), [drawings]);
+  if (drawings.length === 0) return null;
+  return (
+    <RailCard title="Annotations" count={groups.length} icon={<Pencil className="size-3.5 text-primary" />}>
+      <ul className="flex flex-col gap-1">
+        {groups.map((g, i) => (
+          <li key={`${g.start}-${i}`}>
+            <button
+              type="button"
+              disabled={!onSeek}
+              onClick={() => onSeek?.(g.start)}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors",
+                onSeek ? "hover:bg-accent/60" : "cursor-default",
+              )}
+            >
+              <span
+                className="size-2.5 shrink-0 rounded-full ring-1 ring-background"
+                style={{ backgroundColor: g.color }}
+              />
+              <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                Drawing {i + 1}
+                {g.count > 1 && (
+                  <span className="text-muted-foreground"> · {g.count} strokes</span>
+                )}
+              </span>
+              {clock && (
+                <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">
+                  {formatOffset(g.start - clock.start)}
+                </span>
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
     </RailCard>
   );
 }

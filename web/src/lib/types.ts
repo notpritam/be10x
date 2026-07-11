@@ -275,6 +275,27 @@ export interface BugRecording {
  *  it populates `meta.console` with exactly this shape; undefined/empty on bugs filed before console capture. */
 export type ConsoleEntry = { ts: number; level: "log" | "info" | "warn" | "error" | "debug"; text: string };
 
+/** One freehand annotation the reporter drew over the page during the recording. `points` are normalized to
+ *  the captured viewport (0..1), so the replay overlay scales them onto the stage at any zoom; `ts`/`tEnd` are
+ *  epoch ms (replay wall clock), so a stroke surfaces at the moment it was drawn. Shared contract with the
+ *  capture extension — undefined/empty on bugs filed before drawing capture. */
+export type DrawStroke = {
+  ts: number;
+  tEnd: number;
+  color: string;
+  width: number;
+  points: { x: number; y: number }[];
+};
+
+/** The login the reporter used while reproducing the bug — entered by hand in the report form so a developer
+ *  can sign in with the same account. Surfaced on the bug (password masked by default). Shared contract with
+ *  the capture extension; absent on bugs where the reporter didn't provide one. */
+export interface TestCredentials {
+  username?: string;
+  password?: string;
+  notes?: string;
+}
+
 /** Small capture metadata that rides in the bug's `meta_json` (no columns). Known replay fields are typed;
  *  the index signature keeps it open-ended and lets the Details card still enumerate unknown keys. */
 export interface BugMeta {
@@ -291,6 +312,10 @@ export interface BugMeta {
   /** Console output captured during the recording, in time order — surfaced in the fullscreen activity rail.
    *  Populated by the capture extension; undefined/empty on bugs filed before console capture. */
   console?: ConsoleEntry[];
+  /** Freehand annotations the reporter drew over the page — replayed as a synced overlay on the recording. */
+  drawings?: DrawStroke[];
+  /** The login the reporter used while reproducing — surfaced as its own card (password masked by default). */
+  credentials?: TestCredentials;
   [key: string]: unknown;
 }
 
@@ -341,6 +366,8 @@ export interface PickedElement {
   /** Epoch ms when the reporter picked this element (same wall clock as the replay). Lets the picked-elements
    *  panel seek the player to the capture moment. Shared contract with the extension; older captures omit it. */
   ts?: number;
+  /** The reporter's note on why this element matters — surfaced under the element in the picked-elements panel. */
+  note?: string;
   react?: {
     component?: string;
     props?: Record<string, unknown>;
