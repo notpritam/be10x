@@ -18,7 +18,7 @@ import { listMembers, addMember, setRole, removeMember } from '../teams/membersh
 import { assertCan, assertCanAccessTask, canAccessProject } from '../authz/authz.js';
 import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
-import { createBug, getBug as getBugById, listBugs, updateBugStatus, addBugComment, listBugEvents, bugStatsForUser } from '../bugs/bugs.js';
+import { createBug, getBug as getBugById, listBugs, updateBugStatus, setBugAssignee, addBugComment, listBugEvents, bugStatsForUser } from '../bugs/bugs.js';
 import { handoffBugToTask } from '../bugs/handoff.js';
 import { analyzeBug } from '../bugs/analyze.js';
 import { mintUploadUrls, signAccessUrl } from '../bugs/uploadthing.js';
@@ -665,6 +665,12 @@ const ROUTES = [
   // that's already linked returns the existing link (alreadyLinked) instead of spawning a duplicate task.
   ['POST', '/api/bugs/:id/handoff', true, async ({ db, res, params, body, user }) => {
     send(res, 200, handoffBugToTask(db, { bugId: params.id, actorId: user.id, projectId: body?.projectId ?? null, teamId: body?.teamId ?? null }));
+  }],
+  // Assign / unassign a bug to a teammate (assigneeId null clears it). 404 for an unknown assignee.
+  ['POST', '/api/bugs/:id/assign', true, async ({ db, res, params, body, user }) => {
+    const assigneeId = body?.assigneeId ?? null;
+    if (assigneeId && !getUserById(db, assigneeId)) throw new Error('USER_NOT_FOUND');
+    send(res, 200, { bug: setBugAssignee(db, params.id, assigneeId, user.id) });
   }],
   // Hand the dashboard a short-lived signed UploadThing read URL for one captured artifact. kind picks the
   // key column (screenshot|dom|network|session); 404 when the bug or that particular key is absent. Six path

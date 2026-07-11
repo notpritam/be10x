@@ -326,6 +326,9 @@ export const api = {
   },
   getBug: (id: string) =>
     request<{ bug: Bug; events: BugEvent[]; analysis?: BugAnalysis }>(`/api/bugs/${id}`),
+  /** Assign (or clear, with assigneeId null) a bug to a teammate. */
+  assignBug: (id: string, assigneeId: string | null) =>
+    post<{ bug: Bug }>(`/api/bugs/${id}/assign`, { assigneeId }),
   updateBugStatus: (id: string, status: BugStatus, resolution?: string) =>
     post<{ bug: Bug }>(`/api/bugs/${id}/status`, {
       status,

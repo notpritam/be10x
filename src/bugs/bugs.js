@@ -156,6 +156,16 @@ export function updateBugStatus(db, id, status, actor, { resolution } = {}) {
   return getBug(db, id);
 }
 
+// Assign (or unassign, with assigneeId = null) a bug to a user. Records an 'assign' event with from/to so the
+// timeline shows re-assignments. The caller validates that assigneeId is a real user (the FK enforces it too).
+export function setBugAssignee(db, id, assigneeId, actor) {
+  const bug = getBug(db, id);
+  if (!bug) throw new Error('NOT_FOUND');
+  db.prepare('UPDATE bugs SET assignee_id = ?, updated_at = ? WHERE id = ?').run(assigneeId ?? null, Date.now(), id);
+  appendBugEvent(db, id, actor, 'assign', { from: bug.assigneeId ?? null, to: assigneeId ?? null });
+  return getBug(db, id);
+}
+
 // Link a bug to the agent-board task opened to fix it (be10x "send to an agent to fix"). Idempotent-ish:
 // re-linking just overwrites task_id. Records a 'handoff' event so the bug timeline shows the hand-off.
 export function linkBugToTask(db, id, taskId, actor) {

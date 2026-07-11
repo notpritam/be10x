@@ -19,7 +19,7 @@ import {
 import { toast } from "sonner";
 import { api, dashboardArtifacts, errorMessage } from "@/lib/api";
 import { buildBugMarkdown } from "@/lib/bug-summary";
-import type { Bug, BugAnalysis, BugEvent, BugStatus } from "@/lib/types";
+import type { Bug, BugAnalysis, BugEvent, BugStatus, UserLite } from "@/lib/types";
 import { useApp } from "@/state/app-store";
 import { cn, formatDateTime, humanizeKey, relativeTime } from "@/lib/utils";
 import { UserAvatar } from "@/components/common/bits";
@@ -81,6 +81,8 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
 
   const [shareOpen, setShareOpen] = useState(false);
   const [handingOff, setHandingOff] = useState(false);
+  const [collaborators, setCollaborators] = useState<UserLite[]>([]);
+  const [savingAssignee, setSavingAssignee] = useState(false);
   // Stable per bug so the replay components' fetch effects don't re-run on every render.
   const artifacts = useMemo(() => dashboardArtifacts(bugId), [bugId]);
 
@@ -110,6 +112,25 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
   const bug = data?.bug ?? null;
   const events = data?.events ?? [];
   const analysis = data?.analysis ?? null;
+
+  // Assignable people: recent collaborators + yourself. Fetched once; the current assignee is always shown.
+  useEffect(() => {
+    let active = true;
+    api
+      .recentPeople()
+      .then((r) => active && setCollaborators(r.users))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+  const assigneeOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    map.set(user.id, "Me");
+    for (const c of collaborators) if (!map.has(c.id)) map.set(c.id, c.displayName);
+    if (bug?.assigneeId && !map.has(bug.assigneeId)) map.set(bug.assigneeId, `User ${bug.assigneeId.slice(0, 8)}`);
+    return [...map.entries()].map(([id, label]) => ({ id, label }));
+  }, [collaborators, user.id, bug?.assigneeId]);
   const screenshotKey = bug?.screenshotKey ?? null;
   // A session recording or network timeline needs the wider layout for the player + DevTools panel.
   const wide = !!(bug?.sessionKey || bug?.networkKey);
@@ -163,6 +184,19 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
       toast.error(errorMessage(err));
     } finally {
       setHandingOff(false);
+    }
+  }
+
+  async function assign(assigneeId: string | null) {
+    if (!bug) return;
+    setSavingAssignee(true);
+    try {
+      await api.assignBug(bug.id, assigneeId);
+      await load();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setSavingAssignee(false);
     }
   }
 
@@ -370,20 +404,42 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
             </Card>
 
             {/* Status control */}
-            <Card title="Update status">
+            <Card title="Triage">
               <div className="flex flex-col gap-3">
-                <Select value={pendingStatus} onValueChange={(v) => setPendingStatus(v as BugStatus)}>
-                  <SelectTrigger className="h-9 w-full text-[13px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BUG_STATUS_ORDER.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {BUG_STATUS_META[s].label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[11.5px] font-medium text-muted-foreground">Assignee</span>
+                  <Select
+                    value={bug.assigneeId ?? "unassigned"}
+                    onValueChange={(v) => void assign(v === "unassigned" ? null : v)}
+                  >
+                    <SelectTrigger className="h-9 w-full text-[13px]" disabled={savingAssignee}>
+                      <SelectValue placeholder="Unassigned" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassigned">Unassigned</SelectItem>
+                      {assigneeOptions.map((o) => (
+                        <SelectItem key={o.id} value={o.id}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[11.5px] font-medium text-muted-foreground">Status</span>
+                  <Select value={pendingStatus} onValueChange={(v) => setPendingStatus(v as BugStatus)}>
+                    <SelectTrigger className="h-9 w-full text-[13px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {BUG_STATUS_ORDER.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {BUG_STATUS_META[s].label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Textarea
                   value={resolution}
                   onChange={(e) => setResolution(e.target.value)}
