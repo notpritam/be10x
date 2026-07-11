@@ -18,9 +18,10 @@ import { listMembers, addMember, setRole, removeMember } from '../teams/membersh
 import { assertCan, assertCanAccessTask, canAccessProject } from '../authz/authz.js';
 import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
-import { createBug, getBug as getBugById, listBugs, updateBugStatus, setBugAssignee, addBugComment, listBugEvents, bugStatsForUser } from '../bugs/bugs.js';
+import { createBug, getBug as getBugById, listBugs, updateBugStatus, setBugAssignee, setBugLlmAnalysis, addBugComment, listBugEvents, bugStatsForUser } from '../bugs/bugs.js';
 import { handoffBugToTask } from '../bugs/handoff.js';
 import { analyzeBug } from '../bugs/analyze.js';
+import { llmAnalyzeBug } from '../bugs/llm-analyze.js';
 import { mintUploadUrls, signAccessUrl } from '../bugs/uploadthing.js';
 import { requestReview, submitReview } from '../reviews/reviews.js';
 import { requestInput, answerInput, getOpenInputRequest, getRequestTaskId } from '../tasks/input_requests.js';
@@ -652,7 +653,7 @@ const ROUTES = [
   ['GET', '/api/bugs/:id', true, async ({ db, res, params }) => {
     const bug = getBugById(db, params.id);
     if (!bug) throw new Error('NOT_FOUND');
-    send(res, 200, { bug, events: listBugEvents(db, params.id), analysis: analyzeBug(bug) });
+    send(res, 200, { bug, events: listBugEvents(db, params.id), analysis: analyzeBug(bug), llmAvailable: !!process.env.GFA_LLM_KEY });
   }],
   ['POST', '/api/bugs/:id/status', true, async ({ db, res, params, body, user }) => {
     send(res, 200, { bug: updateBugStatus(db, params.id, body.status, user.id, { resolution: body.resolution }) });
@@ -671,6 +672,32 @@ const ROUTES = [
     const assigneeId = body?.assigneeId ?? null;
     if (assigneeId && !getUserById(db, assigneeId)) throw new Error('USER_NOT_FOUND');
     send(res, 200, { bug: setBugAssignee(db, params.id, assigneeId, user.id) });
+  }],
+  // Optional LLM-backed root-cause analysis — 409 (with a clear message) when no GFA_LLM_KEY is set; else run
+  // it (best-effort enriched with network failures), cache it on the bug, and return it. Credentials/auth are
+  // never sent to the model (see buildRcaPrompt). Inert by default: without a key this route always 409s.
+  ['POST', '/api/bugs/:id/analyze', true, async ({ db, res, params }) => {
+    const bug = getBugById(db, params.id);
+    if (!bug) throw new Error('NOT_FOUND');
+    if (!process.env.GFA_LLM_KEY) {
+      return send(res, 409, { error: 'NO_LLM_KEY', message: 'Set GFA_LLM_KEY on the board to enable AI analysis.' });
+    }
+    let networkFailures = [];
+    try {
+      if (bug.networkKey) {
+        const r = await fetch(signAccessUrl(bug.networkKey));
+        const raw = await r.json();
+        const entries = Array.isArray(raw) ? raw : raw.entries || [];
+        networkFailures = entries
+          .filter((e) => e.status === 0 || e.status >= 400)
+          .slice(0, 20)
+          .map((e) => ({ method: e.method, url: e.url, status: e.status }));
+      }
+    } catch {
+      /* best-effort enrichment — the heuristic + console/picked signals still drive the prompt */
+    }
+    const llm = await llmAnalyzeBug(bug, { heuristic: analyzeBug(bug), networkFailures });
+    send(res, 200, { llmAnalysis: llm, bug: setBugLlmAnalysis(db, params.id, llm) });
   }],
   // Hand the dashboard a short-lived signed UploadThing read URL for one captured artifact. kind picks the
   // key column (screenshot|dom|network|session); 404 when the bug or that particular key is absent. Six path

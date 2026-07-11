@@ -68,7 +68,13 @@ type ShotState =
 
 export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void }) {
   const { user, teams, projects } = useApp();
-  const [data, setData] = useState<{ bug: Bug; events: BugEvent[]; analysis?: BugAnalysis } | null>(null);
+  const [data, setData] = useState<{
+    bug: Bug;
+    events: BugEvent[];
+    analysis?: BugAnalysis;
+    llmAvailable?: boolean;
+  } | null>(null);
+  const [analyzingAi, setAnalyzingAi] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shot, setShot] = useState<ShotState>({ state: "loading" });
 
@@ -197,6 +203,20 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
       toast.error(errorMessage(err));
     } finally {
       setSavingAssignee(false);
+    }
+  }
+
+  async function runAiAnalysis() {
+    if (!bug || analyzingAi) return;
+    setAnalyzingAi(true);
+    try {
+      await api.analyzeBugWithAI(bug.id);
+      await load(); // getBug now returns the cached analysis in meta.llmAnalysis
+      toast.success("AI analysis ready");
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setAnalyzingAi(false);
     }
   }
 
@@ -355,8 +375,16 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
               </Card>
             )}
 
-            {/* Heuristic root-cause summary — the "start here" analysis derived from the captured signals. */}
-            {analysis && <RootCauseCard analysis={analysis} />}
+            {/* Root-cause summary — the heuristic "start here", plus optional AI analysis when a key is set. */}
+            {analysis && (
+              <RootCauseCard
+                analysis={analysis}
+                llm={bug.meta.llmAnalysis ?? null}
+                canAnalyze={!!data?.llmAvailable}
+                analyzing={analyzingAi}
+                onAnalyze={() => void runAiAnalysis()}
+              />
+            )}
 
             {/* Session replay ⇄ snapshot + the playhead-synced network panel. Renders gracefully for older
                 bugs with only a screenshot (falls back to the static poster). */}

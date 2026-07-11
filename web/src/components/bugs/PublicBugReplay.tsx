@@ -162,8 +162,8 @@ export function PublicBugReplay({ token }: { token: string }) {
           </Card>
         )}
 
-        {/* Heuristic root-cause summary — same server-derived analysis as the dashboard. */}
-        {analysis && <RootCauseCard analysis={analysis} />}
+        {/* Root-cause summary — the same server-derived heuristic + any cached AI analysis (read-only here). */}
+        {analysis && <RootCauseCard analysis={analysis} llm={bug.meta.llmAnalysis ?? null} />}
 
         {/* Session replay ⇄ snapshot + the playhead-synced network panel — token-scoped artifacts. */}
         {hasCapture && (

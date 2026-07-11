@@ -156,6 +156,16 @@ export function updateBugStatus(db, id, status, actor, { resolution } = {}) {
   return getBug(db, id);
 }
 
+// Cache an LLM root-cause analysis on the bug (merged into meta.llmAnalysis) so re-opening the bug doesn't
+// re-call the model. meta is stored verbatim, so this just rewrites meta_json with the added key.
+export function setBugLlmAnalysis(db, id, llm) {
+  const bug = getBug(db, id);
+  if (!bug) throw new Error('NOT_FOUND');
+  const meta = { ...(bug.meta || {}), llmAnalysis: llm };
+  db.prepare('UPDATE bugs SET meta_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(meta), Date.now(), id);
+  return getBug(db, id);
+}
+
 // Assign (or unassign, with assigneeId = null) a bug to a user. Records an 'assign' event with from/to so the
 // timeline shows re-assignments. The caller validates that assigneeId is a real user (the FK enforces it too).
 export function setBugAssignee(db, id, assigneeId, actor) {

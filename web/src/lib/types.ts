@@ -371,6 +371,8 @@ export interface BugMeta {
   environment?: BugEnvironment;
   /** Count of error-level console entries captured in the recording window — drives the "N errors" chip. */
   errorCount?: number;
+  /** A cached LLM root-cause analysis (present once someone ran "Analyze with AI" on a key-enabled board). */
+  llmAnalysis?: LlmAnalysis;
   [key: string]: unknown;
 }
 
@@ -498,6 +500,15 @@ export interface BugAnalysis {
     hasNotes: boolean;
     hasReplay: boolean;
   };
+}
+
+/** An optional LLM-generated root-cause analysis, cached on the bug (meta.llmAnalysis) after a reporter runs
+ *  "Analyze with AI". `text` is concise Markdown-ish prose. Absent unless the board has an LLM key configured
+ *  and someone triggered it. */
+export interface LlmAnalysis {
+  text: string;
+  model: string;
+  generatedAt: number;
 }
 
 /** Per-reporter rollup for the profile card. Mirrors bugStatsForUser(). */
