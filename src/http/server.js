@@ -23,6 +23,7 @@ import { handoffBugToTask } from '../bugs/handoff.js';
 import { analyzeBug } from '../bugs/analyze.js';
 import { llmAnalyzeBug } from '../bugs/llm-analyze.js';
 import { createGithubIssue } from '../bugs/github-export.js';
+import { notifyBugFiled } from '../bugs/notify.js';
 import { mintUploadUrls, signAccessUrl } from '../bugs/uploadthing.js';
 import { requestReview, submitReview } from '../reviews/reviews.js';
 import { requestInput, answerInput, getOpenInputRequest, getRequestTaskId } from '../tasks/input_requests.js';
@@ -791,7 +792,7 @@ const AGENT_ROUTES = [
   // The QA capture extension files a bug. Bearer-authed, so the reporter is the token's user. The payload is
   // UploadThing keys + small metadata only — the screenshot/DOM/network binaries go straight to UploadThing,
   // never through here (so this stays well under readJson's 2 MB cap).
-  ['POST', '/api/agent/bugs', async ({ db, res, body, auth }) => {
+  ['POST', '/api/agent/bugs', async ({ db, req, res, body, auth }) => {
     const bug = createBug(db, {
       reporterId: auth.userId,
       pageUrl: body.pageUrl,
@@ -809,6 +810,8 @@ const AGENT_ROUTES = [
       identity: body.identity || {},
       meta: body.meta || {},
     });
+    // Fire-and-forget team notification (inert unless GFA_BUG_WEBHOOK is set) — never blocks or fails ingest.
+    void notifyBugFiled(bug, { boardOrigin: originOf(req) });
     send(res, 200, { bug });
   }],
 
