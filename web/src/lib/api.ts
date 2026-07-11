@@ -326,10 +326,15 @@ export const api = {
     return request<{ bugs: Bug[] }>(`/api/bugs${qs ? `?${qs}` : ""}`);
   },
   getBug: (id: string) =>
-    request<{ bug: Bug; events: BugEvent[]; analysis?: BugAnalysis; llmAvailable?: boolean }>(`/api/bugs/${id}`),
+    request<{ bug: Bug; events: BugEvent[]; analysis?: BugAnalysis; llmAvailable?: boolean; githubAvailable?: boolean }>(
+      `/api/bugs/${id}`,
+    ),
   /** Run (and cache) the optional LLM root-cause analysis. 409 when the board has no LLM key configured. */
   analyzeBugWithAI: (id: string) =>
     post<{ llmAnalysis: LlmAnalysis; bug: Bug }>(`/api/bugs/${id}/analyze`),
+  /** Export the bug as a GitHub issue (and cache its URL). 409 when the board has no GitHub config. */
+  createGithubIssue: (id: string) =>
+    post<{ url: string; bug: Bug }>(`/api/bugs/${id}/github-issue`),
   /** Assign (or clear, with assigneeId null) a bug to a teammate. */
   assignBug: (id: string, assigneeId: string | null) =>
     post<{ bug: Bug }>(`/api/bugs/${id}/assign`, { assigneeId }),

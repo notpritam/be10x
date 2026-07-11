@@ -8,6 +8,7 @@ import {
   Clock,
   ExternalLink,
   FolderGit2,
+  Github,
   Loader2,
   MessageSquare,
   Send,
@@ -73,8 +74,10 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
     events: BugEvent[];
     analysis?: BugAnalysis;
     llmAvailable?: boolean;
+    githubAvailable?: boolean;
   } | null>(null);
   const [analyzingAi, setAnalyzingAi] = useState(false);
+  const [exportingGh, setExportingGh] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shot, setShot] = useState<ShotState>({ state: "loading" });
 
@@ -220,6 +223,27 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
     }
   }
 
+  async function exportGithub() {
+    if (!bug || exportingGh) return;
+    setExportingGh(true);
+    try {
+      const { url } = await api.createGithubIssue(bug.id);
+      await load();
+      toast.success(
+        <span>
+          GitHub issue created ·{" "}
+          <a href={url} target="_blank" rel="noreferrer" className="underline">
+            open
+          </a>
+        </span>,
+      );
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setExportingGh(false);
+    }
+  }
+
   function copySummary() {
     if (!bug) return;
     const teamName = teams.find((t) => t.id === bug.teamId)?.name;
@@ -285,6 +309,29 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
                 <BugStatusBadge status={bug.status} />
                 <BugSeverityPill severity={bug.severity} />
                 <div className="ml-auto flex items-center gap-2">
+                  {bug.meta.githubIssueUrl ? (
+                    <a
+                      href={bug.meta.githubIssueUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border/60 px-2.5 py-1.5 text-[12.5px] font-medium text-foreground transition-colors hover:bg-accent"
+                    >
+                      <Github className="size-3.5" /> Issue <ExternalLink className="size-3" />
+                    </a>
+                  ) : (
+                    data?.githubAvailable && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void exportGithub()}
+                        disabled={exportingGh}
+                        className="text-[12.5px]"
+                      >
+                        {exportingGh ? <Loader2 className="size-3.5 animate-spin" /> : <Github className="size-3.5" />}
+                        GitHub issue
+                      </Button>
+                    )
+                  )}
                   <Button variant="outline" size="sm" onClick={copySummary} className="text-[12.5px]">
                     <ClipboardList className="size-3.5" />
                     Copy summary

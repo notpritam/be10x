@@ -18,10 +18,11 @@ import { listMembers, addMember, setRole, removeMember } from '../teams/membersh
 import { assertCan, assertCanAccessTask, canAccessProject } from '../authz/authz.js';
 import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
-import { createBug, getBug as getBugById, listBugs, updateBugStatus, setBugAssignee, setBugLlmAnalysis, addBugComment, listBugEvents, bugStatsForUser } from '../bugs/bugs.js';
+import { createBug, getBug as getBugById, listBugs, updateBugStatus, setBugAssignee, setBugLlmAnalysis, setBugGithubIssue, addBugComment, listBugEvents, bugStatsForUser } from '../bugs/bugs.js';
 import { handoffBugToTask } from '../bugs/handoff.js';
 import { analyzeBug } from '../bugs/analyze.js';
 import { llmAnalyzeBug } from '../bugs/llm-analyze.js';
+import { createGithubIssue } from '../bugs/github-export.js';
 import { mintUploadUrls, signAccessUrl } from '../bugs/uploadthing.js';
 import { requestReview, submitReview } from '../reviews/reviews.js';
 import { requestInput, answerInput, getOpenInputRequest, getRequestTaskId } from '../tasks/input_requests.js';
@@ -653,7 +654,13 @@ const ROUTES = [
   ['GET', '/api/bugs/:id', true, async ({ db, res, params }) => {
     const bug = getBugById(db, params.id);
     if (!bug) throw new Error('NOT_FOUND');
-    send(res, 200, { bug, events: listBugEvents(db, params.id), analysis: analyzeBug(bug), llmAvailable: !!process.env.GFA_LLM_KEY });
+    send(res, 200, {
+      bug,
+      events: listBugEvents(db, params.id),
+      analysis: analyzeBug(bug),
+      llmAvailable: !!process.env.GFA_LLM_KEY,
+      githubAvailable: !!(process.env.GFA_GITHUB_TOKEN && process.env.GFA_GITHUB_REPO),
+    });
   }],
   ['POST', '/api/bugs/:id/status', true, async ({ db, res, params, body, user }) => {
     send(res, 200, { bug: updateBugStatus(db, params.id, body.status, user.id, { resolution: body.resolution }) });
@@ -698,6 +705,17 @@ const ROUTES = [
     }
     const llm = await llmAnalyzeBug(bug, { heuristic: analyzeBug(bug), networkFailures });
     send(res, 200, { llmAnalysis: llm, bug: setBugLlmAnalysis(db, params.id, llm) });
+  }],
+  // Optional GitHub issue export — 409 when GFA_GITHUB_TOKEN + GFA_GITHUB_REPO aren't configured; else file the
+  // issue (credentials never included), cache its URL on the bug, and return it. Inert by default.
+  ['POST', '/api/bugs/:id/github-issue', true, async ({ db, res, params, req }) => {
+    const bug = getBugById(db, params.id);
+    if (!bug) throw new Error('NOT_FOUND');
+    if (!process.env.GFA_GITHUB_TOKEN || !process.env.GFA_GITHUB_REPO) {
+      return send(res, 409, { error: 'NO_GITHUB_CONFIG', message: 'Set GFA_GITHUB_TOKEN and GFA_GITHUB_REPO (owner/repo) on the board to enable GitHub export.' });
+    }
+    const { url } = await createGithubIssue(bug, { bugUrl: originOf(req) });
+    send(res, 200, { url, bug: setBugGithubIssue(db, params.id, url) });
   }],
   // Hand the dashboard a short-lived signed UploadThing read URL for one captured artifact. kind picks the
   // key column (screenshot|dom|network|session); 404 when the bug or that particular key is absent. Six path

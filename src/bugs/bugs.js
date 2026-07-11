@@ -166,6 +166,16 @@ export function setBugLlmAnalysis(db, id, llm) {
   return getBug(db, id);
 }
 
+// Cache the exported GitHub issue URL on the bug (meta.githubIssueUrl) so the dashboard links to it and won't
+// offer to export again. meta is stored verbatim, so this just rewrites meta_json with the added key.
+export function setBugGithubIssue(db, id, url) {
+  const bug = getBug(db, id);
+  if (!bug) throw new Error('NOT_FOUND');
+  const meta = { ...(bug.meta || {}), githubIssueUrl: url };
+  db.prepare('UPDATE bugs SET meta_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(meta), Date.now(), id);
+  return getBug(db, id);
+}
+
 // Assign (or unassign, with assigneeId = null) a bug to a user. Records an 'assign' event with from/to so the
 // timeline shows re-assignments. The caller validates that assigneeId is a real user (the FK enforces it too).
 export function setBugAssignee(db, id, assigneeId, actor) {

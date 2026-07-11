@@ -373,6 +373,8 @@ export interface BugMeta {
   errorCount?: number;
   /** A cached LLM root-cause analysis (present once someone ran "Analyze with AI" on a key-enabled board). */
   llmAnalysis?: LlmAnalysis;
+  /** The GitHub issue this bug was exported to, if any (set once someone ran "Create GitHub issue"). */
+  githubIssueUrl?: string;
   [key: string]: unknown;
 }
 
