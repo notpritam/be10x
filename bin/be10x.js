@@ -74,6 +74,7 @@ async function openBoardDb(path = dbPathAbs()) {
 }
 
 const mcpServerPath = () => resolve(here, '..', 'src', 'mcp', 'server.js');
+const bugMcpServerPath = () => resolve(here, '..', 'src', 'mcp', 'bug-server.js');
 
 // Best-effort "open this URL in the default browser" for `be10x login`. Detached + unref'd so the CLI never
 // waits on the browser; the URL is always printed too, so a headless box (no opener) just falls back to that.
@@ -278,6 +279,14 @@ async function cmdLinkLocal(args) {
       be10x: {
         command: 'node',
         args: [mcpServerPath()],
+        env: { GFA_TOKEN: token, GFA_DB_PATH: dbPath },
+      },
+      // Bug-debugging front door: paste a bug link and the agent scrubs its whole capture. The capture-body
+      // tools (network/dom/replay) also need UPLOADTHING_TOKEN in this env — add it here to enable them; the
+      // rest (console, picked elements, drawings, credentials, environment, markers, analysis) work without it.
+      'be10x-bugs': {
+        command: 'node',
+        args: [bugMcpServerPath()],
         env: { GFA_TOKEN: token, GFA_DB_PATH: dbPath },
       },
     },

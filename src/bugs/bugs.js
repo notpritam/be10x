@@ -120,6 +120,13 @@ export function getBug(db, id) {
   return row ? hydrate(row) : null;
 }
 
+// Look a bug up by its human id (e.g. "BUG-009") — the id a person pastes from the dashboard. Case-insensitive.
+export function getBugByHumanId(db, humanId) {
+  if (!humanId) return null;
+  const row = db.prepare('SELECT * FROM bugs WHERE human_id = ? COLLATE NOCASE').get(String(humanId));
+  return row ? hydrate(row) : null;
+}
+
 export function listBugs(db, { status, reporterId } = {}) {
   const where = [];
   const args = [];
