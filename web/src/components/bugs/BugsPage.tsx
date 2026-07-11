@@ -74,6 +74,8 @@ export function BugsPage() {
   const [tagFilter, setTagFilter] = useState<string>("all");
   const [teamFilter, setTeamFilter] = useState<string>("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
+  const [mineAssigned, setMineAssigned] = useState(false);
+  const [mineReported, setMineReported] = useState(false);
   const [bugs, setBugs] = useState<Bug[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -123,14 +125,23 @@ export function BugsPage() {
           (tagFilter === "all" || b.tags.includes(tagFilter)) &&
           (teamFilter === "all" || b.teamId === teamFilter) &&
           (projectFilter === "all" || b.projectId === projectFilter) &&
+          (!mineAssigned || b.assigneeId === user.id) &&
+          (!mineReported || b.reporterId === user.id) &&
           (query === "" ||
             b.title.toLowerCase().includes(query) ||
             b.humanId.toLowerCase().includes(query) ||
             b.pageUrl.toLowerCase().includes(query) ||
             b.tags.some((t) => t.toLowerCase().includes(query))),
       ),
-    [bugs, severityFilter, tagFilter, teamFilter, projectFilter, query],
+    [bugs, severityFilter, tagFilter, teamFilter, projectFilter, mineAssigned, mineReported, user.id, query],
   );
+
+  // Board health: counts per status across the loaded set — a glance strip above the list.
+  const statusCounts = useMemo(() => {
+    const counts = new Map<BugStatus, number>();
+    for (const b of bugs ?? []) counts.set(b.status, (counts.get(b.status) ?? 0) + 1);
+    return BUG_STATUS_ORDER.map((s) => ({ status: s, count: counts.get(s) ?? 0 })).filter((x) => x.count > 0);
+  }, [bugs]);
 
   // Keep the highlight in range as the filtered set changes, and scroll it into view as it moves.
   useEffect(() => {
@@ -253,6 +264,11 @@ export function BugsPage() {
               onChange={setTagFilter}
             />
           )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 w-14 shrink-0 text-[11.5px] font-medium text-muted-foreground/70">Mine</span>
+            <MineToggle label="Assigned to me" active={mineAssigned} onToggle={() => setMineAssigned((v) => !v)} />
+            <MineToggle label="Reported by me" active={mineReported} onToggle={() => setMineReported((v) => !v)} />
+          </div>
         </div>
 
         {error && (
@@ -268,11 +284,29 @@ export function BugsPage() {
         ) : (
           <>
             {bugs && bugs.length > 0 && (
-              <p className="mb-2 text-[11.5px] text-muted-foreground/80">
-                {visible.length === bugs.length
-                  ? `${bugs.length} ${bugs.length === 1 ? "bug" : "bugs"}`
-                  : `${visible.length} of ${bugs.length}`}
-              </p>
+              <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <p className="text-[11.5px] text-muted-foreground/80">
+                  {visible.length === bugs.length
+                    ? `${bugs.length} ${bugs.length === 1 ? "bug" : "bugs"}`
+                    : `${visible.length} of ${bugs.length}`}
+                </p>
+                {statusCounts.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                    {statusCounts.map(({ status, count }) => (
+                      <button
+                        key={status}
+                        type="button"
+                        onClick={() => setStatusFilter(statusFilter === status ? "all" : status)}
+                        className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                        title={`Filter by ${BUG_STATUS_META[status].label}`}
+                      >
+                        <span className="size-2 rounded-full" style={{ background: BUG_STATUS_META[status].color }} />
+                        {BUG_STATUS_META[status].label} <span className="font-medium text-foreground">{count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             <ul className="flex flex-col gap-1.5">
               {visible.map((bug, i) => (
@@ -390,5 +424,22 @@ function InlineStatus({ status, onChange }: { status: BugStatus; onChange: (s: B
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+/** A "Mine" quick-filter toggle chip (Assigned to me / Reported by me). */
+function MineToggle({ label, active, onToggle }: { label: string; active: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={active}
+      className={cn(
+        "rounded-full px-2.5 py-1 text-[12px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
+        active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {label}
+    </button>
   );
 }
