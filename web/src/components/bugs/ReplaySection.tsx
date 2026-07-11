@@ -281,6 +281,8 @@ export function ReplaySection({
                   clock={networkClock}
                   onSeek={seekToEpoch}
                   onOpenRaw={() => void openRaw("network")}
+                  pageUrl={bug.pageUrl}
+                  label={`${bug.humanId}-network`}
                   loading={network.state === "loading"}
                   error={network.state === "error" ? "The network timeline couldn't be loaded." : null}
                 />
@@ -314,6 +316,8 @@ export function ReplaySection({
               currentTime={null}
               clock={networkClock}
               onOpenRaw={() => void openRaw("network")}
+              pageUrl={bug.pageUrl}
+              label={`${bug.humanId}-network`}
               loading={network.state === "loading"}
               error={network.state === "error" ? "The network timeline couldn't be loaded." : null}
             />

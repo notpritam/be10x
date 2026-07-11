@@ -7,6 +7,7 @@ import {
   Check,
   ChevronRight,
   Copy,
+  Download,
   ExternalLink,
   Loader2,
   Network as NetworkIcon,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import type { NetEntry, WsFrame } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { downloadHar } from "@/lib/har";
 import { Input } from "@/components/ui/input";
 
 type StatusBucket = "2xx" | "3xx" | "4xx" | "5xx" | "failed";
@@ -114,6 +116,9 @@ export interface NetworkPanelProps {
   onSeek?: (epochMs: number) => void;
   /** Open the raw network.json in a new tab (secondary affordance). */
   onOpenRaw?: () => void;
+  /** Page URL + a filename label for the HAR export (when absent, no HAR button is shown). */
+  pageUrl?: string;
+  label?: string;
   loading?: boolean;
   error?: string | null;
 }
@@ -127,6 +132,8 @@ export function NetworkPanel({
   clock,
   onSeek,
   onOpenRaw,
+  pageUrl,
+  label,
   loading,
   error,
 }: NetworkPanelProps) {
@@ -221,15 +228,27 @@ export function NetworkPanel({
             </span>
           )}
         </div>
-        {onOpenRaw && entries.length > 0 && (
-          <button
-            type="button"
-            onClick={onOpenRaw}
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <ExternalLink className="size-3" /> Raw JSON
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {entries.length > 0 && entries.some((e) => e.kind !== "ws") && (
+            <button
+              type="button"
+              onClick={() => downloadHar(entries, label || "network", pageUrl)}
+              title="Download as HAR (import into DevTools / Charles / Proxyman)"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <Download className="size-3" /> HAR
+            </button>
+          )}
+          {onOpenRaw && entries.length > 0 && (
+            <button
+              type="button"
+              onClick={onOpenRaw}
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <ExternalLink className="size-3" /> Raw JSON
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (

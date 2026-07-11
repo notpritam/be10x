@@ -36,6 +36,7 @@ import {
 } from "./bug-bits";
 import { BugShareDialog } from "./BugShareDialog";
 import { SourcePanel } from "./SourcePanel";
+import { ArtifactDownloads } from "./ArtifactDownloads";
 
 /** The replay UI pulls in rrweb-player + rrweb-snapshot (~200 KB); load it as its own chunk only when a
  *  bug detail is actually opened, so it never weighs down the rest of the dashboard's initial bundle. */
@@ -312,6 +313,9 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
 
             {/* Captured page source: rendered HTML + inline scripts/styles + the resource manifest. */}
             {bug.sourceKey && <SourcePanel artifacts={artifacts} />}
+
+            {/* Raw artifact downloads (+ HAR export lives in the network panel). */}
+            <ArtifactDownloads bug={bug} artifacts={artifacts} />
 
             {/* Identity */}
             <Card title="Identity">
