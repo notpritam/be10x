@@ -1,7 +1,7 @@
 // ABOUTME: ISOLATED-world entry — starts the rolling recorder, mounts the widget, keeps the popup's
 // ABOUTME: point-in-time `collect` responder, and packages the widget's session report for the SW.
 import { getRecorder } from './recorder';
-import { mountWidget, type ReportForm } from './widget';
+import { mountWidget, type ReportForm, type CaptureHealth } from './widget';
 import { installCollectHandler, collectNetwork, captureDom, extractIdentity } from './collector';
 import { pruneByAge } from './net-entry';
 import type { BugEnvironment, BugSource } from './protocol';
@@ -262,6 +262,20 @@ async function report(form: ReportForm): Promise<ReportResult> {
   return { ok: false, message: 'Report failed: ' + (reply?.error || 'unknown') };
 }
 
+// What the current capture window holds — the same windowing as report(), so the "capture health" line the
+// widget shows before filing matches exactly what the report will contain.
+async function computeCaptureHealth(): Promise<CaptureHealth> {
+  const recorder = getRecorder();
+  const recording = recorder.collectRecording();
+  const windowMs = recording.endedAt - recording.startedAt + NET_WINDOW_SLACK_MS;
+  const hook = await collectNetwork();
+  const network = pruneByAge(hook.network, recording.endedAt, windowMs).length;
+  const consoleWindowMs = Math.max(windowMs, CONSOLE_LOOKBACK_MS);
+  const consoleEntries = hook.console.filter((c) => c.ts >= recording.endedAt - consoleWindowMs);
+  const errors = consoleEntries.filter((c) => c.level === 'error').length;
+  return { durationMs: recording.endedAt - recording.startedAt, network, console: consoleEntries.length, errors };
+}
+
 function boot(): void {
   const recorder = getRecorder(); // idempotent — returns the buffer armed at document_start
   const widget = mountWidget({
@@ -272,6 +286,7 @@ function boot(): void {
     onMark: (label) => recorder.mark(label),
     onReport: report,
     loadTaxonomy,
+    captureHealth: computeCaptureHealth,
   });
 
   // Clean teardown on navigation away — stops rrweb observers and removes the widget.

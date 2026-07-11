@@ -48,7 +48,12 @@ export type WidgetCallbacks = {
   onMark: (label?: string) => void;
   onReport: (form: ReportForm) => Promise<{ ok: boolean; message: string }>;
   loadTaxonomy?: () => Promise<{ teams: Taxon[]; projects: Taxon[] }>; // teams/projects for the pickers
+  captureHealth?: () => Promise<CaptureHealth>; // what will be captured — surfaced in the report form
 };
+
+// A snapshot of what the current capture window holds, shown as a "capture health" line before filing so the
+// reporter can see the recording is actually catching what they expect (network, console, errors).
+export type CaptureHealth = { durationMs: number; network: number; console: number; errors: number };
 
 const HOST_ID = 'be10x-recorder-widget';
 
@@ -158,6 +163,11 @@ const ICONS = {
       ['path', { d: 'M4 7h16' }],
       ['path', { d: 'M9 7V4h6v3' }],
       ['path', { d: 'M6 7l1 13h10l1-13' }],
+    ]),
+  copy: (): SVGElement =>
+    icon([
+      ['rect', { x: '9', y: '9', width: '11', height: '11', rx: '2' }],
+      ['path', { d: 'M5 15V5a2 2 0 0 1 2-2h10' }],
     ]),
 };
 
@@ -309,6 +319,20 @@ const CSS = `
   .reveal { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; cursor: pointer; color: inherit; opacity: .5; padding: 5px; border-radius: 6px; display: inline-flex; }
   .reveal:hover { opacity: 1; }
   .reveal svg { width: 15px; height: 15px; }
+  .health { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 11px; opacity: .8; margin: -2px 0 2px; }
+  .health .h-chip { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .health .h-rec { color: #c0392b; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .health .h-err { color: #c0392b; font-weight: 600; }
+  .health .h-sep { opacity: .3; }
+  .kbd-hint { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 10.5px; opacity: .5; padding: 8px 12px 10px; }
+  .kbd-hint span { display: inline-flex; align-items: center; gap: 4px; }
+  .kbd-hint kbd { font: 10px/1 ui-monospace, Menlo, monospace; background: rgba(0,0,0,.07); border-radius: 3px; padding: 2px 4px; }
+  .pick-sel { display: none; align-items: center; gap: 6px; max-width: 240px; margin-left: 2px; }
+  .pick-sel.on { display: inline-flex; }
+  .pick-sel code { font: 11px/1.4 ui-monospace, Menlo, monospace; color: #fff; opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pick-sel .copy { border: 0; background: rgba(255,255,255,.16); color: #fff; border-radius: 6px; padding: 3px 5px; cursor: pointer; display: inline-flex; }
+  .pick-sel .copy:hover { background: rgba(255,255,255,.28); }
+  .pick-sel .copy svg { width: 13px; height: 13px; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
   @media (prefers-color-scheme: dark) {
     .root { color: #ececee; }
@@ -320,6 +344,7 @@ const CSS = `
     input, select, textarea { background: #2c2c30; color: #ececee; border-color: #3a3a40; }
     .drawer.open { border-color: rgba(255,255,255,.08); }
     .cred { border-color: rgba(255,255,255,.14); background: rgba(255,255,255,.02); }
+    .kbd-hint kbd { background: rgba(255,255,255,.1); }
   }
 `;
 
@@ -398,9 +423,12 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   const cancelBtn = h('button', { class: 'btn', type: 'button' }, 'Cancel');
   const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, 'Send report');
   const msg = h('div', { class: 'msg', role: 'status', 'aria-live': 'polite' });
+  // "Capture health" — what the report will actually contain, refreshed each time the form opens.
+  const healthLine = h('div', { class: 'health', 'aria-live': 'polite' });
   const form = h(
     'form',
     { class: 'form hidden' },
+    healthLine,
     h('label', { class: 'field' }, h('span', {}, 'Title'), fTitle),
     h('label', { class: 'field' }, h('span', {}, 'Severity'), fSev),
     h(
@@ -434,7 +462,19 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   );
 
   const body = h('div', { class: 'body' }, actions, markRow, form);
-  const card = h('div', { class: 'card hidden' }, hd, notesPanel, body);
+  // Keyboard-shortcut hint — the shortcuts only fire while the widget itself is focused (so they never clash
+  // with the host page). Hidden while the report form is open (the letters would fight the text fields).
+  const kbd = (k: string) => h('kbd', {}, k);
+  const kbdHint = h(
+    'div',
+    { class: 'kbd-hint', 'aria-hidden': 'true' },
+    h('span', {}, kbd('R'), 'Rec'),
+    h('span', {}, kbd('M'), 'Mark'),
+    h('span', {}, kbd('P'), 'Pick'),
+    h('span', {}, kbd('D'), 'Draw'),
+    h('span', {}, kbd('N'), 'Notes'),
+  );
+  const card = h('div', { class: 'card hidden', tabindex: '-1' }, hd, notesPanel, body, kbdHint);
   root.append(bubble, card);
   shadow.append(root);
 
@@ -443,6 +483,10 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   const pickOutline = h('div', { class: 'pick-outline', 'aria-hidden': 'true' });
   const pickLabel = h('div', { class: 'pick-label', 'aria-hidden': 'true' });
   const pickCount = h('span', { class: 'count' }, '0 picked');
+  // The last-picked element's selector, one-click copyable — a dev's quickest path to the node.
+  const pickSelCode = h('code', {});
+  const pickSelCopy = h('button', { class: 'copy', type: 'button', 'aria-label': 'Copy selector', title: 'Copy selector' }, ICONS.copy());
+  const pickSel = h('div', { class: 'pick-sel', 'aria-label': 'Last picked selector' }, pickSelCode, pickSelCopy);
   // Annotate the most-recently-picked element — "why does this matter" in the reporter's words.
   const pickNote = h('input', { class: 'pick-note', type: 'text', 'aria-label': 'Note for the last picked element', placeholder: 'Add a note for this pick…' });
   const pickClearBtn = h('button', { class: 'pill-btn', type: 'button' }, 'Clear');
@@ -452,6 +496,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     { class: 'pick-banner', role: 'region', 'aria-label': 'Element picker' },
     h('span', { class: 'lead' }, ICONS.crosshair(), h('span', {}, 'Click to pick · Esc to exit')),
     pickCount,
+    pickSel,
     pickNote,
     pickClearBtn,
     pickDoneBtn,
@@ -492,6 +537,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   let drawStrokes: DrawStroke[] = [];
   let drawColor = DRAW_COLORS[0];
   let collapsedBeforeDraw = false;
+  let healthToken = 0; // guards the async capture-health fetch against a stale render
 
   const hasNotes = () => !!(nText.value.trim() || nExpected.value.trim() || nActual.value.trim());
 
@@ -522,6 +568,14 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     const lastPick = pickedElements[pickedElements.length - 1] ?? null;
     pickNote.disabled = !lastPick;
     if (shadow.activeElement !== pickNote) pickNote.value = lastPick?.note ?? '';
+    // The last-pick selector chip (copyable).
+    pickSel.classList.toggle('on', !!lastPick?.selector);
+    if (pickSelCode.textContent !== (lastPick?.selector ?? '')) {
+      pickSelCode.textContent = lastPick?.selector ?? '';
+      pickSelCode.setAttribute('title', lastPick?.selector ?? '');
+    }
+    // Shortcut hint shows only in the default card view (not while filling the report form).
+    kbdHint.classList.toggle('hidden', formOpen);
     drawBtn.classList.toggle('active', drawMode);
     drawBtn.setAttribute('aria-pressed', drawMode ? 'true' : 'false');
     drawBar.classList.toggle('on', drawMode);
@@ -555,6 +609,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   bubble.addEventListener('click', () => {
     collapsed = false;
     render();
+    card.focus(); // so the letter shortcuts work right after opening (this listener is shadow-scoped)
   });
   collapseBtn.addEventListener('click', () => {
     collapsed = true;
@@ -720,6 +775,41 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
       pickNote.blur();
     }
     e.stopPropagation(); // don't let Esc/keys bubble to the picker's global shield
+  });
+  // Copy the last-picked selector. The click is a user gesture, so the async clipboard write is allowed;
+  // fall back to a hidden textarea + execCommand on older/blocked contexts.
+  const copyText = (text: string) => {
+    try {
+      navigator.clipboard?.writeText(text).catch(() => fallbackCopy(text));
+    } catch {
+      fallbackCopy(text);
+    }
+  };
+  const fallbackCopy = (text: string) => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    } catch {
+      /* clipboard unavailable — nothing more we can do */
+    }
+  };
+  pickSelCopy.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const last = pickedElements[pickedElements.length - 1];
+    if (!last?.selector) return;
+    copyText(last.selector);
+    const prev = pickSelCopy.innerHTML;
+    pickSelCopy.textContent = '✓';
+    window.setTimeout(() => {
+      pickSelCopy.innerHTML = prev;
+    }, 1000);
   });
 
   // --- drawing overlay ---
@@ -953,11 +1043,45 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
       },
     );
   };
+  // "Capture health" line — compose from the async network/console/error counts plus the widget's own
+  // picked/drawing counts, so the reporter sees exactly what the report will contain.
+  const renderHealthLine = (health: CaptureHealth | null) => {
+    const chip = (text: string, cls?: string) => h('span', { class: 'h-chip' + (cls ? ' ' + cls : '') }, text);
+    const sep = () => h('span', { class: 'h-sep', 'aria-hidden': 'true' }, '·');
+    if (!health) {
+      healthLine.replaceChildren(chip('Checking capture…'));
+      return;
+    }
+    const nodes: Node[] = [h('span', { class: 'h-chip h-rec' }, (cb.isRecording() ? '● ' : '') + fmtElapsed(health.durationMs))];
+    nodes.push(sep(), chip(`${health.network} network`), sep(), chip(`${health.console} console`));
+    if (health.errors > 0) nodes.push(sep(), chip(`${health.errors} error${health.errors === 1 ? '' : 's'}`, 'h-err'));
+    if (pickedElements.length) nodes.push(sep(), chip(`${pickedElements.length} picked`));
+    if (drawStrokes.length) nodes.push(sep(), chip(`${drawStrokes.length} drawing${drawStrokes.length === 1 ? '' : 's'}`));
+    healthLine.replaceChildren(...nodes);
+  };
+  const refreshHealth = () => {
+    if (!cb.captureHealth) {
+      healthLine.replaceChildren();
+      return;
+    }
+    renderHealthLine(null);
+    const token = ++healthToken;
+    cb.captureHealth().then(
+      (hd) => {
+        if (token === healthToken && formOpen) renderHealthLine(hd);
+      },
+      () => {
+        if (token === healthToken) healthLine.replaceChildren();
+      },
+    );
+  };
+
   reportBtn.addEventListener('click', () => {
     formOpen = true;
     markOpen = false;
     notesOpen = false;
     loadTaxonomyOnce();
+    refreshHealth();
     setMsg('');
     render();
     fTitle.focus();
@@ -1018,16 +1142,54 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
       });
   });
 
-  // Esc peels back one layer at a time; keeps the widget keyboard-dismissible.
+  // Esc peels back one layer at a time; keeps the widget keyboard-dismissible. Single-letter shortcuts (R/M/
+  // P/D/N) drive the core actions. This listener is on the shadow root, so it only fires when the widget
+  // itself is focused — page keystrokes never reach here, so the shortcuts can't clash with the host page.
   const onKey = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape') return;
-    if (formOpen) formOpen = false;
-    else if (markOpen) markOpen = false;
-    else if (notesOpen) notesOpen = false;
-    else if (!collapsed) collapsed = true;
-    else return;
-    e.stopPropagation();
-    render();
+    if (e.key === 'Escape') {
+      if (formOpen) formOpen = false;
+      else if (markOpen) markOpen = false;
+      else if (notesOpen) notesOpen = false;
+      else if (!collapsed) collapsed = true;
+      else return;
+      e.stopPropagation();
+      render();
+      return;
+    }
+    // Letter shortcuts: only in the open card view, no modifier, and not while typing in a field.
+    if (collapsed || formOpen || e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag = (e.target as HTMLElement | null)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    const take = () => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    switch (e.key.toLowerCase()) {
+      case 'r':
+        take();
+        if (cb.isRecording()) cb.onStop();
+        else cb.onStart();
+        render();
+        break;
+      case 'm':
+        take();
+        markBtn.click();
+        break;
+      case 'p':
+        take();
+        if (pickMode) exitPick();
+        else enterPick();
+        break;
+      case 'd':
+        take();
+        if (drawMode) exitDraw();
+        else enterDraw();
+        break;
+      case 'n':
+        take();
+        notesBtn.click();
+        break;
+    }
   };
   root.addEventListener('keydown', onKey);
 
