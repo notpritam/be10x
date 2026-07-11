@@ -4,6 +4,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNo
 import {
   ArrowLeft,
   Bot,
+  ClipboardList,
   Clock,
   ExternalLink,
   FolderGit2,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, dashboardArtifacts, errorMessage } from "@/lib/api";
+import { buildBugMarkdown } from "@/lib/bug-summary";
 import type { Bug, BugAnalysis, BugEvent, BugStatus } from "@/lib/types";
 import { useApp } from "@/state/app-store";
 import { cn, formatDateTime, humanizeKey, relativeTime } from "@/lib/utils";
@@ -164,6 +166,25 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
     }
   }
 
+  function copySummary() {
+    if (!bug) return;
+    const teamName = teams.find((t) => t.id === bug.teamId)?.name;
+    const projectName = projects.find((p) => p.id === bug.projectId)?.name;
+    const md = buildBugMarkdown(bug, analysis, {
+      teamName,
+      projectName,
+      date: formatDateTime(bug.createdAt),
+    });
+    if (!navigator.clipboard) {
+      toast.error("Clipboard unavailable");
+      return;
+    }
+    navigator.clipboard.writeText(md).then(
+      () => toast.success("Summary copied to clipboard"),
+      () => toast.error("Couldn't copy"),
+    );
+  }
+
   async function postComment() {
     if (!bug) return;
     const body = comment.trim();
@@ -210,6 +231,10 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
                 <BugStatusBadge status={bug.status} />
                 <BugSeverityPill severity={bug.severity} />
                 <div className="ml-auto flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={copySummary} className="text-[12.5px]">
+                    <ClipboardList className="size-3.5" />
+                    Copy summary
+                  </Button>
                   {!bug.taskId && (
                     <Button
                       variant="outline"
