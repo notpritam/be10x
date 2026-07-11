@@ -90,8 +90,9 @@ export type TestCredentials = {
 // A route change observed during a recording. Rides in meta.visits.
 export type Visit = { t: number; url: string; title: string };
 
-// A user-placed "the bug happens here" pin on the session clock. Rides in meta.markers.
-export type Marker = { t: number; label: string };
+// A pin on the session clock. Rides in meta.markers. `kind` distinguishes a user-placed "the bug happens
+// here" mark from an auto-marker synthesized at a captured error moment (the dashboard styles them apart).
+export type Marker = { t: number; label: string; kind?: 'user' | 'error' };
 
 export type Identity = {
   loggedIn: boolean | null; // null = unknown

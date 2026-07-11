@@ -109,6 +109,23 @@ async function report(form: ReportForm): Promise<ReportResult> {
     // (or the whole take if it ran longer) — the buffer is already count-capped, so this stays bounded.
     const consoleWindowMs = Math.max(windowMs, CONSOLE_LOOKBACK_MS);
     const consoleEntries = hook.console.filter((c) => c.ts >= recording.endedAt - consoleWindowMs);
+    // Auto-markers: pin captured error moments on the replay clock so a reviewer jumps straight to the
+    // failure. Only errors inside the recording window map onto the timeline; dedupe near-duplicates
+    // (same message within a 2s bucket) and cap so a noisy page can't flood the scrubber.
+    const errorEntries = consoleEntries.filter((c) => c.level === 'error');
+    const autoMarkers: { t: number; label: string; kind: 'error' }[] = [];
+    const seenErr = new Set<string>();
+    for (const e of errorEntries) {
+      if (e.ts < recording.startedAt || e.ts > recording.endedAt) continue;
+      const firstLine = e.text.split('\n')[0].trim();
+      const key = firstLine.slice(0, 60) + '|' + Math.round(e.ts / 2000);
+      if (seenErr.has(key)) continue;
+      seenErr.add(key);
+      autoMarkers.push({ t: e.ts, label: firstLine.slice(0, 90) || 'Error', kind: 'error' });
+      if (autoMarkers.length >= 5) break;
+    }
+    const userMarkers = recording.markers.map((m) => ({ ...m, kind: 'user' as const }));
+    const markers = [...userMarkers, ...autoMarkers].sort((a, b) => a.t - b.t);
     const dom = captureDom();
     const identity = extractIdentity(network);
     const notes = form.notes ?? '';
@@ -132,7 +149,8 @@ async function report(form: ReportForm): Promise<ReportResult> {
         // Only carried when the reporter filled at least one field — keeps the key off blank reports.
         ...(form.credentials ? { credentials: form.credentials } : {}),
         console: consoleEntries,
-        markers: recording.markers,
+        errorCount: errorEntries.length,
+        markers,
         visits: recording.visits,
         recording: {
           startedAt: recording.startedAt,

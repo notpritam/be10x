@@ -253,6 +253,9 @@ export interface BugIdentity {
 export interface BugMarker {
   t: number;
   label?: string;
+  /** `error` = auto-marker synthesized at a captured error moment; `user` (or absent) = a hand-placed pin.
+   *  The replay + marker list style error pins in a warning color so failures stand out from intentional marks. */
+  kind?: "user" | "error";
 }
 
 /** One navigation captured during the recording — a full page load or an SPA route change. `t` is epoch ms. */
@@ -338,6 +341,8 @@ export interface BugMeta {
   credentials?: TestCredentials;
   /** The reporter's device/browser/page-load environment — surfaced as an "Environment" card. */
   environment?: BugEnvironment;
+  /** Count of error-level console entries captured in the recording window — drives the "N errors" chip. */
+  errorCount?: number;
   [key: string]: unknown;
 }
 

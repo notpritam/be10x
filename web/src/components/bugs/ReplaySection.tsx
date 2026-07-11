@@ -86,6 +86,7 @@ export function ReplaySection({
   const drawings = useMemo<DrawStroke[]>(() => bug.meta.drawings ?? [], [bug.meta.drawings]);
   const recording = bug.meta.recording;
   const viewport = bug.meta.viewport;
+  const errorCount = bug.meta.errorCount ?? 0;
 
   // The picked element currently hovered in the list — highlighted over whichever stage is showing.
   const [activePick, setActivePick] = useState<number | null>(null);
@@ -218,6 +219,11 @@ export function ReplaySection({
             <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
               {recording.mode === "explicit" ? "Recorded" : "Rolling buffer"} ·{" "}
               {formatDurationLong(recording.durationMs)}
+            </span>
+          )}
+          {errorCount > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive">
+              <AlertTriangle className="size-3" /> {errorCount} error{errorCount === 1 ? "" : "s"}
             </span>
           )}
         </div>
@@ -416,29 +422,42 @@ function MarkerList({
         <p className="text-[11.5px] text-muted-foreground/70">No moments were marked.</p>
       ) : (
         <ul className="flex flex-col gap-1">
-          {markers.map((m, i) => (
-            <li key={`${m.t}-${i}`}>
-              <button
-                type="button"
-                disabled={!onSeek}
-                onClick={() => onSeek?.(m.t)}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors",
-                  onSeek ? "hover:bg-accent/60" : "cursor-default",
-                )}
-              >
-                <Flag className="size-3 shrink-0" style={{ color: "var(--status-blocked)" }} />
-                <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                  {m.label || "Marked moment"}
-                </span>
-                {clock && (
-                  <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">
-                    {formatOffset(m.t - clock.start)}
+          {markers.map((m, i) => {
+            const isError = m.kind === "error";
+            return (
+              <li key={`${m.t}-${i}`}>
+                <button
+                  type="button"
+                  disabled={!onSeek}
+                  onClick={() => onSeek?.(m.t)}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors",
+                    onSeek ? "hover:bg-accent/60" : "cursor-default",
+                  )}
+                >
+                  {isError ? (
+                    <AlertTriangle className="size-3 shrink-0 text-destructive" />
+                  ) : (
+                    <Flag className="size-3 shrink-0" style={{ color: "var(--status-blocked)" }} />
+                  )}
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate font-medium",
+                      isError ? "text-destructive" : "text-foreground",
+                    )}
+                    title={m.label || "Marked moment"}
+                  >
+                    {m.label || "Marked moment"}
                   </span>
-                )}
-              </button>
-            </li>
-          ))}
+                  {clock && (
+                    <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">
+                      {formatOffset(m.t - clock.start)}
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </RailCard>

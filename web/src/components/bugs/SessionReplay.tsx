@@ -437,27 +437,30 @@ export const SessionReplay = forwardRef<SessionReplayHandle, SessionReplayProps>
               className="pointer-events-none absolute inset-y-0 z-10 w-0.5 -translate-x-1/2 rounded-full bg-primary"
               style={{ left: `${progress * 100}%` }}
             />
-            {pins.map((p) => (
-              <button
-                key={`${p.marker.t}-${p.index}`}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  seekOffset(p.marker.t - (clockRef.current?.start ?? 0));
-                }}
-                className="absolute top-0 z-20 flex h-full -translate-x-1/2 items-start outline-none"
-                style={{ left: `${p.frac * 100}%` }}
-                title={p.marker.label || "Marked moment"}
-                aria-label={`Marker: ${p.marker.label || "Marked moment"}`}
-              >
-                <span
-                  className="mt-0.5 grid size-4 place-items-center rounded-full text-white shadow-sm ring-2 ring-background transition-transform hover:scale-110"
-                  style={{ backgroundColor: "var(--status-blocked)" }}
+            {pins.map((p) => {
+              const isError = p.marker.kind === "error";
+              return (
+                <button
+                  key={`${p.marker.t}-${p.index}`}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    seekOffset(p.marker.t - (clockRef.current?.start ?? 0));
+                  }}
+                  className="absolute top-0 z-20 flex h-full -translate-x-1/2 items-start outline-none"
+                  style={{ left: `${p.frac * 100}%` }}
+                  title={`${isError ? "Error: " : ""}${p.marker.label || "Marked moment"}`}
+                  aria-label={`${isError ? "Error marker" : "Marker"}: ${p.marker.label || "Marked moment"}`}
                 >
-                  <Flag className="size-2.5" />
-                </span>
-              </button>
-            ))}
+                  <span
+                    className="mt-0.5 grid size-4 place-items-center rounded-full text-white shadow-sm ring-2 ring-background transition-transform hover:scale-110"
+                    style={{ backgroundColor: isError ? "#dc2626" : "var(--status-blocked)" }}
+                  >
+                    {isError ? <AlertTriangle className="size-2.5" /> : <Flag className="size-2.5" />}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
           </div>
