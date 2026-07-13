@@ -1,6 +1,14 @@
 // ABOUTME: A single bug's detail — screenshot + identity + captured metadata, a status/resolution control,
 // ABOUTME: a comment box, and the event timeline. Artifacts load via short-lived signed UploadThing URLs.
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ArrowLeft,
   Bot,
@@ -20,13 +28,25 @@ import {
 import { toast } from "sonner";
 import { api, dashboardArtifacts, errorMessage } from "@/lib/api";
 import { buildBugMarkdown } from "@/lib/bug-summary";
-import type { Bug, BugAnalysis, BugEvent, BugStatus, UserLite } from "@/lib/types";
+import type {
+  Bug,
+  BugAnalysis,
+  BugEvent,
+  BugStatus,
+  UserLite,
+} from "@/lib/types";
 import { useApp } from "@/state/app-store";
-import { cn, formatDateTime, humanizeKey, relativeTime } from "@/lib/utils";
+import { formatDateTime, humanizeKey, relativeTime } from "@/lib/utils";
 import { UserAvatar } from "@/components/common/bits";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   BUG_STATUS_META,
   BUG_STATUS_ORDER,
@@ -67,7 +87,13 @@ type ShotState =
   | { state: "ready"; url: string }
   | { state: "error" };
 
-export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void }) {
+export function BugDetail({
+  bugId,
+  onBack,
+}: {
+  bugId: string;
+  onBack: () => void;
+}) {
   const { user, teams, projects } = useApp();
   const [data, setData] = useState<{
     bug: Bug;
@@ -136,13 +162,13 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
   const assigneeOptions = useMemo(() => {
     const map = new Map<string, string>();
     map.set(user.id, "Me");
-    for (const c of collaborators) if (!map.has(c.id)) map.set(c.id, c.displayName);
-    if (bug?.assigneeId && !map.has(bug.assigneeId)) map.set(bug.assigneeId, `User ${bug.assigneeId.slice(0, 8)}`);
+    for (const c of collaborators)
+      if (!map.has(c.id)) map.set(c.id, c.displayName);
+    if (bug?.assigneeId && !map.has(bug.assigneeId))
+      map.set(bug.assigneeId, `User ${bug.assigneeId.slice(0, 8)}`);
     return [...map.entries()].map(([id, label]) => ({ id, label }));
   }, [collaborators, user.id, bug?.assigneeId]);
   const screenshotKey = bug?.screenshotKey ?? null;
-  // A session recording or network timeline needs the wider layout for the player + DevTools panel.
-  const wide = !!(bug?.sessionKey || bug?.networkKey);
 
   // The screenshot's signed URL is short-lived, so fetch it lazily once the bug (and its key) are known.
   useEffect(() => {
@@ -167,7 +193,9 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
     try {
       const note = resolution.trim();
       await api.updateBugStatus(bug.id, pendingStatus, note || undefined);
-      toast.success(`Bug marked ${BUG_STATUS_META[pendingStatus].label.toLowerCase()}.`);
+      toast.success(
+        `Bug marked ${BUG_STATUS_META[pendingStatus].label.toLowerCase()}.`,
+      );
       setResolution("");
       await load();
     } catch (err) {
@@ -281,7 +309,7 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto scroll-thin bg-background">
-      <div className={cn("mx-auto w-full px-8 py-6 space-y-5", wide ? "max-w-none" : "max-w-3xl")}>
+      <div className="mx-auto w-full max-w-none px-8 py-6 space-y-5">
         <button
           type="button"
           onClick={onBack}
@@ -316,7 +344,8 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
                       rel="noreferrer"
                       className="inline-flex items-center gap-1.5 rounded-md border border-border/60 px-2.5 py-1.5 text-[12.5px] font-medium text-foreground transition-colors hover:bg-accent"
                     >
-                      <Github className="size-3.5" /> Issue <ExternalLink className="size-3" />
+                      <Github className="size-3.5" /> Issue{" "}
+                      <ExternalLink className="size-3" />
                     </a>
                   ) : (
                     data?.githubAvailable && (
@@ -327,12 +356,21 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
                         disabled={exportingGh}
                         className="text-[12.5px]"
                       >
-                        {exportingGh ? <Loader2 className="size-3.5 animate-spin" /> : <Github className="size-3.5" />}
+                        {exportingGh ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Github className="size-3.5" />
+                        )}
                         GitHub issue
                       </Button>
                     )
                   )}
-                  <Button variant="outline" size="sm" onClick={copySummary} className="text-[12.5px]">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={copySummary}
+                    className="text-[12.5px]"
+                  >
                     <ClipboardList className="size-3.5" />
                     Copy summary
                   </Button>
@@ -344,7 +382,11 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
                       disabled={handingOff}
                       className="text-[12.5px]"
                     >
-                      {handingOff ? <Loader2 className="size-3.5 animate-spin" /> : <Bot className="size-3.5" />}
+                      {handingOff ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Bot className="size-3.5" />
+                      )}
                       Send to an agent
                     </Button>
                   )}
@@ -373,19 +415,23 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
                   <span className="truncate">{bug.pageUrl}</span>
                 </a>
                 <span className="inline-flex items-center gap-1">
-                  <Clock className="size-3.5" /> Reported {relativeTime(bug.createdAt)}
+                  <Clock className="size-3.5" /> Reported{" "}
+                  {relativeTime(bug.createdAt)}
                 </span>
               </div>
               {(bug.tags.length > 0 || bug.teamId || bug.projectId) && (
                 <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                   {bug.teamId && (
                     <span className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                      <Users className="size-3" /> {teams.find((t) => t.id === bug.teamId)?.name ?? "Team"}
+                      <Users className="size-3" />{" "}
+                      {teams.find((t) => t.id === bug.teamId)?.name ?? "Team"}
                     </span>
                   )}
                   {bug.projectId && (
                     <span className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                      <FolderGit2 className="size-3" /> {projects.find((p) => p.id === bug.projectId)?.name ?? "Project"}
+                      <FolderGit2 className="size-3" />{" "}
+                      {projects.find((p) => p.id === bug.projectId)?.name ??
+                        "Project"}
                     </span>
                   )}
                   <BugTagChips tags={bug.tags} />
@@ -399,189 +445,254 @@ export function BugDetail({ bugId, onBack }: { bugId: string; onBack: () => void
                 className="flex items-center gap-2.5 rounded-[8px] border border-primary/30 bg-primary/[0.06] px-4 py-2.5 text-[13px] transition-colors hover:bg-primary/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               >
                 <Wrench className="size-4 shrink-0 text-primary" />
-                <span className="font-medium text-foreground">Handed off to an agent to fix</span>
+                <span className="font-medium text-foreground">
+                  Handed off to an agent to fix
+                </span>
                 <span className="ml-auto inline-flex shrink-0 items-center gap-1 font-medium text-primary">
                   Open task <ExternalLink className="size-3.5" />
                 </span>
               </a>
             )}
 
-            {bug.description && (
-              <Card title="Description">
-                <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground/90">
-                  {bug.description}
-                </p>
-              </Card>
-            )}
+            {/* Full-width 2-column body: investigation content on the left, metadata/triage/activity on the
+                right — so the page is used edge-to-edge for every bug (with or without a replay). */}
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,400px)] xl:items-start">
+              <div className="min-w-0 space-y-5">
+                {bug.description && (
+                  <Card title="Description">
+                    <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground/90">
+                      {bug.description}
+                    </p>
+                  </Card>
+                )}
 
-            {bug.meta.notes && (
-              <Card title="QA notes" icon={<StickyNote className="size-4" />}>
-                <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground/90">
-                  {bug.meta.notes}
-                </p>
-              </Card>
-            )}
+                {bug.meta.notes && (
+                  <Card
+                    title="QA notes"
+                    icon={<StickyNote className="size-4" />}
+                  >
+                    <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground/90">
+                      {bug.meta.notes}
+                    </p>
+                  </Card>
+                )}
 
-            {/* Root-cause summary — the heuristic "start here", plus optional AI analysis when a key is set. */}
-            {analysis && (
-              <RootCauseCard
-                analysis={analysis}
-                llm={bug.meta.llmAnalysis ?? null}
-                canAnalyze={!!data?.llmAvailable}
-                analyzing={analyzingAi}
-                onAnalyze={() => void runAiAnalysis()}
-              />
-            )}
+                {/* Root-cause summary — the heuristic "start here", plus optional AI analysis when a key is set. */}
+                {analysis && (
+                  <RootCauseCard
+                    analysis={analysis}
+                    llm={bug.meta.llmAnalysis ?? null}
+                    canAnalyze={!!data?.llmAvailable}
+                    analyzing={analyzingAi}
+                    onAnalyze={() => void runAiAnalysis()}
+                  />
+                )}
 
-            {/* Session replay ⇄ snapshot + the playhead-synced network panel. Renders gracefully for older
+                {/* Session replay ⇄ snapshot + the playhead-synced network panel. Renders gracefully for older
                 bugs with only a screenshot (falls back to the static poster). */}
-            {(bug.sessionKey || bug.networkKey || bug.domKey || bug.screenshotKey) && (
-              <Suspense fallback={<ReplayFallback />}>
-                <ReplaySection
-                  bug={bug}
-                  artifacts={artifacts}
-                  screenshotUrl={shot.state === "ready" ? shot.url : null}
-                />
-              </Suspense>
-            )}
+                {(bug.sessionKey ||
+                  bug.networkKey ||
+                  bug.domKey ||
+                  bug.screenshotKey) && (
+                  <Suspense fallback={<ReplayFallback />}>
+                    <ReplaySection
+                      bug={bug}
+                      artifacts={artifacts}
+                      screenshotUrl={shot.state === "ready" ? shot.url : null}
+                    />
+                  </Suspense>
+                )}
 
-            {/* Captured page source: rendered HTML + inline scripts/styles + the resource manifest. */}
-            {bug.sourceKey && <SourcePanel artifacts={artifacts} />}
-
-            {/* Raw artifact downloads (+ HAR export lives in the network panel). */}
-            <ArtifactDownloads bug={bug} artifacts={artifacts} />
-
-            {/* Identity */}
-            <Card title="Identity">
-              <IdentityBody bug={bug} />
-            </Card>
-
-            {/* Test credentials the reporter supplied — the account to sign in with to reproduce. */}
-            {bug.meta.credentials && <CredentialsCard credentials={bug.meta.credentials} />}
-
-            {/* Device / browser / page-load environment the reporter was on. */}
-            {bug.meta.environment && <EnvironmentCard env={bug.meta.environment} />}
-
-            {/* Metadata */}
-            <Card title="Details">
-              <dl>
-                <Field label="Reporter" value={bug.reporterId === user.id ? "You" : bug.reporterId} />
-                <Field label="Page URL" value={bug.pageUrl} />
-                <Field label="Reported" value={formatDateTime(bug.createdAt)} />
-                <Field label="Last updated" value={formatDateTime(bug.updatedAt)} />
-                {Object.entries(bug.meta)
-                  .filter(([k]) => !REPLAY_META_KEYS.includes(k))
-                  .map(([k, v]) => (
-                    <Field key={k} label={humanizeKey(k)} value={stringifyValue(v)} />
-                  ))}
-                {bug.resolution && <Field label="Resolution" value={bug.resolution} />}
-              </dl>
-            </Card>
-
-            {/* Status control */}
-            <Card title="Triage">
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[11.5px] font-medium text-muted-foreground">Assignee</span>
-                  <Select
-                    value={bug.assigneeId ?? "unassigned"}
-                    onValueChange={(v) => void assign(v === "unassigned" ? null : v)}
-                  >
-                    <SelectTrigger className="h-9 w-full text-[13px]" disabled={savingAssignee}>
-                      <SelectValue placeholder="Unassigned" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="unassigned">Unassigned</SelectItem>
-                      {assigneeOptions.map((o) => (
-                        <SelectItem key={o.id} value={o.id}>
-                          {o.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[11.5px] font-medium text-muted-foreground">Status</span>
-                  <Select value={pendingStatus} onValueChange={(v) => setPendingStatus(v as BugStatus)}>
-                    <SelectTrigger className="h-9 w-full text-[13px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {BUG_STATUS_ORDER.map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {BUG_STATUS_META[s].label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Textarea
-                  value={resolution}
-                  onChange={(e) => setResolution(e.target.value)}
-                  placeholder="Resolution note (optional) — what was wrong, what fixed it."
-                  className="min-h-[72px] text-[13px]"
-                />
-                <div className="flex justify-end">
-                  <Button
-                    size="sm"
-                    onClick={() => void saveStatus()}
-                    disabled={
-                      savingStatus || (pendingStatus === bug.status && resolution.trim().length === 0)
-                    }
-                  >
-                    {savingStatus ? <Loader2 className="size-4 animate-spin" /> : null}
-                    Update status
-                  </Button>
-                </div>
+                {/* Captured page source: rendered HTML + inline scripts/styles + the resource manifest. */}
+                {bug.sourceKey && <SourcePanel artifacts={artifacts} />}
               </div>
-            </Card>
 
-            {/* Comment + timeline */}
-            <Card title="Activity" icon={<MessageSquare className="size-4" />}>
-              <div className="mb-4 flex flex-col gap-2">
-                <Textarea
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  placeholder="Add a comment…"
-                  className="min-h-[64px] text-[13px]"
-                />
-                <div className="flex justify-end">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void postComment()}
-                    disabled={postingComment || comment.trim().length === 0}
-                  >
-                    {postingComment ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Send className="size-3.5" />
+              {/* Sidebar — captured metadata, triage, and activity. */}
+              <div className="space-y-5">
+                {/* Raw artifact downloads (+ HAR export lives in the network panel). */}
+                <ArtifactDownloads bug={bug} artifacts={artifacts} />
+
+                {/* Identity */}
+                <Card title="Identity">
+                  <IdentityBody bug={bug} />
+                </Card>
+
+                {/* Test credentials the reporter supplied — the account to sign in with to reproduce. */}
+                {bug.meta.credentials && (
+                  <CredentialsCard credentials={bug.meta.credentials} />
+                )}
+
+                {/* Device / browser / page-load environment the reporter was on. */}
+                {bug.meta.environment && (
+                  <EnvironmentCard env={bug.meta.environment} />
+                )}
+
+                {/* Metadata */}
+                <Card title="Details">
+                  <dl>
+                    <Field
+                      label="Reporter"
+                      value={
+                        bug.reporterId === user.id ? "You" : bug.reporterId
+                      }
+                    />
+                    <Field label="Page URL" value={bug.pageUrl} />
+                    <Field
+                      label="Reported"
+                      value={formatDateTime(bug.createdAt)}
+                    />
+                    <Field
+                      label="Last updated"
+                      value={formatDateTime(bug.updatedAt)}
+                    />
+                    {Object.entries(bug.meta)
+                      .filter(([k]) => !REPLAY_META_KEYS.includes(k))
+                      .map(([k, v]) => (
+                        <Field
+                          key={k}
+                          label={humanizeKey(k)}
+                          value={stringifyValue(v)}
+                        />
+                      ))}
+                    {bug.resolution && (
+                      <Field label="Resolution" value={bug.resolution} />
                     )}
-                    Comment
-                  </Button>
-                </div>
-              </div>
+                  </dl>
+                </Card>
 
-              <ol className="flex flex-col gap-3">
-                {events.map((ev) => (
-                  <li key={ev.id} className="flex gap-2.5">
-                    <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-border" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[12.5px] leading-relaxed text-foreground/90">
-                        <span className="font-medium text-foreground">
-                          {ev.actor === user.id ? "You" : "A teammate"}
-                        </span>{" "}
-                        {describeEvent(ev)}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">{relativeTime(ev.createdAt)}</p>
+                {/* Status control */}
+                <Card title="Triage">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[11.5px] font-medium text-muted-foreground">
+                        Assignee
+                      </span>
+                      <Select
+                        value={bug.assigneeId ?? "unassigned"}
+                        onValueChange={(v) =>
+                          void assign(v === "unassigned" ? null : v)
+                        }
+                      >
+                        <SelectTrigger
+                          className="h-9 w-full text-[13px]"
+                          disabled={savingAssignee}
+                        >
+                          <SelectValue placeholder="Unassigned" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="unassigned">Unassigned</SelectItem>
+                          {assigneeOptions.map((o) => (
+                            <SelectItem key={o.id} value={o.id}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                  </li>
-                ))}
-                {events.length === 0 && <EmptyNote>No activity yet.</EmptyNote>}
-              </ol>
-            </Card>
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[11.5px] font-medium text-muted-foreground">
+                        Status
+                      </span>
+                      <Select
+                        value={pendingStatus}
+                        onValueChange={(v) => setPendingStatus(v as BugStatus)}
+                      >
+                        <SelectTrigger className="h-9 w-full text-[13px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {BUG_STATUS_ORDER.map((s) => (
+                            <SelectItem key={s} value={s}>
+                              {BUG_STATUS_META[s].label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Textarea
+                      value={resolution}
+                      onChange={(e) => setResolution(e.target.value)}
+                      placeholder="Resolution note (optional) — what was wrong, what fixed it."
+                      className="min-h-[72px] text-[13px]"
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        onClick={() => void saveStatus()}
+                        disabled={
+                          savingStatus ||
+                          (pendingStatus === bug.status &&
+                            resolution.trim().length === 0)
+                        }
+                      >
+                        {savingStatus ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : null}
+                        Update status
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
 
-            <BugShareDialog bugId={bug.id} open={shareOpen} onOpenChange={setShareOpen} />
+                {/* Comment + timeline */}
+                <Card
+                  title="Activity"
+                  icon={<MessageSquare className="size-4" />}
+                >
+                  <div className="mb-4 flex flex-col gap-2">
+                    <Textarea
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                      placeholder="Add a comment…"
+                      className="min-h-[64px] text-[13px]"
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void postComment()}
+                        disabled={postingComment || comment.trim().length === 0}
+                      >
+                        {postingComment ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Send className="size-3.5" />
+                        )}
+                        Comment
+                      </Button>
+                    </div>
+                  </div>
+
+                  <ol className="flex flex-col gap-3">
+                    {events.map((ev) => (
+                      <li key={ev.id} className="flex gap-2.5">
+                        <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-border" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[12.5px] leading-relaxed text-foreground/90">
+                            <span className="font-medium text-foreground">
+                              {ev.actor === user.id ? "You" : "A teammate"}
+                            </span>{" "}
+                            {describeEvent(ev)}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {relativeTime(ev.createdAt)}
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                    {events.length === 0 && (
+                      <EmptyNote>No activity yet.</EmptyNote>
+                    )}
+                  </ol>
+                </Card>
+              </div>
+            </div>
+
+            <BugShareDialog
+              bugId={bug.id}
+              open={shareOpen}
+              onOpenChange={setShareOpen}
+            />
           </>
         )}
       </div>
@@ -594,13 +705,20 @@ function IdentityBody({ bug }: { bug: Bug }) {
   if (identity.loggedIn === true) {
     return (
       <div className="flex items-center gap-3">
-        <UserAvatar name={identity.email || "User"} seed={identity.email || bug.id} size={34} ring={false} />
+        <UserAvatar
+          name={identity.email || "User"}
+          seed={identity.email || bug.id}
+          size={34}
+          ring={false}
+        />
         <div className="min-w-0">
           <p className="truncate text-[13px] font-medium text-foreground">
             {identity.email || "Logged in"}
           </p>
           <p className="truncate text-[11.5px] text-muted-foreground">
-            {identity.tokenPreview ? `Token ${identity.tokenPreview}` : "Signed in on the captured page"}
+            {identity.tokenPreview
+              ? `Token ${identity.tokenPreview}`
+              : "Signed in on the captured page"}
           </p>
         </div>
       </div>
@@ -608,10 +726,16 @@ function IdentityBody({ bug }: { bug: Bug }) {
   }
   if (identity.loggedIn === false) {
     return (
-      <p className="text-[13px] text-muted-foreground">Logged out — no account on the captured page.</p>
+      <p className="text-[13px] text-muted-foreground">
+        Logged out — no account on the captured page.
+      </p>
     );
   }
-  return <p className="text-[13px] text-muted-foreground">Identity wasn't captured for this bug.</p>;
+  return (
+    <p className="text-[13px] text-muted-foreground">
+      Identity wasn't captured for this bug.
+    </p>
+  );
 }
 
 function ReplayFallback() {
@@ -629,14 +753,24 @@ function describeEvent(ev: BugEvent): string {
     case "created":
       return "reported this bug.";
     case "status": {
-      const to = typeof ev.payload.to === "string" ? BUG_STATUS_META[ev.payload.to as BugStatus]?.label : null;
+      const to =
+        typeof ev.payload.to === "string"
+          ? BUG_STATUS_META[ev.payload.to as BugStatus]?.label
+          : null;
       const from =
-        typeof ev.payload.from === "string" ? BUG_STATUS_META[ev.payload.from as BugStatus]?.label : null;
-      const note = typeof ev.payload.resolution === "string" && ev.payload.resolution ? ` — "${ev.payload.resolution}"` : "";
+        typeof ev.payload.from === "string"
+          ? BUG_STATUS_META[ev.payload.from as BugStatus]?.label
+          : null;
+      const note =
+        typeof ev.payload.resolution === "string" && ev.payload.resolution
+          ? ` — "${ev.payload.resolution}"`
+          : "";
       return `changed status${from ? ` from ${from}` : ""}${to ? ` to ${to}` : ""}${note}.`;
     }
     case "comment":
-      return typeof ev.payload.body === "string" ? `commented: "${ev.payload.body}"` : "commented.";
+      return typeof ev.payload.body === "string"
+        ? `commented: "${ev.payload.body}"`
+        : "commented.";
     case "assign":
       return "changed the assignee.";
     default:
@@ -647,7 +781,8 @@ function describeEvent(ev: BugEvent): string {
 function stringifyValue(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "string") return value || "—";
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
   try {
     return JSON.stringify(value);
   } catch {
@@ -655,7 +790,15 @@ function stringifyValue(value: unknown): string {
   }
 }
 
-function Card({ title, icon, children }: { title: string; icon?: ReactNode; children: ReactNode }) {
+function Card({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <section className="rounded-[8px] border border-border/60 bg-card p-5 shadow-card">
       <div className="mb-3 flex items-center gap-2">
