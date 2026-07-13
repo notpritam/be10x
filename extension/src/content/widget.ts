@@ -200,9 +200,13 @@ const CSS = `
   .bubble:hover { transform: translateY(-1px); }
   .bubble.rec { background: #c0392b; animation: pulse 1.4s ease-in-out infinite; }
   .card {
-    width: 288px; background: #fff; border-radius: 12px; overflow: hidden;
+    width: 324px; background: #fff; border-radius: 12px; overflow: hidden;
     box-shadow: 0 10px 34px rgba(0,0,0,.26); border: 1px solid rgba(0,0,0,.08);
+    transition: width .16s ease;
   }
+  /* The report form needs more room to fill in comfortably — widen the card while it's open. */
+  .card.form-open { width: 420px; }
+  .card.form-open .body { max-height: min(76vh, 720px); overflow-y: auto; }
   .hd { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid rgba(0,0,0,.07); }
   .stat { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; font-weight: 600; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: #e0a800; flex: none; }
@@ -212,7 +216,7 @@ const CSS = `
   .icon { border: 0; background: transparent; cursor: pointer; color: inherit; opacity: .5; padding: 5px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; }
   .icon:hover { opacity: 1; background: rgba(0,0,0,.06); }
   .icon svg { width: 16px; height: 16px; }
-  .body { padding: 12px; display: grid; gap: 10px; }
+  .body { padding: 14px; display: grid; gap: 12px; }
   .row { display: flex; gap: 8px; align-items: center; }
   .btn { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(0,0,0,.12); background: #f5f5f7; color: #17171a; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
   .btn svg { width: 14px; height: 14px; }
@@ -221,11 +225,12 @@ const CSS = `
   .btn.primary { background: #2563eb; color: #fff; border-color: transparent; }
   .btn.primary:hover { background: #1d4ed8; }
   .btn.rec.on { background: #c0392b; color: #fff; border-color: transparent; }
-  .field { display: grid; gap: 4px; }
+  .field { display: grid; gap: 5px; }
   .field > span { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; opacity: .55; }
-  input, select, textarea { width: 100%; padding: 7px 9px; border: 1px solid #d3d3d8; border-radius: 8px; font: inherit; background: #fff; color: #17171a; }
-  input:focus, select:focus, textarea:focus { outline: none; border-color: #2563eb; }
-  textarea { resize: vertical; min-height: 54px; }
+  input, select, textarea { width: 100%; padding: 9px 11px; border: 1px solid #d3d3d8; border-radius: 8px; font: inherit; font-size: 13px; background: #fff; color: #17171a; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+  textarea { resize: vertical; min-height: 76px; line-height: 1.45; }
+  .f-desc { min-height: 96px; }
   .msg { font-size: 12px; min-height: 0; }
   .msg.err { color: #c0392b; }
   .msg.ok { color: #1a7f37; }
@@ -286,6 +291,18 @@ const CSS = `
   .pick-note::placeholder { color: rgba(255,255,255,.55); }
   .pick-note:focus { background: rgba(255,255,255,.22); }
   .pick-note:disabled { opacity: .4; }
+  /* Picked-elements list in the card — a note input per element (not just the last pick). */
+  .picks { display: grid; gap: 7px; }
+  .picks-head { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; opacity: .55; }
+  .picks-head svg { width: 13px; height: 13px; opacity: .8; }
+  .picks-list { display: grid; gap: 6px; }
+  .pick-item { border: 1px solid #e4e4e9; border-radius: 9px; padding: 8px; display: grid; gap: 6px; background: #fafafb; }
+  .pick-item-top { display: flex; align-items: center; gap: 6px; }
+  .pick-item-idx { flex: none; width: 16px; height: 16px; border-radius: 5px; background: #ececef; color: #555; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+  .pick-item code { flex: 1; min-width: 0; font: 11px/1.35 ui-monospace, Menlo, monospace; color: #17171a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pick-item .rm { flex: none; border: 0; background: transparent; cursor: pointer; opacity: .45; padding: 2px 5px; border-radius: 6px; color: inherit; font-size: 15px; line-height: 1; }
+  .pick-item .rm:hover { opacity: 1; background: rgba(0,0,0,.06); }
+  .pick-item input { padding: 7px 9px; font-size: 12.5px; border-radius: 7px; }
   /* Full-viewport freehand drawing surface — lives in the blocked Shadow DOM so rrweb never records it.
      Sits under the toolbar/card (max z) but over the page; only interactive while draw mode is on. */
   .draw-canvas { position: fixed; inset: 0; z-index: 2147483640; display: none; cursor: crosshair; touch-action: none; }
@@ -345,6 +362,9 @@ const CSS = `
     .drawer.open { border-color: rgba(255,255,255,.08); }
     .cred { border-color: rgba(255,255,255,.14); background: rgba(255,255,255,.02); }
     .kbd-hint kbd { background: rgba(255,255,255,.1); }
+    .pick-item { background: rgba(255,255,255,.03); border-color: #3a3a40; }
+    .pick-item code { color: #ececee; }
+    .pick-item-idx { background: #34343a; color: #bcbcc2; }
   }
 `;
 
@@ -461,7 +481,18 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     ),
   );
 
-  const body = h('div', { class: 'body' }, actions, markRow, form);
+  // Picked-elements list — a note input PER element (not just the last pick). Rebuilt from pickedElements only
+  // when the set changes (never on the 1s render tick), so a note the QA is typing is never clobbered.
+  const picksList = h('div', { class: 'picks-list' });
+  const picksHeadLabel = h('span', {}, 'Picked elements');
+  const picksPanel = h(
+    'div',
+    { class: 'picks hidden', role: 'group', 'aria-label': 'Picked elements' },
+    h('div', { class: 'picks-head' }, ICONS.crosshair(), picksHeadLabel),
+    picksList,
+  );
+
+  const body = h('div', { class: 'body' }, picksPanel, actions, markRow, form);
   // Keyboard-shortcut hint — the shortcuts only fire while the widget itself is focused (so they never clash
   // with the host page). Hidden while the report form is open (the letters would fight the text fields).
   const kbd = (k: string) => h('kbd', {}, k);
@@ -552,6 +583,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     bubble.classList.toggle('hidden', !collapsed || overlayMode);
     card.classList.toggle('hidden', collapsed);
     bubble.classList.toggle('rec', cb.isRecording());
+    card.classList.toggle('form-open', formOpen); // widen the card while filling the report form
     markRow.classList.toggle('hidden', !markOpen);
     form.classList.toggle('hidden', !formOpen);
     actions.classList.toggle('hidden', formOpen);
@@ -576,6 +608,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     }
     // Shortcut hint shows only in the default card view (not while filling the report form).
     kbdHint.classList.toggle('hidden', formOpen);
+    renderPicksList();
     drawBtn.classList.toggle('active', drawMode);
     drawBtn.setAttribute('aria-pressed', drawMode ? 'true' : 'false');
     drawBar.classList.toggle('on', drawMode);
@@ -601,6 +634,42 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     submitBtn.disabled = busy;
     submitBtn.textContent = busy ? 'Sending…' : 'Send report';
   }
+
+  // Rebuild the per-element picks list ONLY when the set of picked elements changes (add/remove) — never on
+  // the 1s render tick — so a note the QA is mid-typing is never wiped. Each row carries its own note input
+  // bound to that element object (by reference), so notes attach to EACH element, not just the last pick.
+  let lastPicksSig = ' ';
+  const renderPicksList = () => {
+    const has = pickedElements.length > 0;
+    picksPanel.classList.toggle('hidden', !has);
+    picksHeadLabel.textContent = has ? `Picked elements · ${pickedElements.length}` : 'Picked elements';
+    if (!has) {
+      picksList.replaceChildren();
+      lastPicksSig = '';
+      return;
+    }
+    const sig = pickedElements.map((p) => p.selector).join('');
+    if (sig === lastPicksSig) return; // membership unchanged — leave the inputs (and any in-progress typing) alone
+    lastPicksSig = sig;
+    const rows = pickedElements.map((el, i) => {
+      const code = h('code', { title: el.selector }, el.selector);
+      const rm = h('button', { class: 'rm', type: 'button', 'aria-label': 'Remove picked element', title: 'Remove' }, '×');
+      rm.addEventListener('click', () => {
+        const idx = pickedElements.indexOf(el);
+        if (idx >= 0) pickedElements.splice(idx, 1);
+        render();
+      });
+      const note = h('input', { type: 'text', 'aria-label': `Note for ${el.selector}`, placeholder: 'Add a note for this element…' });
+      note.value = el.note ?? '';
+      note.addEventListener('input', () => {
+        el.note = note.value.slice(0, 500);
+      });
+      note.addEventListener('keydown', (e) => e.stopPropagation()); // typing here must never trigger card shortcuts / Esc
+      const idx = h('span', { class: 'pick-item-idx' }, String(i + 1));
+      return h('div', { class: 'pick-item' }, h('div', { class: 'pick-item-top' }, idx, code, rm), note);
+    });
+    picksList.replaceChildren(...rows);
+  };
 
   // Live tick so the elapsed clock + rolling/explicit state stay current.
   const timer = window.setInterval(render, 1000);
