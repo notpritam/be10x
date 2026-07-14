@@ -13,6 +13,7 @@ import { createSession, getSession, deleteSession } from '../auth/sessions.js';
 import { createToken, listTokens, revokeToken, getTokenOwner, verifyToken } from '../auth/tokens.js';
 import { createDeviceCode, getByUserCode, approveDeviceCode, denyDeviceCode, pollDeviceToken } from '../auth/device.js';
 import { getTool } from '../mcp/tools.js';
+import { dispatchBugTool } from '../mcp/bug-tools.js';
 import { createTeam, deleteTeam } from '../teams/teams.js';
 import { listMembers, addMember, setRole, removeMember } from '../teams/memberships.js';
 import { assertCan, assertCanAccessTask, canAccessProject, assertCanAccessBug } from '../authz/authz.js';
@@ -834,6 +835,17 @@ const AGENT_ROUTES = [
     const tool = getTool(body.tool);
     if (!tool) throw new Error('UNKNOWN_TOOL');
     const result = tool.handler(db, auth, body.args ?? {});
+    send(res, 200, { result: result ?? null });
+  }],
+
+  // The bug-context gateway for a REMOTE agent (the be10x-bugs sibling of /api/agent/rpc): dispatch
+  // { tool, args } through the SHARED bug-tools registry (src/mcp/bug-tools.js) against the board db, so a
+  // member's `connect` agent gets the same be10x-bugs capture tools the local stdio server has. Unlike that
+  // single-tenant server, this enforces per-account bug access (dispatchBugTool → canAccessBug), so a token
+  // can't read another account's bug. Domain errors (UNKNOWN_TOOL, FORBIDDEN, NO_BUG, NO_ARTIFACT:*) map via
+  // statusFor. Handlers may be async, so the dispatch is awaited.
+  ['POST', '/api/agent/bug-rpc', async ({ db, res, body, auth }) => {
+    const result = await dispatchBugTool(db, auth, body.tool, body.args ?? {});
     send(res, 200, { result: result ?? null });
   }],
 
