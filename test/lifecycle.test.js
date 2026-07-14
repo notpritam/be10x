@@ -22,5 +22,6 @@ test('illegal transitions are rejected', () => {
 
 test('STATES lists every known state', () => {
   assert.equal(STATES.includes('needs_input'), true);
-  assert.equal(STATES.length, 11);
+  assert.equal(STATES.includes('archived'), true);
+  assert.equal(STATES.length, 12);
 });
