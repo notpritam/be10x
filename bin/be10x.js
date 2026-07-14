@@ -18,6 +18,7 @@ import { enqueueWake } from '../src/executor/wake.js';
 import { wakeLoop, wakeLoopAll } from '../src/runner/runner.js';
 import { makeRemoteExecutor } from '../src/connect/remote-executor.js';
 import { makeBoardClient, connectLoop, writeMcpConfig, loadConnectConfig, saveConnectConfig, connectConfigPath, runDeviceLogin, upsertRepo } from '../src/connect/connect.js';
+import { makeAutoUpdater } from '../src/connect/auto-update.js';
 import { buildLaunchdPlist, buildSystemdUnit, serviceEnvPath, servicePaths, isRemovablePath } from '../src/connect/service.js';
 import { assembleStatus, pickLastTask } from '../src/connect/status.js';
 import { renderWelcome } from '../src/cli/welcome.js';
@@ -448,6 +449,23 @@ async function cmdConnect(args) {
   // run_failed) and a `poll_error` line on a caught cycle error via its default logger — which writes to stdout,
   // and the LaunchAgent tees that to ~/.be10x/connect.log. So no ad-hoc onError console line here: the structured
   // `poll_error` line replaces the old bare `connect: fetch failed`, keeping the log single-line and greppable.
+  // Self-update: keep the always-on connector in sync with the board's advertised version (GET /api/version).
+  // Default on; disable with `--no-auto-update`, env BE10X_AUTO_UPDATE=0, or "autoUpdate": false in
+  // ~/.be10x/connect.json. Never in --once mode (a one-shot pass shouldn't reinstall + restart itself).
+  const autoUpdateEnabled =
+    !once && !args['no-auto-update'] && args['auto-update'] !== false && process.env.BE10X_AUTO_UPDATE !== '0' && saved.autoUpdate !== false;
+  const autoUpdater = autoUpdateEnabled
+    ? makeAutoUpdater({
+        board,
+        localVersion: readPkgVersion(),
+        runUpdate: async () => {
+          const { execFileSync } = await import('node:child_process');
+          execFileSync('npm', ['install', '-g', 'github:notpritam/be10x'], { stdio: 'inherit' });
+          process.exit(0); // KeepAlive (launchd/systemd) restarts us on the freshly-installed build
+        },
+      })
+    : undefined;
+
   const loop = connectLoop({
     board: client,
     repos,
@@ -455,6 +473,7 @@ async function cmdConnect(args) {
     workerId,
     intervalMs,
     once,
+    autoUpdater,
   });
 
   if (once) {

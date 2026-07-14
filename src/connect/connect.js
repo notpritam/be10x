@@ -135,7 +135,7 @@ export async function runConnectOnce({ board, repos, makeExecutor, workerId = 'c
 // Poll runConnectOnce on an interval. `once` runs a single pass then resolves. A failing cycle (a network
 // blip claiming/reporting, an executor throw) never kills the loop — it's caught and surfaced via onError.
 // Returns a stoppable handle { stop(), stopped, done } like the in-process runner's wakeLoop.
-export function connectLoop({ board, repos, makeExecutor, workerId = 'connect', intervalMs = 3000, once = false, onError, log = makeLogger() } = {}) {
+export function connectLoop({ board, repos, makeExecutor, workerId = 'connect', intervalMs = 3000, once = false, onError, autoUpdater, log = makeLogger() } = {}) {
   let stopped = false;
   let timer = null;
   let lastResult = null;
@@ -151,6 +151,13 @@ export function connectLoop({ board, repos, makeExecutor, workerId = 'connect', 
         // surface it as one structured line (preserving `fetch failed`) and via the onError hook.
         log.error('poll_error', { error: e?.message ?? String(e) });
         if (onError) onError(e);
+      }
+      if (autoUpdater && !once && !stopped) {
+        try {
+          await autoUpdater.maybeUpdate();
+        } catch {
+          /* auto-update must never kill the connect loop */
+        }
       }
       if (once || stopped) break;
       await new Promise((res) => {
