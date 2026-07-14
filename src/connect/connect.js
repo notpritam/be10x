@@ -7,6 +7,7 @@
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { makeLogger } from './log.js';
 
 // A thin client over the board's token-authed runner API (/api/agent/*). `fetchImpl` injected for tests.
 export function makeBoardClient({ board, token, fetchImpl = fetch }) {
@@ -87,16 +88,23 @@ export async function runDeviceLogin({
 // maps it to the matching local checkout (by project key), runs the injected executor there, and reports the
 // summary so the board applies durability. Returns { claim, summary } (or null when nothing is ready). A
 // claimed wake for a repo we somehow don't have is reported as a crash so the board never wedges on it.
-export async function runConnectOnce({ board, repos, makeExecutor, workerId = 'connect' }) {
+export async function runConnectOnce({ board, repos, makeExecutor, workerId = 'connect', log = makeLogger() }) {
   const projectKeys = repos.map((r) => r.key);
+  // Heartbeat: one line every poll proving the connector is alive and how many repos it serves.
+  log.info('poll', { repos: projectKeys.length });
   if (!projectKeys.length) return null;
   const claim = await board.claim(projectKeys, workerId);
-  if (!claim || !claim.wake) return null;
+  if (!claim || !claim.wake) {
+    log.info('idle', { wake: 'none' });
+    return null;
+  }
 
+  const taskId = claim.task?.humanId ?? claim.task?.id;
   const repo = repos.find((r) => r.key === claim.projectKey);
   const reportBase = { wakeId: claim.wake.id, runId: claim.runId, taskId: claim.task.id, commentIds: claim.commentIds || [], workerId };
 
   if (!repo) {
+    log.warn('no_repo', { task: taskId, project: claim.projectKey });
     await board.report({
       ...reportBase,
       summary: { ok: false, failureKind: 'crash', mode: claim.mode, error: 'connector has no local checkout for ' + claim.projectKey },
@@ -104,6 +112,7 @@ export async function runConnectOnce({ board, repos, makeExecutor, workerId = 'c
     return { claim, skipped: 'no-repo' };
   }
 
+  log.info('claimed', { task: taskId, run: claim.runId, mode: claim.mode });
   const execute = makeExecutor(repo);
   const summary = await execute(claim.task, {
     mode: claim.mode,
@@ -113,13 +122,18 @@ export async function runConnectOnce({ board, repos, makeExecutor, workerId = 'c
     resumeSessionId: claim.resumeSessionId,
   });
   await board.report({ ...reportBase, summary });
+  if (summary && summary.ok === false) {
+    log.error('run_failed', { task: taskId, error: summary.error ?? summary.failureKind ?? 'failed' });
+  } else {
+    log.info('reported', { task: taskId, ok: true });
+  }
   return { claim, summary };
 }
 
 // Poll runConnectOnce on an interval. `once` runs a single pass then resolves. A failing cycle (a network
 // blip claiming/reporting, an executor throw) never kills the loop — it's caught and surfaced via onError.
 // Returns a stoppable handle { stop(), stopped, done } like the in-process runner's wakeLoop.
-export function connectLoop({ board, repos, makeExecutor, workerId = 'connect', intervalMs = 3000, once = false, onError } = {}) {
+export function connectLoop({ board, repos, makeExecutor, workerId = 'connect', intervalMs = 3000, once = false, onError, log = makeLogger() } = {}) {
   let stopped = false;
   let timer = null;
   let lastResult = null;
@@ -128,9 +142,12 @@ export function connectLoop({ board, repos, makeExecutor, workerId = 'connect', 
     do {
       if (stopped) break;
       try {
-        lastResult = await runConnectOnce({ board, repos, makeExecutor, workerId });
+        lastResult = await runConnectOnce({ board, repos, makeExecutor, workerId, log });
       } catch (e) {
         lastResult = { error: e };
+        // A caught cycle error (network blip claiming/reporting, executor throw) never kills the loop —
+        // surface it as one structured line (preserving `fetch failed`) and via the onError hook.
+        log.error('poll_error', { error: e?.message ?? String(e) });
         if (onError) onError(e);
       }
       if (once || stopped) break;

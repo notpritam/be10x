@@ -17,8 +17,9 @@ import { wakeLoop, wakeLoopAll } from '../src/runner/runner.js';
 import { makeRemoteExecutor } from '../src/connect/remote-executor.js';
 import { makeBoardClient, connectLoop, writeMcpConfig, loadConnectConfig, saveConnectConfig, connectConfigPath, runDeviceLogin, upsertRepo } from '../src/connect/connect.js';
 import { buildLaunchdPlist, buildSystemdUnit, serviceEnvPath, servicePaths, isRemovablePath } from '../src/connect/service.js';
+import { assembleStatus, pickLastTask } from '../src/connect/status.js';
 import { renderWelcome } from '../src/cli/welcome.js';
-import { fg, dim, bold, sym, BRAND } from '../src/cli/ui.js';
+import { fg, dim, bold, sym, box, BRAND } from '../src/cli/ui.js';
 import {
   loadTelemetryConfig,
   setTelemetryEnabled,
@@ -427,6 +428,10 @@ async function cmdConnect(args) {
   console.log('be10x connect → ' + board + (once ? '  (single pass)' : '  (Ctrl-C to stop)'));
   for (const r of repos) console.log('  serving ' + r.key + '  [' + r.path + ']');
 
+  // connectLoop emits its own structured, timestamped heartbeat/lifecycle lines (poll/idle/claimed/reported/
+  // run_failed) and a `poll_error` line on a caught cycle error via its default logger — which writes to stdout,
+  // and the LaunchAgent tees that to ~/.be10x/connect.log. So no ad-hoc onError console line here: the structured
+  // `poll_error` line replaces the old bare `connect: fetch failed`, keeping the log single-line and greppable.
   const loop = connectLoop({
     board: client,
     repos,
@@ -434,7 +439,6 @@ async function cmdConnect(args) {
     workerId,
     intervalMs,
     once,
-    onError: (e) => console.error('connect: ' + (e?.message ?? e)),
   });
 
   if (once) {
@@ -549,6 +553,109 @@ async function cmdService(args) {
 
   console.error('be10x service supports macOS and Linux. On Windows, add `be10x connect` to Task Scheduler at logon.');
   process.exit(1);
+}
+
+// Read the background connect service's live state → { running, pid }. macOS parses `launchctl list` (a
+// numeric first column = the running pid; `-` = loaded but idle); Linux uses `systemctl --user is-active`
+// plus MainPID. Best-effort: any missing service manager (or non-macOS/Linux) reads as not running.
+async function readConnectService() {
+  const { label, unit } = servicePaths();
+  try {
+    const { execFileSync } = await import('node:child_process');
+    if (process.platform === 'darwin') {
+      const line = execFileSync('launchctl', ['list'], { encoding: 'utf8' }).split('\n').find((l) => l.includes(label));
+      if (!line) return { running: false, pid: null };
+      const pidTok = line.trim().split(/\s+/)[0];
+      const pid = /^\d+$/.test(pidTok) ? Number(pidTok) : null;
+      return { running: pid != null, pid };
+    }
+    if (process.platform === 'linux') {
+      let running = false;
+      try {
+        execFileSync('systemctl', ['--user', 'is-active', unit], { stdio: 'ignore' });
+        running = true;
+      } catch {
+        running = false;
+      }
+      let pid = null;
+      try {
+        const out = execFileSync('systemctl', ['--user', 'show', unit, '-p', 'MainPID', '--value'], { encoding: 'utf8' }).trim();
+        if (/^\d+$/.test(out) && out !== '0') pid = Number(out);
+      } catch {
+        /* no MainPID available */
+      }
+      return { running, pid };
+    }
+  } catch {
+    /* no service manager here */
+  }
+  return { running: false, pid: null };
+}
+
+// status — a legibility snapshot of `be10x connect`: whether you're signed in (and to which board), whether
+// the background service is running, whether the board is reachable RIGHT NOW (+ how many projects it serves
+// you), the last task this machine touched, and the tail of the structured log. The companion to the new
+// per-poll/per-task connect logging — answers "is my agent working?" without tailing a log by hand.
+async function cmdStatus() {
+  const cfg = loadConnectConfig() || {};
+  const base = cfg.board ? String(cfg.board).replace(/\/+$/, '') : null;
+
+  // Live board probe: GET /api/agent/projects with the saved token (same Bearer pattern as makeBoardClient),
+  // tightly timed out so an unreachable board reports an error instead of hanging the command.
+  const probe = async () => {
+    try {
+      const res = await fetch(base + '/api/agent/projects', {
+        headers: { Authorization: 'Bearer ' + cfg.token },
+        signal: AbortSignal.timeout(3000),
+      });
+      if (!res.ok) return { ok: false, error: 'HTTP ' + res.status };
+      const json = await res.json().catch(() => ({}));
+      return { ok: true, projectCount: Array.isArray(json.projects) ? json.projects.length : 0 };
+    } catch (e) {
+      return { ok: false, error: e?.message ?? String(e) };
+    }
+  };
+
+  const tailEvents = async () => {
+    const { logPath } = servicePaths();
+    if (!existsSync(logPath)) return [];
+    return readFileSync(logPath, 'utf8').split('\n').filter(Boolean).slice(-8);
+  };
+
+  const status = await assembleStatus({ config: cfg, probe, service: readConnectService, tailEvents });
+
+  // --- pretty-print: a compact box summary, then the raw recent-activity tail below it (unboxed, so a long
+  // log line doesn't blow out the box width).
+  const lines = [bold('be10x status'), ''];
+  if (!status.signedIn) {
+    lines.push(sym.bad + ' not signed in');
+    lines.push(dim('  sign in:  be10x login <board-url>'));
+  } else {
+    lines.push(sym.ok + ' signed in' + (cfg.user ? ' as ' + cfg.user : '') + dim('   ' + status.board));
+    if (status.connectivity.ok) {
+      const n = status.connectivity.projectCount;
+      lines.push(sym.ok + ' board reachable' + dim('   ' + n + ' project' + (n === 1 ? '' : 's')));
+    } else {
+      lines.push(sym.bad + ' board unreachable' + dim('   ' + status.connectivity.error));
+    }
+  }
+  if (status.service.running) {
+    lines.push(sym.ok + ' service running' + dim('   pid ' + status.service.pid));
+  } else {
+    lines.push(sym.bad + ' service not running' + dim('   start it:  be10x service install'));
+  }
+  const lastTask = pickLastTask(status.lastEvents);
+  if (lastTask) lines.push(fg(BRAND.slate, sym.bullet + ' last task ' + lastTask));
+  process.stdout.write(box(lines) + '\n');
+
+  if (status.lastEvents.length) {
+    console.log('');
+    console.log(dim('recent activity  ' + servicePaths().logPath));
+    for (const ev of status.lastEvents) console.log('  ' + dim(ev));
+  } else {
+    console.log('');
+    console.log(dim('no activity logged yet — run `be10x connect` (or `be10x service install`).'));
+  }
 }
 
 // update — self-update the globally-installed CLI to the latest, then restart the background service (if any)
@@ -820,6 +927,7 @@ const COMMANDS = {
   token: cmdToken,
   work: cmdWork,
   connect: cmdConnect,
+  status: cmdStatus,
   service: cmdService,
   update: cmdUpdate,
   list: cmdList,
@@ -839,6 +947,7 @@ function usage() {
   console.log('  token [--name X] [--email E]     mint a personal access token (shown once)');
   console.log('  work  [--interval S] [--once]    run the agent runner for this repo');
   console.log('  connect --board URL --token T    link THIS machine to a hosted board + run the agent locally');
+  console.log('  status                           service health, board connectivity, and recent connect activity');
   console.log('  service install|uninstall|status|logs   run `be10x connect` as a background service (auto-starts on boot)');
   console.log('  list                             list projects and this repo\'s tasks by status');
   console.log('  adopt --title T [--phase P] ...  move this session\'s work onto the board as a task');
