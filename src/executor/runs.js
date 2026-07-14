@@ -68,6 +68,19 @@ export function listRunsForTask(db, taskId) {
   return db.prepare('SELECT * FROM runs WHERE task_id = ? ORDER BY created_at, rowid').all(taskId).map(hydrate);
 }
 
+// The DISTINCT { path, branch } worktrees recorded across a task's runs — the real, on-disk checkouts to
+// reclaim when the task is archived. Driven by the paths persisted at run time (never re-derived from the
+// title, which drifts). Runs that never recorded a path (plan-only sessions) are skipped. Ordered by path
+// for stable output. This is what archiveTask hands back so a caller/connector can GC exactly these.
+export function listRunWorktrees(db, taskId) {
+  return db
+    .prepare(
+      'SELECT DISTINCT worktree_path AS path, branch FROM runs WHERE task_id = ? AND worktree_path IS NOT NULL ORDER BY worktree_path'
+    )
+    .all(taskId)
+    .map((r) => ({ path: r.path, branch: r.branch }));
+}
+
 // Persist Claude's session id the moment it is first scraped from the stream.
 export function setRunSession(db, id, sessionId) {
   db.prepare('UPDATE runs SET session_id = ? WHERE id = ?').run(sessionId, id);

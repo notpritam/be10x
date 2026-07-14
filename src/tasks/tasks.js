@@ -6,6 +6,7 @@ import { assertTransition } from './lifecycle.js';
 import { appendEvent } from './events.js';
 import { recordPlanVersion } from '../plans/versions.js';
 import { listProjectsForUser } from '../projects/projects.js';
+import { listRunWorktrees } from '../executor/runs.js';
 
 function hydrate(row) {
   return {
@@ -166,6 +167,24 @@ export function transition(db, id, to, actor, meta = {}) {
   db.prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?').run(to, Date.now(), id);
   appendEvent(db, id, actor, 'status', { from: task.status, to, ...meta });
   return getTask(db, id);
+}
+
+// Soft-archive a task from ANY stage: flip its status to 'archived' and append an 'archived' event. The row
+// is deliberately KEPT (never hard-deleted) so bug links and the full history survive; only the git
+// worktree/branch on disk get reclaimed, and that happens separately (gcTaskWorktrees, driven by the
+// returned `worktrees`) where those checkouts actually live. Returns { task, worktrees } — worktrees being
+// the DISTINCT real paths+branches recorded across the task's runs. Idempotent: re-archiving an
+// already-archived task is a no-op success (no second event) that still reports its worktrees so a retried
+// GC keeps its targets. Throws NO_TASK for an unknown id.
+export function archiveTask(db, id, actor) {
+  const task = getTask(db, id);
+  if (!task) throw new Error('NO_TASK');
+  const worktrees = listRunWorktrees(db, id);
+  if (task.status === 'archived') return { task, worktrees };
+  assertTransition(task.status, 'archived');
+  db.prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?').run('archived', Date.now(), id);
+  appendEvent(db, id, actor, 'archived', { from: task.status });
+  return { task: getTask(db, id), worktrees };
 }
 
 export function retryTask(db, id, actor) {
