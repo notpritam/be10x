@@ -428,6 +428,10 @@ async function cmdConnect(args) {
   console.log('be10x connect → ' + board + (once ? '  (single pass)' : '  (Ctrl-C to stop)'));
   for (const r of repos) console.log('  serving ' + r.key + '  [' + r.path + ']');
 
+  // connectLoop emits its own structured, timestamped heartbeat/lifecycle lines (poll/idle/claimed/reported/
+  // run_failed) and a `poll_error` line on a caught cycle error via its default logger — which writes to stdout,
+  // and the LaunchAgent tees that to ~/.be10x/connect.log. So no ad-hoc onError console line here: the structured
+  // `poll_error` line replaces the old bare `connect: fetch failed`, keeping the log single-line and greppable.
   const loop = connectLoop({
     board: client,
     repos,
@@ -435,7 +439,6 @@ async function cmdConnect(args) {
     workerId,
     intervalMs,
     once,
-    onError: (e) => console.error('connect: ' + (e?.message ?? e)),
   });
 
   if (once) {
