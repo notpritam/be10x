@@ -31,6 +31,7 @@ import { CurrentStep } from "./CurrentStep";
 import { AgentConfigControl } from "./AgentConfigControl";
 import { WorkSection } from "./WorkSection";
 import { InfoPanel } from "./InfoPanel";
+import { LinkedBugs } from "./LinkedBugs";
 import { AgentLiveStatus } from "./AgentLiveStatus";
 import { DebugPanelContent } from "./DebugControl";
 import { ShareDialog } from "@/components/share/ShareDialog";
@@ -377,7 +378,14 @@ export function DeepDivePanel({
                     <DebugPanelContent taskId={task.id} />
                   ) : (
                     <div className="min-h-0 flex-1 overflow-y-auto scroll-thin px-3 py-3">
-                      {rightPanel === "info" && <InfoPanel task={task} runs={detail.runs} events={detail.events} />}
+                      {rightPanel === "info" && (
+                        <>
+                          <InfoPanel task={task} runs={detail.runs} events={detail.events} />
+                          <div className="mt-3 border-t border-border/60 pt-1">
+                            <LinkedBugs taskId={task.id} />
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
                 </aside>

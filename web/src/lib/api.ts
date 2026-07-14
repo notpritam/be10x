@@ -260,6 +260,13 @@ export const api = {
   /** Consolidated raw state for the debug view — agent, runs, wake queue, events, server clock. */
   taskDebug: (id: string) => request<TaskDebug>(`/api/tasks/${id}/debug`),
 
+  // Task ↔ bug links — attach an extension-filed QA bug to a task (from the task side) so the working agent
+  // gets its capture, list the linked ones, or detach. Attach accepts a uuid or a human id (BUG-009).
+  taskBugs: (id: string) => request<{ bugs: Bug[] }>(`/api/tasks/${id}/bugs`),
+  attachBug: (id: string, bugId: string) => post<{ bug: Bug }>(`/api/tasks/${id}/bugs`, { bugId }),
+  detachBug: (id: string, bugId: string) =>
+    del<{ bug: Bug }>(`/api/tasks/${id}/bugs/${encodeURIComponent(bugId)}`),
+
   // Task actions
   transition: (id: string, to: Status) =>
     post<{ task: Task }>(`/api/tasks/${id}/transition`, { to }),
