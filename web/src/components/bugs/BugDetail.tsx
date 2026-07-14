@@ -48,6 +48,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   BUG_STATUS_META,
   BUG_STATUS_ORDER,
   BugSeverityPill,
@@ -116,6 +124,9 @@ export function BugDetail({
 
   const [shareOpen, setShareOpen] = useState(false);
   const [handingOff, setHandingOff] = useState(false);
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const [handoffTeam, setHandoffTeam] = useState<string>("none");
+  const [handoffProject, setHandoffProject] = useState<string>("none");
   const [collaborators, setCollaborators] = useState<UserLite[]>([]);
   const [savingAssignee, setSavingAssignee] = useState(false);
   // Stable per bug so the replay components' fetch effects don't re-run on every render.
@@ -205,17 +216,32 @@ export function BugDetail({
     }
   }
 
+  function openHandoff() {
+    if (!bug) return;
+    setHandoffTeam(bug.teamId ?? "none");
+    setHandoffProject(bug.projectId ?? "none");
+    setHandoffOpen(true);
+  }
+
   async function handoff() {
     if (!bug || handingOff) return;
     setHandingOff(true);
     try {
-      const res = await api.handoffBug(bug.id);
+      const teamId = handoffTeam === "none" ? null : handoffTeam;
+      const projectId = handoffProject === "none" ? null : handoffProject;
+      const res = await api.handoffBug(bug.id, { projectId, teamId });
       const humanId = res.task?.humanId;
+      const dest = teamId
+        ? teams.find((t) => t.id === teamId)?.name
+        : projectId
+          ? projects.find((p) => p.id === projectId)?.name
+          : null;
       toast.success(
         res.alreadyLinked
           ? "Already handed off — opening the existing task."
-          : `Filed ${humanId ?? "a task"} — an agent can pick it up.`,
+          : `Filed ${humanId ?? "a task"} in ${dest ? `${dest}’s` : "your"} backlog — edit it, then move it to Research.`,
       );
+      setHandoffOpen(false);
       await load();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -378,7 +404,7 @@ export function BugDetail({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => void handoff()}
+                      onClick={openHandoff}
                       disabled={handingOff}
                       className="text-[12.5px]"
                     >
@@ -688,6 +714,81 @@ export function BugDetail({
               </div>
             </div>
 
+<Dialog open={handoffOpen} onOpenChange={setHandoffOpen}>
+              <DialogContent className="sm:max-w-[440px]">
+                <DialogHeader>
+                  <DialogTitle>Send to an agent</DialogTitle>
+                  <DialogDescription>
+                    Files a code-issue task in the chosen project/team’s{" "}
+                    <b>backlog</b>. Edit it there, then move it to Research when
+                    you’re ready.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex flex-col gap-4 py-1">
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[11.5px] font-medium text-muted-foreground">
+                      Team
+                    </span>
+                    <Select value={handoffTeam} onValueChange={setHandoffTeam}>
+                      <SelectTrigger className="h-9 w-full text-[13px]">
+                        <SelectValue placeholder="No team" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No team</SelectItem>
+                        {teams.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>
+                            {t.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[11.5px] font-medium text-muted-foreground">
+                      Project
+                    </span>
+                    <Select
+                      value={handoffProject}
+                      onValueChange={setHandoffProject}
+                    >
+                      <SelectTrigger className="h-9 w-full text-[13px]">
+                        <SelectValue placeholder="No project" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No project</SelectItem>
+                        {projects.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setHandoffOpen(false)}
+                    disabled={handingOff}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => void handoff()}
+                    disabled={handingOff}
+                  >
+                    {handingOff ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Bot className="size-3.5" />
+                    )}
+                    Send to backlog
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
             <BugShareDialog
               bugId={bug.id}
               open={shareOpen}

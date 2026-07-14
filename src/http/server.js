@@ -733,7 +733,7 @@ const ROUTES = [
   // component/source, repro, test login) + seed its RCA artifact, and link the bug ⇄ task. Re-posting a bug
   // that's already linked returns the existing link (alreadyLinked) instead of spawning a duplicate task.
   ['POST', '/api/bugs/:id/handoff', true, async ({ db, res, params, body, user }) => {
-    send(res, 200, handoffBugToTask(db, { bugId: params.id, actorId: user.id, projectId: body?.projectId ?? null, teamId: body?.teamId ?? null }));
+    send(res, 200, handoffBugToTask(db, { bugId: params.id, actorId: user.id, projectId: body?.projectId, teamId: body?.teamId }));
   }],
   // Assign / unassign a bug to a teammate (assigneeId null clears it). 404 for an unknown assignee.
   ['POST', '/api/bugs/:id/assign', true, async ({ db, res, params, body, user }) => {

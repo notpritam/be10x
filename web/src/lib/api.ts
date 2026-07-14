@@ -354,8 +354,8 @@ export const api = {
     post<{ event: BugEvent }>(`/api/bugs/${id}/comment`, { body }),
   /** Hand a bug off to the agent board — creates a code-issue task composed from the capture and links the
    *  bug ⇄ task. Returns the created task (or the existing link when alreadyLinked). */
-  handoffBug: (id: string) =>
-    post<{ task: Task | null; bug: Bug; alreadyLinked?: boolean }>(`/api/bugs/${id}/handoff`),
+  handoffBug: (id: string, body?: { projectId?: string | null; teamId?: string | null }) =>
+    post<{ task: Task | null; bug: Bug; alreadyLinked?: boolean }>(`/api/bugs/${id}/handoff`, body),
   bugStats: () => request<{ stats: BugStats }>("/api/bugs/stats"),
   /** Short-lived signed UploadThing read URL for one captured artifact. 404 when that key is absent. */
   bugArtifactUrl: (id: string, kind: BugArtifactKind) =>

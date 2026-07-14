@@ -414,7 +414,7 @@ export const BUG_TOOLS = [
     },
     handler: (db, ctx, args) => {
       const bug = resolveBug(db, args.bug);
-      return handoffBugToTask(db, { bugId: bug.id, actorId: ctx.userId, projectId: args.projectId ?? null, teamId: args.teamId ?? null });
+      return handoffBugToTask(db, { bugId: bug.id, actorId: ctx.userId, projectId: args.projectId, teamId: args.teamId });
     },
   },
   {

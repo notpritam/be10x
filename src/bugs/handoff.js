@@ -51,7 +51,7 @@ function rcaHtml(bug, analysis, bugUrl) {
 
 // handoffBugToTask(db, { bugId, actorId, scope?, projectId?, teamId?, bugUrl? }) → { task, bug }.
 // Creates a code-issue task owned by actorId, seeds the RCA artifact, and links the bug ⇄ task both ways.
-export function handoffBugToTask(db, { bugId, actorId, scope = 'personal', projectId = null, teamId = null, bugUrl = null } = {}) {
+export function handoffBugToTask(db, { bugId, actorId, scope = 'personal', projectId, teamId, bugUrl = null } = {}) {
   if (!actorId) throw new Error('MISSING_FIELD:actorId');
   const bug = getBug(db, bugId);
   if (!bug) throw new Error('NOT_FOUND');
@@ -60,14 +60,19 @@ export function handoffBugToTask(db, { bugId, actorId, scope = 'personal', proje
     return { task: null, bug, alreadyLinked: true };
   }
   const analysis = analyzeBug(bug);
-  const resolvedScope = teamId ? 'team' : projectId ? 'project' : scope;
+  // Default the routing to the bug's OWN triage (team/project chosen at report time) so the handed-off task
+  // lands in that project/team's backlog instead of the general list. An explicit caller value still wins;
+  // an explicit null/'' means "no project/team" (personal); undefined (not provided) ⇒ inherit the bug's.
+  const resolvedProjectId = projectId === undefined ? (bug.projectId ?? null) : (projectId || null);
+  const resolvedTeamId = teamId === undefined ? (bug.teamId ?? null) : (teamId || null);
+  const resolvedScope = resolvedTeamId ? 'team' : resolvedProjectId ? 'project' : scope;
   const task = createTask(db, {
     type: 'code-issue',
     scope: resolvedScope,
     title: '[bug] ' + bug.title,
     ownerId: actorId,
-    teamId,
-    projectId,
+    teamId: resolvedTeamId,
+    projectId: resolvedProjectId,
     severity: TASK_SEVERITY[bug.severity] || 'medium',
     content: {
       symptom: composeSymptom(bug, analysis, bugUrl),
