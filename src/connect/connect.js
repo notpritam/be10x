@@ -26,6 +26,8 @@ export function makeBoardClient({ board, token, fetchImpl = fetch }) {
     registerProject: (key, name) => post('/api/agent/projects', { key, name }),
     claim: (projectKeys, workerId) => post('/api/agent/claim', { projectKeys, workerId }),
     report: (payload) => post('/api/agent/report', payload),
+    // Soft-archive a task on the hosted board (accepts a uuid or GFA-123). Returns { task, worktrees }.
+    archive: (taskId) => post('/api/agent/tasks/' + encodeURIComponent(taskId) + '/archive', {}),
   };
 }
 

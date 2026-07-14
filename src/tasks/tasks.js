@@ -59,6 +59,24 @@ export function getTask(db, id) {
   return row ? hydrate(row) : null;
 }
 
+// Resolve a user-facing task reference to its internal uuid: accept the uuid itself, or the GFA-123 human id
+// people actually see and type (case-insensitively, and zero-padded so `gfa-1` matches `GFA-001`). Returns
+// the uuid or null. Lets the CLI (`be10x archive GFA-1`) and the connector-facing agent archive route take a
+// friendly id without every caller re-implementing the lookup. Read-only.
+export function resolveTaskId(db, ref) {
+  const s = String(ref ?? '').trim();
+  if (!s) return null;
+  if (db.prepare('SELECT 1 FROM tasks WHERE id = ?').get(s)) return s;
+  const up = s.toUpperCase();
+  const m = /^GFA-(\d+)$/.exec(up);
+  const candidates = m ? [up, 'GFA-' + m[1].padStart(3, '0')] : [up];
+  for (const c of candidates) {
+    const row = db.prepare('SELECT id FROM tasks WHERE human_id = ?').get(c);
+    if (row) return row.id;
+  }
+  return null;
+}
+
 export function listTasks(db, { scope, teamId, status, ownerId } = {}) {
   const where = [];
   const args = [];
