@@ -196,6 +196,21 @@ export function linkBugToTask(db, id, taskId, actor) {
   return getBug(db, id);
 }
 
+// A compact, capture-free view of a bug for surfacing on a task — the shape gfa_get_task, gfa_task_bugs and
+// the staged claim payload carry so the agent (and the board) see WHICH bugs a task must fix without the
+// multi-KB meta blob. errorCount rides in meta; everything else is a top-level column.
+export function linkedBugSummary(bug) {
+  return {
+    id: bug.id,
+    humanId: bug.humanId,
+    title: bug.title,
+    status: bug.status,
+    severity: bug.severity,
+    pageUrl: bug.pageUrl,
+    errorCount: bug.meta?.errorCount ?? 0,
+  };
+}
+
 // List every bug currently linked to an agent-board task (bugs.task_id = ?), newest first. The mirror of
 // linkBugToTask, from the TASK side — the working agent and the task view read this to see what capture(s)
 // the task is meant to fix. Same rowid-tiebreak newest-first order as listBugs.

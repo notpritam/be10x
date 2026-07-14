@@ -21,7 +21,8 @@ import { claimNextReadyTask, recordProgress } from '../worker/worker.js';
 import { listProjectsForUser } from '../projects/projects.js';
 import { enqueueWake } from '../executor/wake.js';
 import { STATES } from '../tasks/lifecycle.js';
-import { assertCan, assertCanAccessTask } from '../authz/authz.js';
+import { assertCan, assertCanAccessTask, assertCanAccessBug } from '../authz/authz.js';
+import { getBug, getBugByHumanId, linkBugToTask, listBugsForTask, linkedBugSummary } from '../bugs/bugs.js';
 
 const SCOPES = ['personal', 'project', 'team'];
 const TYPES = ['code-issue', 'general'];
@@ -50,6 +51,20 @@ function requireTaskAccess(db, ctx, taskId, action = 'task.read') {
   return task;
 }
 
+// Resolve a bug reference (a uuid or a human id like BUG-009) and verify the caller may see it, then return
+// the hydrated bug. Used by gfa_create_task (bugIds) and gfa_attach_bug so an agent/script can attach a bug
+// by either id without reaching a bug it has no access to. Throws NO_BUG / FORBIDDEN.
+function requireBugAccess(db, ctx, ref) {
+  const s = ref == null ? '' : String(ref).trim();
+  const bug = /^BUG-\d+$/i.test(s) ? getBugByHumanId(db, s) : getBug(db, s);
+  if (!bug) throw new Error('NO_BUG');
+  assertCanAccessBug(db, ctx.userId, bug);
+  return bug;
+}
+
+// The compact bug list a task carries for the agent (id, humanId, title, severity, errorCount, …).
+const linkedBugsFor = (db, taskId) => listBugsForTask(db, taskId).map(linkedBugSummary);
+
 // The registry. Every entry: { name, description, inputSchema (JSON Schema), handler(db, ctx, args) }.
 // Handlers call core and return the JSON-serializable result — core errors are allowed to throw.
 export const TOOLS = [
@@ -70,7 +85,7 @@ export const TOOLS = [
   },
   {
     name: 'gfa_get_task',
-    description: 'Fetch a single task (with content, plan, research, refs, agent progress) by id.',
+    description: 'Fetch a single task (with content, plan, research, refs, agent progress) by id. Includes linkedBugs: any extension-filed QA bugs attached to this task — inspect each with the be10x-bugs MCP tools (bug_get / bug_console / bug_network / bug_picked_elements).',
     inputSchema: {
       type: 'object',
       properties: { ...ID_OR_TASKID },
@@ -78,8 +93,9 @@ export const TOOLS = [
     },
     handler: (db, ctx, args) => {
       const task = getTask(db, taskIdOf(args));
-      if (task) assertCanAccessTask(db, ctx.userId, task);
-      return task;
+      if (!task) return null;
+      assertCanAccessTask(db, ctx.userId, task);
+      return { ...task, linkedBugs: linkedBugsFor(db, task.id) };
     },
   },
   {
@@ -95,13 +111,16 @@ export const TOOLS = [
         content: freeObject('Type-specific fields (e.g. { symptom } or { summary }).'),
         teamId: { type: 'string', description: 'Team id (used when scope="team").' },
         severity: { type: 'string', description: 'Priority: low | medium | high | critical (default medium).' },
+        bugIds: { type: 'array', items: { type: 'string' }, description: 'Optional: attach existing filed QA bug(s) by id or human id (BUG-009) — the agent then gets each bug\'s full capture via the be10x-bugs MCP.' },
       },
       required: ['type', 'scope', 'title'],
       additionalProperties: false,
     },
     handler: (db, ctx, args) => {
       if (args.teamId) assertCan(db, ctx.userId, 'task.create', { teamId: args.teamId });
-      return createTask(db, {
+      // Resolve + authorize every bug BEFORE creating, so a bad/forbidden id never leaves an orphaned task.
+      const bugsToLink = (Array.isArray(args.bugIds) ? args.bugIds : []).map((ref) => requireBugAccess(db, ctx, ref));
+      const task = createTask(db, {
         type: args.type,
         scope: args.scope,
         title: args.title,
@@ -110,6 +129,8 @@ export const TOOLS = [
         teamId: args.teamId ?? null,
         severity: args.severity ?? 'medium',
       });
+      for (const bug of bugsToLink) linkBugToTask(db, bug.id, task.id, ctx.userId);
+      return task;
     },
   },
   {
@@ -423,6 +444,40 @@ export const TOOLS = [
     handler: (db, ctx, args) => {
       requireTaskAccess(db, ctx, taskIdOf(args), 'task.update');
       return setRefs(db, taskIdOf(args), args.refs, ctx.userId);
+    },
+  },
+  {
+    name: 'gfa_attach_bug',
+    description:
+      'Attach an existing extension-filed QA bug to a task so the working agent gets its full capture (rrweb replay, console, network, DOM, picked elements) via the be10x-bugs MCP. Accepts a bug uuid or a human id (BUG-009). Returns the attached bug plus the task\'s current linkedBugs.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', description: 'Task id.' },
+        bugId: { type: 'string', description: 'Bug to attach — a uuid or a human id (BUG-009).' },
+      },
+      required: ['taskId', 'bugId'],
+      additionalProperties: false,
+    },
+    handler: (db, ctx, args) => {
+      requireTaskAccess(db, ctx, args.taskId, 'task.update');
+      const bug = requireBugAccess(db, ctx, args.bugId);
+      linkBugToTask(db, bug.id, args.taskId, ctx.userId);
+      return { bug: linkedBugSummary(bug), linkedBugs: linkedBugsFor(db, args.taskId) };
+    },
+  },
+  {
+    name: 'gfa_task_bugs',
+    description: 'List the QA bugs attached to a task (compact: id, human id, title, severity, error count, page). Inspect any of them with the be10x-bugs MCP tools.',
+    inputSchema: {
+      type: 'object',
+      properties: { taskId: { type: 'string', description: 'Task id.' } },
+      required: ['taskId'],
+      additionalProperties: false,
+    },
+    handler: (db, ctx, args) => {
+      requireTaskAccess(db, ctx, args.taskId, 'task.read');
+      return { linkedBugs: linkedBugsFor(db, args.taskId) };
     },
   },
 ];
