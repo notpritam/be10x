@@ -47,6 +47,7 @@ export type WidgetCallbacks = {
   onStop: () => void;
   onMark: (label?: string) => void;
   onReport: (form: ReportForm) => Promise<{ ok: boolean; message: string }>;
+  onDiscard?: () => void; // drop the current take (recorder.reset) when the reporter discards after stopping
   loadTaxonomy?: () => Promise<{ teams: Taxon[]; projects: Taxon[] }>; // teams/projects for the pickers
   captureHealth?: () => Promise<CaptureHealth>; // what will be captured — surfaced in the report form
 };
@@ -200,23 +201,23 @@ const CSS = `
   .bubble:hover { transform: translateY(-1px); }
   .bubble.rec { background: #c0392b; animation: pulse 1.4s ease-in-out infinite; }
   .card {
-    width: 324px; background: #fff; border-radius: 12px; overflow: hidden;
+    width: 384px; max-height: min(86vh, 780px); background: #fff; border-radius: 12px; overflow: hidden;
     box-shadow: 0 10px 34px rgba(0,0,0,.26); border: 1px solid rgba(0,0,0,.08);
-    transition: width .16s ease;
+    display: flex; flex-direction: column; transition: width .16s ease;
   }
   /* The report form needs more room to fill in comfortably — widen the card while it's open. */
-  .card.form-open { width: 420px; }
-  .card.form-open .body { max-height: min(76vh, 720px); overflow-y: auto; }
-  .hd { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid rgba(0,0,0,.07); }
+  .card.form-open { width: 464px; }
+  .hd { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid rgba(0,0,0,.07); flex: none; }
   .stat { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; font-weight: 600; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: #e0a800; flex: none; }
   .dot.on { background: #c0392b; animation: pulse 1.4s ease-in-out infinite; }
+  .dot.ready { background: #1a7f37; animation: none; }
   .stat-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sub { font-weight: 400; font-variant-numeric: tabular-nums; opacity: .6; }
   .icon { border: 0; background: transparent; cursor: pointer; color: inherit; opacity: .5; padding: 5px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; }
   .icon:hover { opacity: 1; background: rgba(0,0,0,.06); }
   .icon svg { width: 16px; height: 16px; }
-  .body { padding: 14px; display: grid; gap: 12px; }
+  .body { padding: 14px; display: grid; gap: 12px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
   .row { display: flex; gap: 8px; align-items: center; }
   .btn { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(0,0,0,.12); background: #f5f5f7; color: #17171a; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
   .btn svg { width: 14px; height: 14px; }
@@ -235,6 +236,13 @@ const CSS = `
   .msg.err { color: #c0392b; }
   .msg.ok { color: #1a7f37; }
   .hidden { display: none !important; }
+  /* Post-stop review panel — the "you captured it, now report or discard" step. */
+  .review { display: grid; gap: 10px; }
+  .review-head { display: flex; align-items: center; gap: 7px; font-weight: 600; }
+  .review-head svg { width: 16px; height: 16px; color: #1a7f37; }
+  .review-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; opacity: .78; }
+  .review-summary .r-sep { opacity: .3; }
+  .review-summary .r-err { color: #c0392b; font-weight: 600; }
   .icon.notes-toggle { position: relative; }
   .icon.notes-toggle.has-notes { opacity: 1; color: #2563eb; }
   .icon.notes-toggle.has-notes::after {
@@ -295,7 +303,7 @@ const CSS = `
   .picks { display: grid; gap: 7px; }
   .picks-head { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; opacity: .55; }
   .picks-head svg { width: 13px; height: 13px; opacity: .8; }
-  .picks-list { display: grid; gap: 6px; }
+  .picks-list { display: grid; gap: 6px; max-height: 200px; overflow-y: auto; }
   .pick-item { border: 1px solid #e4e4e9; border-radius: 9px; padding: 8px; display: grid; gap: 6px; background: #fafafb; }
   .pick-item-top { display: flex; align-items: center; gap: 6px; }
   .pick-item-idx { flex: none; width: 16px; height: 16px; border-radius: 5px; background: #ececef; color: #555; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
@@ -341,7 +349,7 @@ const CSS = `
   .health .h-rec { color: #c0392b; font-weight: 600; font-variant-numeric: tabular-nums; }
   .health .h-err { color: #c0392b; font-weight: 600; }
   .health .h-sep { opacity: .3; }
-  .kbd-hint { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 10.5px; opacity: .5; padding: 8px 12px 10px; }
+  .kbd-hint { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 10.5px; opacity: .5; padding: 8px 12px 10px; flex: none; }
   .kbd-hint span { display: inline-flex; align-items: center; gap: 4px; }
   .kbd-hint kbd { font: 10px/1 ui-monospace, Menlo, monospace; background: rgba(0,0,0,.07); border-radius: 3px; padding: 2px 4px; }
   .pick-sel { display: none; align-items: center; gap: 6px; max-width: 240px; margin-left: 2px; }
@@ -403,6 +411,18 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   const reportBtn = h('button', { class: 'btn primary', type: 'button' }, 'Report');
   const actions = h('div', { class: 'row' }, recBtn, markBtn, reportBtn);
 
+  // Post-stop review panel: after an explicit take is stopped, surface a clear "report or discard" step.
+  const reviewSummary = h('div', { class: 'review-summary' });
+  const reviewReportBtn = h('button', { class: 'btn primary', type: 'button' }, ICONS.bug(), h('span', {}, 'Report bug'));
+  const reviewDiscardBtn = h('button', { class: 'btn', type: 'button' }, ICONS.trash(), h('span', {}, 'Discard'));
+  const reviewPanel = h(
+    'div',
+    { class: 'review hidden', role: 'group', 'aria-label': 'Recording captured' },
+    h('div', { class: 'review-head' }, ICONS.record(), h('span', {}, 'Recording captured')),
+    reviewSummary,
+    h('div', { class: 'row' }, reviewDiscardBtn, reviewReportBtn),
+  );
+
   // Optional mark-label row
   const markInput = h('input', { class: 'mark-input', type: 'text', 'aria-label': 'Marker label', placeholder: 'This is the bug' });
   const markConfirm = h('button', { class: 'btn primary', type: 'button', 'aria-label': 'Place marker' }, ICONS.flag());
@@ -461,7 +481,6 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     h('label', { class: 'field' }, h('span', {}, 'Description'), fDesc),
     credBlock,
     h('div', { class: 'row' }, cancelBtn, submitBtn),
-    msg,
   );
 
   // QA notes drawer — filled WHILE investigating, persists across the session, rides in meta.notes.
@@ -492,7 +511,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     picksList,
   );
 
-  const body = h('div', { class: 'body' }, picksPanel, actions, markRow, form);
+  const body = h('div', { class: 'body' }, picksPanel, actions, reviewPanel, markRow, form, msg);
   // Keyboard-shortcut hint — the shortcuts only fire while the widget itself is focused (so they never clash
   // with the host page). Hidden while the report form is open (the letters would fight the text fields).
   const kbd = (k: string) => h('kbd', {}, k);
@@ -569,6 +588,9 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   let drawColor = DRAW_COLORS[0];
   let collapsedBeforeDraw = false;
   let healthToken = 0; // guards the async capture-health fetch against a stale render
+  let reviewOpen = false; // an explicit take was just stopped — awaiting report/discard
+  let reviewHealth: CaptureHealth | null = null; // capture snapshot shown in the review panel
+  let reportFromReview = false; // remembers whether the report form was opened from the review step
 
   const hasNotes = () => !!(nText.value.trim() || nExpected.value.trim() || nActual.value.trim());
 
@@ -586,7 +608,8 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     card.classList.toggle('form-open', formOpen); // widen the card while filling the report form
     markRow.classList.toggle('hidden', !markOpen);
     form.classList.toggle('hidden', !formOpen);
-    actions.classList.toggle('hidden', formOpen);
+    actions.classList.toggle('hidden', formOpen || reviewOpen);
+    reviewPanel.classList.toggle('hidden', !reviewOpen || formOpen);
     notesPanel.classList.toggle('open', notesOpen);
     notesPanel.setAttribute('aria-hidden', notesOpen ? 'false' : 'true');
     notesBtn.setAttribute('aria-expanded', notesOpen ? 'true' : 'false');
@@ -607,7 +630,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
       pickSelCode.setAttribute('title', lastPick?.selector ?? '');
     }
     // Shortcut hint shows only in the default card view (not while filling the report form).
-    kbdHint.classList.toggle('hidden', formOpen);
+    kbdHint.classList.toggle('hidden', formOpen || reviewOpen);
     renderPicksList();
     drawBtn.classList.toggle('active', drawMode);
     drawBtn.setAttribute('aria-pressed', drawMode ? 'true' : 'false');
@@ -621,11 +644,15 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     recIconWrap.replaceChildren(recording ? ICONS.stop() : ICONS.record());
     recBtn.classList.toggle('on', recording);
     dot.classList.toggle('on', recording);
+    dot.classList.toggle('ready', !recording && reviewOpen);
 
     if (recording) {
       statText.textContent = 'Recording';
       const startedAt = cb.explicitStartedAt();
       sub.textContent = startedAt ? fmtElapsed(Date.now() - startedAt) : '';
+    } else if (reviewOpen) {
+      statText.textContent = 'Captured';
+      sub.textContent = reviewHealth ? fmtElapsed(reviewHealth.durationMs) : 'ready to report';
     } else {
       statText.textContent = 'Buffering';
       sub.textContent = 'last 2 min';
@@ -641,7 +668,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   let lastPicksSig = ' ';
   const renderPicksList = () => {
     const has = pickedElements.length > 0;
-    picksPanel.classList.toggle('hidden', !has);
+    picksPanel.classList.toggle('hidden', !has || formOpen || reviewOpen);
     picksHeadLabel.textContent = has ? `Picked elements · ${pickedElements.length}` : 'Picked elements';
     if (!has) {
       picksList.replaceChildren();
@@ -685,6 +712,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     markOpen = false;
     formOpen = false;
     notesOpen = false;
+    reviewOpen = false;
     render();
   });
 
@@ -1063,8 +1091,15 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   };
 
   recBtn.addEventListener('click', () => {
-    if (cb.isRecording()) cb.onStop();
-    else cb.onStart();
+    if (cb.isRecording()) {
+      cb.onStop();
+      reviewOpen = true; // stopping opens the report-or-discard review step
+      reportFromReview = false;
+      snapshotReviewHealth();
+    } else {
+      cb.onStart();
+      reviewOpen = false;
+    }
     render();
   });
 
@@ -1145,8 +1180,44 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     );
   };
 
-  reportBtn.addEventListener('click', () => {
+  // --- review (post-stop) helpers ---
+  const renderReviewSummary = () => {
+    const chip = (text: string, cls?: string) => h('span', { class: 'r-chip' + (cls ? ' ' + cls : '') }, text);
+    const sep = () => h('span', { class: 'r-sep', 'aria-hidden': 'true' }, '·');
+    if (!reviewHealth) {
+      reviewSummary.replaceChildren(h('span', {}, 'Everything you just did is captured. Report it, or discard.'));
+      return;
+    }
+    const hd = reviewHealth;
+    const nodes: Node[] = [chip(fmtElapsed(hd.durationMs) + ' recorded')];
+    nodes.push(sep(), chip(`${hd.network} network`), sep(), chip(`${hd.console} console`));
+    if (hd.errors > 0) nodes.push(sep(), chip(`${hd.errors} error${hd.errors === 1 ? '' : 's'}`, 'r-err'));
+    if (pickedElements.length) nodes.push(sep(), chip(`${pickedElements.length} picked`));
+    if (drawStrokes.length) nodes.push(sep(), chip(`${drawStrokes.length} drawing${drawStrokes.length === 1 ? '' : 's'}`));
+    reviewSummary.replaceChildren(...nodes);
+  };
+  const snapshotReviewHealth = () => {
+    reviewHealth = null;
+    renderReviewSummary();
+    if (!cb.captureHealth) return;
+    const token = ++healthToken;
+    cb.captureHealth().then(
+      (hd) => {
+        if (token === healthToken && reviewOpen) {
+          reviewHealth = hd;
+          renderReviewSummary();
+          render();
+        }
+      },
+      () => {
+        /* leave the placeholder summary in place */
+      },
+    );
+  };
+  const openReportForm = (fromReview: boolean) => {
+    reportFromReview = fromReview;
     formOpen = true;
+    reviewOpen = false;
     markOpen = false;
     notesOpen = false;
     loadTaxonomyOnce();
@@ -1154,9 +1225,28 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     setMsg('');
     render();
     fTitle.focus();
-  });
+  };
+  const discardCapture = () => {
+    cb.onDiscard?.(); // drop the take in the recorder buffer
+    reviewOpen = false;
+    reportFromReview = false;
+    pickedElements = [];
+    drawStrokes = [];
+    curStroke = null;
+    redrawDraw();
+    nText.value = '';
+    nExpected.value = '';
+    nActual.value = '';
+    setMsg('');
+    render();
+  };
+  reviewReportBtn.addEventListener('click', () => openReportForm(true));
+  reviewDiscardBtn.addEventListener('click', discardCapture);
+
+  reportBtn.addEventListener('click', () => openReportForm(false));
   cancelBtn.addEventListener('click', () => {
     formOpen = false;
+    reviewOpen = reportFromReview; // return to the review step if we came from it, else back to idle
     setMsg('');
     render();
   });
@@ -1216,7 +1306,10 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
   // itself is focused — page keystrokes never reach here, so the shortcuts can't clash with the host page.
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
-      if (formOpen) formOpen = false;
+      if (formOpen) {
+        formOpen = false;
+        reviewOpen = reportFromReview; // Esc out of the form falls back to the review step if we came from it
+      } else if (reviewOpen) reviewOpen = false;
       else if (markOpen) markOpen = false;
       else if (notesOpen) notesOpen = false;
       else if (!collapsed) collapsed = true;
@@ -1236,9 +1329,7 @@ export function mountWidget(cb: WidgetCallbacks): { destroy: () => void } {
     switch (e.key.toLowerCase()) {
       case 'r':
         take();
-        if (cb.isRecording()) cb.onStop();
-        else cb.onStart();
-        render();
+        recBtn.click();
         break;
       case 'm':
         take();

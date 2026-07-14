@@ -285,6 +285,7 @@ function boot(): void {
     onStop: () => recorder.stop(),
     onMark: (label) => recorder.mark(label),
     onReport: report,
+    onDiscard: () => recorder.reset(),
     loadTaxonomy,
     captureHealth: computeCaptureHealth,
   });
