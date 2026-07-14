@@ -18,7 +18,7 @@ import { listMembers, addMember, setRole, removeMember } from '../teams/membersh
 import { assertCan, assertCanAccessTask, canAccessProject, assertCanAccessBug } from '../authz/authz.js';
 import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
-import { createBug, getBug as getBugById, getBugByHumanId, listBugs, updateBugStatus, setBugAssignee, setBugLlmAnalysis, setBugGithubIssue, addBugComment, listBugEvents, bugStatsForUser, linkBugToTask, listBugsForTask, unlinkBugFromTask } from '../bugs/bugs.js';
+import { createBug, getBug as getBugById, getBugByHumanId, listBugs, updateBugStatus, setBugAssignee, setBugLlmAnalysis, setBugGithubIssue, addBugComment, listBugEvents, bugStatsForUser, linkBugToTask, listBugsForTask, unlinkBugFromTask, linkedBugSummary } from '../bugs/bugs.js';
 import { handoffBugToTask } from '../bugs/handoff.js';
 import { analyzeBug } from '../bugs/analyze.js';
 import { llmAnalyzeBug } from '../bugs/llm-analyze.js';
@@ -909,7 +909,9 @@ const AGENT_ROUTES = [
       wake: { id: wake.id, reason: wake.reason, context: wake.context },
       runId: run.id,
       projectKey: project ? project.key : null, // so the connector maps the task to its local checkout
-      task: staged, // full task: content + plan travel so the connector builds the prompt without another call
+      // Full task: content + plan + linkedBugs travel so the connector builds the prompt (incl. the linked-bug
+      // block) without another call — the remote executor has no board db to look them up.
+      task: { ...staged, linkedBugs: listBugsForTask(db, staged.id).map(linkedBugSummary) },
       mode,
       resume: wake.context?.retry ? true : undefined,
       resumeSessionId,
