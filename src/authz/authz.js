@@ -2,6 +2,7 @@
 // ABOUTME: can() compares the actor's team-role rank against the action's required minimum rank.
 import { getMembership } from '../teams/memberships.js';
 import { getProject } from '../projects/projects.js';
+import { getTask } from '../tasks/tasks.js';
 
 const RANK = { viewer: 0, member: 1, admin: 2, owner: 3 };
 
@@ -65,4 +66,27 @@ export function canAccessTask(db, userId, task, action = 'task.read') {
 
 export function assertCanAccessTask(db, userId, task, action = 'task.read') {
   if (!canAccessTask(db, userId, task, action)) throw new Error('FORBIDDEN');
+}
+
+// Per-account visibility of a filed QA bug — the bug analogue of canAccessTask. The LOCAL stdio bug MCP
+// (src/mcp/bug-server.js) and the human dashboard bug routes treat bugs as board-wide (a valid session/token
+// reads any bug — bugs are a shared triage surface on a single-tenant board). This gate is for the paths
+// that cross accounts — attaching a bug to a task, and the REMOTE agent's bug-rpc — where a token must NOT
+// reach an unrelated account's bug: reachable if you reported it, are assigned it, it's linked to a task you
+// can access, or it's scoped to a team/project you can access. `bug` is the hydrated shape from bugs.js.
+export function canAccessBug(db, userId, bug) {
+  if (!bug) return false;
+  if (bug.reporterId === userId) return true;
+  if (bug.assigneeId === userId) return true;
+  if (bug.taskId) {
+    const task = getTask(db, bug.taskId);
+    if (task && canAccessTask(db, userId, task)) return true;
+  }
+  if (bug.teamId && can(db, userId, 'task.read', { teamId: bug.teamId })) return true;
+  if (bug.projectId) return canAccessProject(db, userId, getProject(db, bug.projectId));
+  return false;
+}
+
+export function assertCanAccessBug(db, userId, bug) {
+  if (!canAccessBug(db, userId, bug)) throw new Error('FORBIDDEN');
 }

@@ -196,6 +196,43 @@ export function linkBugToTask(db, id, taskId, actor) {
   return getBug(db, id);
 }
 
+// A compact, capture-free view of a bug for surfacing on a task — the shape gfa_get_task, gfa_task_bugs and
+// the staged claim payload carry so the agent (and the board) see WHICH bugs a task must fix without the
+// multi-KB meta blob. errorCount rides in meta; everything else is a top-level column.
+export function linkedBugSummary(bug) {
+  return {
+    id: bug.id,
+    humanId: bug.humanId,
+    title: bug.title,
+    status: bug.status,
+    severity: bug.severity,
+    pageUrl: bug.pageUrl,
+    errorCount: bug.meta?.errorCount ?? 0,
+  };
+}
+
+// List every bug currently linked to an agent-board task (bugs.task_id = ?), newest first. The mirror of
+// linkBugToTask, from the TASK side — the working agent and the task view read this to see what capture(s)
+// the task is meant to fix. Same rowid-tiebreak newest-first order as listBugs.
+export function listBugsForTask(db, taskId) {
+  if (!taskId) return [];
+  return db
+    .prepare('SELECT * FROM bugs WHERE task_id = ? ORDER BY created_at DESC, rowid DESC')
+    .all(taskId)
+    .map(hydrate);
+}
+
+// Detach a bug from its task (task_id → NULL), the inverse of linkBugToTask. Records an 'unlink' event so
+// the bug timeline shows the detach (mirrors the 'handoff' event linkBugToTask appends). Throws NOT_FOUND
+// for an unknown bug, exactly like the other mutations.
+export function unlinkBugFromTask(db, id, actor) {
+  const bug = getBug(db, id);
+  if (!bug) throw new Error('NOT_FOUND');
+  db.prepare('UPDATE bugs SET task_id = NULL, updated_at = ? WHERE id = ?').run(Date.now(), id);
+  appendBugEvent(db, id, actor ?? bug.reporterId, 'unlink', { taskId: bug.taskId ?? null });
+  return getBug(db, id);
+}
+
 export function addBugComment(db, id, actor, body) {
   if (!getBug(db, id)) throw new Error('NOT_FOUND');
   db.prepare('UPDATE bugs SET updated_at = ? WHERE id = ?').run(Date.now(), id);

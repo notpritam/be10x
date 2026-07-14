@@ -7,6 +7,7 @@ import { bugShareView } from '../share/bug-share.js';
 import { signAccessUrl } from '../bugs/uploadthing.js';
 import { analyzeBug } from '../bugs/analyze.js';
 import { handoffBugToTask } from '../bugs/handoff.js';
+import { canAccessBug, assertCanAccessBug } from '../authz/authz.js';
 
 // --- bug resolution -------------------------------------------------------------
 // Accept whatever a human pastes: a raw uuid, a human id (BUG-009), a dashboard URL, or a public share URL
@@ -77,8 +78,9 @@ function extractEntries(raw) {
 }
 
 // --- shaping helpers ------------------------------------------------------------
-// A tiny header of a bug, for lists + the top of a get. Never includes artifact bodies.
-function bugHeader(bug) {
+// A tiny header of a bug, for lists + the top of a get. Never includes artifact bodies. Exported so the
+// board-side dispatch below can shape a filtered bug_list identically.
+export function bugHeader(bug) {
   return {
     id: bug.id,
     humanId: bug.humanId,
@@ -434,6 +436,31 @@ export const BUG_TOOLS = [
 // Convenience lookup shared by the server wiring and tests.
 export function getBugTool(name) {
   return BUG_TOOLS.find((t) => t.name === name) ?? null;
+}
+
+// BOARD-side dispatch of a bug tool WITH per-account access enforcement — the gateway behind the REMOTE
+// agent's be10x-bugs MCP (POST /api/agent/bug-rpc). It runs the SAME registry handlers as the local stdio
+// server (src/mcp/bug-server.js), but where that single-tenant server is board-wide (a valid token reads any
+// bug, no per-bug owner), a HOSTED board serves many accounts, so here a token may only reach bugs it can
+// see (canAccessBug: reported / assigned / linked to a task it can access / on its team-or-project):
+//   - single-bug tools (everything with a `bug` arg) resolve the bug and assertCanAccessBug before running;
+//   - bug_list is re-listed and filtered to the caller's visible bugs (its handler returns owner-less headers,
+//     so it must be filtered here at the source, not on the result);
+//   - an unknown tool throws UNKNOWN_TOOL (mapped to 400 by the HTTP layer), like the task RPC gateway.
+// Handlers may be async (artifact fetch), so the call is awaited. The local stdio path is untouched — it
+// still calls tool.handler directly — so `be10x link`'s be10x-bugs behavior is byte-identical.
+export async function dispatchBugTool(db, ctx, name, args = {}) {
+  const tool = getBugTool(name);
+  if (!tool) throw new Error('UNKNOWN_TOOL');
+  if (name === 'bug_list') {
+    const visible = listBugs(db, { status: args.status }).filter((b) => canAccessBug(db, ctx.userId, b));
+    const limit = Number.isFinite(args.limit) ? Math.max(1, Math.min(200, args.limit)) : 30;
+    return { count: visible.length, bugs: visible.slice(0, limit).map(bugHeader) };
+  }
+  if (args && args.bug != null) {
+    assertCanAccessBug(db, ctx.userId, resolveBug(db, args.bug));
+  }
+  return await tool.handler(db, ctx, args);
 }
 
 // Exposed for tests.

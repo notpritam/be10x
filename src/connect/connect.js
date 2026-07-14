@@ -203,14 +203,24 @@ export function upsertRepo(repos, repo) {
   return [...rest, { key: repo.key, path: repo.path }];
 }
 
-// Write a repo's .be10x/mcp.json pointing the agent's gfa_* tools at the HOSTED board over HTTP (the
-// http-server.js transport), instead of the local-db stdio server `be10x link` writes. Returns the path.
-export function writeMcpConfig(repoPath, { board, token, httpMcpServerPath }) {
+// Write a repo's .be10x/mcp.json pointing the agent's tools at the HOSTED board over HTTP (instead of the
+// local-db stdio servers `be10x link` writes). Wires TWO MCP servers: `be10x` (the gfa_* task tools →
+// http-server.js → /api/agent/rpc) and `be10x-bugs` (the QA-capture tools → bug-http-server.js →
+// /api/agent/bug-rpc), so the remote agent gets a linked bug's full capture, not just task context. The bug
+// server defaults to the sibling of httpMcpServerPath. UPLOADTHING_TOKEN is an optional passthrough for
+// parity with the local link config (the hosted board signs artifact reads board-side). Returns the path.
+export function writeMcpConfig(repoPath, { board, token, httpMcpServerPath, bugHttpMcpServerPath, uploadthingToken } = {}) {
   const dir = join(repoPath, '.be10x');
   mkdirSync(dir, { recursive: true });
+  const bugPath = bugHttpMcpServerPath || join(dirname(httpMcpServerPath), 'bug-http-server.js');
   const cfg = {
     mcpServers: {
       be10x: { command: 'node', args: [httpMcpServerPath], env: { GFA_BOARD_URL: board, GFA_TOKEN: token } },
+      'be10x-bugs': {
+        command: 'node',
+        args: [bugPath],
+        env: { GFA_BOARD_URL: board, GFA_TOKEN: token, ...(uploadthingToken ? { UPLOADTHING_TOKEN: uploadthingToken } : {}) },
+      },
     },
   };
   const out = join(dir, 'mcp.json');

@@ -78,6 +78,10 @@ async function openBoardDb(path = dbPathAbs()) {
 
 const mcpServerPath = () => resolve(here, '..', 'src', 'mcp', 'server.js');
 const bugMcpServerPath = () => resolve(here, '..', 'src', 'mcp', 'bug-server.js');
+// The HTTP-transport twins, wired by the HOSTED path (`be10x connect` / `be10x link` remote): they forward
+// gfa_* / bug_* calls to the board's /api/agent/rpc + /api/agent/bug-rpc instead of opening a local db.
+const httpMcpServerPath = () => resolve(here, '..', 'src', 'mcp', 'http-server.js');
+const httpBugMcpServerPath = () => resolve(here, '..', 'src', 'mcp', 'bug-http-server.js');
 
 // Best-effort "open this URL in the default browser" for `be10x login`. Detached + unref'd so the CLI never
 // waits on the browser; the URL is always printed too, so a headless box (no opener) just falls back to that.
@@ -247,8 +251,13 @@ async function cmdLinkRemote(args, saved, cfgPath) {
     console.error('Your login may have expired — re-run:  be10x login ' + saved.board);
     process.exit(1);
   }
-  const httpMcpServerPath = resolve(here, '..', 'src', 'mcp', 'http-server.js');
-  writeMcpConfig(rootPath, { board: saved.board, token: saved.token, httpMcpServerPath });
+  writeMcpConfig(rootPath, {
+    board: saved.board,
+    token: saved.token,
+    httpMcpServerPath: httpMcpServerPath(),
+    bugHttpMcpServerPath: httpBugMcpServerPath(),
+    uploadthingToken: process.env.UPLOADTHING_TOKEN,
+  });
   saveConnectConfig({ ...saved, repos: upsertRepo(saved.repos, { key, path: rootPath }) }, cfgPath);
 
   console.log('✓ Linked ' + name + '  (' + key + ')  →  ' + saved.board);
@@ -403,9 +412,8 @@ async function cmdConnect(args) {
   // Remember the setup so next time `be10x connect` alone works.
   saveConnectConfig({ board, token, repos: repos.map((r) => ({ key: r.key, path: r.path })) }, cfgPath);
 
-  // Register each repo with the board + write a board-pointing MCP config so the spawned agent's gfa_* tools
-  // reach the board over HTTP (not a local db).
-  const httpMcpServerPath = resolve(here, '..', 'src', 'mcp', 'http-server.js');
+  // Register each repo with the board + write a board-pointing MCP config so the spawned agent's gfa_* AND
+  // be10x-bugs tools reach the board over HTTP (not a local db).
   const client = makeBoardClient({ board, token });
   for (const r of repos) {
     try {
@@ -413,7 +421,13 @@ async function cmdConnect(args) {
     } catch (e) {
       console.error('warning: could not register ' + r.key + ' with the board: ' + (e?.message ?? e));
     }
-    writeMcpConfig(r.path, { board, token, httpMcpServerPath });
+    writeMcpConfig(r.path, {
+      board,
+      token,
+      httpMcpServerPath: httpMcpServerPath(),
+      bugHttpMcpServerPath: httpBugMcpServerPath(),
+      uploadthingToken: process.env.UPLOADTHING_TOKEN,
+    });
   }
 
   const makeExecutor = (repo) =>

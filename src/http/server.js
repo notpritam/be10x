@@ -13,12 +13,13 @@ import { createSession, getSession, deleteSession } from '../auth/sessions.js';
 import { createToken, listTokens, revokeToken, getTokenOwner, verifyToken } from '../auth/tokens.js';
 import { createDeviceCode, getByUserCode, approveDeviceCode, denyDeviceCode, pollDeviceToken } from '../auth/device.js';
 import { getTool } from '../mcp/tools.js';
+import { dispatchBugTool } from '../mcp/bug-tools.js';
 import { createTeam, deleteTeam } from '../teams/teams.js';
 import { listMembers, addMember, setRole, removeMember } from '../teams/memberships.js';
-import { assertCan, assertCanAccessTask, canAccessProject } from '../authz/authz.js';
+import { assertCan, assertCanAccessTask, canAccessProject, assertCanAccessBug } from '../authz/authz.js';
 import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask, archiveTask, resolveTaskId } from '../tasks/tasks.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
-import { createBug, getBug as getBugById, listBugs, updateBugStatus, setBugAssignee, setBugLlmAnalysis, setBugGithubIssue, addBugComment, listBugEvents, bugStatsForUser } from '../bugs/bugs.js';
+import { createBug, getBug as getBugById, getBugByHumanId, listBugs, updateBugStatus, setBugAssignee, setBugLlmAnalysis, setBugGithubIssue, addBugComment, listBugEvents, bugStatsForUser, linkBugToTask, listBugsForTask, unlinkBugFromTask, linkedBugSummary } from '../bugs/bugs.js';
 import { handoffBugToTask } from '../bugs/handoff.js';
 import { analyzeBug } from '../bugs/analyze.js';
 import { llmAnalyzeBug } from '../bugs/llm-analyze.js';
@@ -175,6 +176,16 @@ function toBugShare(r) {
   return { id: r.id, token: r.token, createdAt: r.created_at, revokedAt: r.revoked_at, createdBy: r.created_by };
 }
 
+// Resolve a bug reference the way a human pastes it — a raw uuid or a human id (BUG-009) — to the hydrated
+// bug, or null. Used by the task↔bug attach routes so a person can link `BUG-9` without knowing the uuid.
+function resolveBugRef(db, ref) {
+  if (ref == null) return null;
+  const s = String(ref).trim();
+  if (!s) return null;
+  if (/^BUG-\d+$/i.test(s)) return getBugByHumanId(db, s);
+  return getBugById(db, s);
+}
+
 // Route table: [method, pattern, needsAuth, handler(ctx)] where ctx = { db, req, res, params, body, user }
 const ROUTES = [
   ['POST', '/api/auth/signup', false, async ({ db, res, body }) => {
@@ -305,10 +316,19 @@ const ROUTES = [
     if (projectId && !canAccessProject(db, user.id, getProject(db, projectId))) throw new Error('FORBIDDEN');
     const content = { ...(body.content || {}) };
     if (body.isolation) content.isolation = body.isolation;
+    // Optional: attach existing filed bug(s) to the new task (uuid or BUG-009). Resolve + authorize each
+    // BEFORE creating, so a bad/forbidden id never leaves an orphaned task; then link them after create.
+    const bugsToLink = (Array.isArray(body.bugIds) ? body.bugIds : []).map((ref) => {
+      const bug = resolveBugRef(db, ref);
+      if (!bug) throw new Error('NOT_FOUND');
+      assertCanAccessBug(db, user.id, bug);
+      return bug;
+    });
     let task = createTask(db, {
       type: body.type, scope: body.scope, title: body.title, ownerId: user.id,
       content, teamId, projectId, severity: body.severity || 'medium',
     });
+    for (const bug of bugsToLink) linkBugToTask(db, bug.id, task.id, user.id);
     if (body.handOff) {
       transition(db, task.id, 'researching', user.id, { handOff: true });
       enqueueWake(db, task.id, 'plan');
@@ -327,6 +347,35 @@ const ROUTES = [
     if (!t) throw new Error('NO_TASK');
     assertCanAccessTask(db, user.id, t);
     send(res, 200, { events: listEvents(db, params.id) });
+  }],
+  // --- task ↔ bug links (attach an extension-filed bug to a task, from the TASK side) --------------------
+  // List the bugs linked to a task (read access), attach one (task.update + the bug must be visible to the
+  // caller), or detach one. Attach accepts a uuid or a human id (BUG-009). Segment counts keep these apart
+  // under match(): /api/tasks/:id/bugs (5) vs /api/tasks/:id/bugs/:bugId (6), both distinct from the other
+  // task sub-routes by the literal "bugs" segment.
+  ['GET', '/api/tasks/:id/bugs', true, async ({ db, res, params, user }) => {
+    const task = getTask(db, params.id);
+    if (!task) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, task);
+    send(res, 200, { bugs: listBugsForTask(db, params.id) });
+  }],
+  ['POST', '/api/tasks/:id/bugs', true, async ({ db, res, params, body, user }) => {
+    const task = getTask(db, params.id);
+    if (!task) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, task, 'task.update');
+    const bug = resolveBugRef(db, body.bugId);
+    if (!bug) throw new Error('NOT_FOUND');
+    assertCanAccessBug(db, user.id, bug);
+    send(res, 200, { bug: linkBugToTask(db, bug.id, params.id, user.id) });
+  }],
+  ['DELETE', '/api/tasks/:id/bugs/:bugId', true, async ({ db, res, params, user }) => {
+    const task = getTask(db, params.id);
+    if (!task) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, task, 'task.update');
+    const bug = resolveBugRef(db, params.bugId);
+    // Only detach a bug that is actually linked to THIS task — otherwise it's a 404 (not linked here).
+    if (!bug || bug.taskId !== params.id) throw new Error('NOT_FOUND');
+    send(res, 200, { bug: unlinkBugFromTask(db, bug.id, user.id) });
   }],
   ['GET', '/api/tasks/:id/runs', true, async ({ db, res, params, user }) => {
     const t = getTask(db, params.id);
@@ -800,6 +849,17 @@ const AGENT_ROUTES = [
     send(res, 200, { result: result ?? null });
   }],
 
+  // The bug-context gateway for a REMOTE agent (the be10x-bugs sibling of /api/agent/rpc): dispatch
+  // { tool, args } through the SHARED bug-tools registry (src/mcp/bug-tools.js) against the board db, so a
+  // member's `connect` agent gets the same be10x-bugs capture tools the local stdio server has. Unlike that
+  // single-tenant server, this enforces per-account bug access (dispatchBugTool → canAccessBug), so a token
+  // can't read another account's bug. Domain errors (UNKNOWN_TOOL, FORBIDDEN, NO_BUG, NO_ARTIFACT:*) map via
+  // statusFor. Handlers may be async, so the dispatch is awaited.
+  ['POST', '/api/agent/bug-rpc', async ({ db, res, body, auth }) => {
+    const result = await dispatchBugTool(db, auth, body.tool, body.args ?? {});
+    send(res, 200, { result: result ?? null });
+  }],
+
   // The QA capture extension files a bug. Bearer-authed, so the reporter is the token's user. The payload is
   // UploadThing keys + small metadata only — the screenshot/DOM/network binaries go straight to UploadThing,
   // never through here (so this stays well under readJson's 2 MB cap).
@@ -884,7 +944,9 @@ const AGENT_ROUTES = [
       wake: { id: wake.id, reason: wake.reason, context: wake.context },
       runId: run.id,
       projectKey: project ? project.key : null, // so the connector maps the task to its local checkout
-      task: staged, // full task: content + plan travel so the connector builds the prompt without another call
+      // Full task: content + plan + linkedBugs travel so the connector builds the prompt (incl. the linked-bug
+      // block) without another call — the remote executor has no board db to look them up.
+      task: { ...staged, linkedBugs: listBugsForTask(db, staged.id).map(linkedBugSummary) },
       mode,
       resume: wake.context?.retry ? true : undefined,
       resumeSessionId,

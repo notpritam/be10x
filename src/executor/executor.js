@@ -18,6 +18,7 @@ import { ensureWorktree as realEnsureWorktree, worktreeBranch, collectGitMeta } 
 import { createRun, setRunSession, setRunModel, setRunPid, markRunning, finishRun, getLatestRunForTask } from './runs.js';
 import { recordRunStep } from './run-steps.js';
 import { recordProgress } from '../worker/worker.js';
+import { listBugsForTask, linkedBugSummary } from '../bugs/bugs.js';
 
 const BOARD_MSG_MAX = 280;
 
@@ -99,6 +100,23 @@ function planText(plan) {
   return typeof plan === 'string' ? plan : JSON.stringify(plan, null, 2);
 }
 
+// A compact "Linked bugs" block for the prompt: which extension-filed QA bugs this task must fix, and the
+// pointer to inspect each one's full capture. Reads the compact linkedBugSummary shape (errorCount top-level)
+// but tolerates a full hydrated bug (errorCount in meta) too. Empty/absent → '' (no block).
+function linkedBugsBlock(bugs) {
+  if (!Array.isArray(bugs) || bugs.length === 0) return '';
+  const lines = bugs.map((b) => {
+    const ec = b.errorCount ?? b.meta?.errorCount ?? 0;
+    const errs = ec ? ` [${ec} console error${ec === 1 ? '' : 's'}]` : '';
+    return `- ${b.humanId} "${b.title}"${errs}`;
+  });
+  return (
+    '\n\nLinked bugs — this task fixes these filed QA bug(s). Inspect each capture (rrweb replay, console, ' +
+    'network, DOM, picked elements) with the be10x-bugs MCP tools (bug_get / bug_console / bug_network / ' +
+    'bug_picked_elements):\n' + lines.join('\n')
+  );
+}
+
 // The prompt delivered on stdin: task identity (so the agent addresses the gfa_* tools correctly), the
 // details, the mode directive, and any delta (unseen comments + the triggering context) for this wake.
 export function buildPrompt(task, { mode = 'plan', comments = [], wakeContext = null } = {}) {
@@ -114,7 +132,8 @@ export function buildPrompt(task, { mode = 'plan', comments = [], wakeContext = 
     PLAN_MODES.has(mode) && task.plan != null
       ? `\n\nApproved plan (build/verify against THIS — the planning session is not carried over):\n${planText(task.plan)}`
       : '';
-  return `${header}${bodyBlock}${planBlock}\n\n${directive}${commentBlock}${ctxBlock}`;
+  const bugsBlock = linkedBugsBlock(task.linkedBugs);
+  return `${header}${bodyBlock}${bugsBlock}${planBlock}\n\n${directive}${commentBlock}${ctxBlock}`;
 }
 
 // Write the be10x system prompt to a unique temp file for a fresh run; returns its path (or null on a
@@ -238,7 +257,20 @@ export function makeClaudeExecutor(db, project, opts = {}) {
     // Monotonic trace sequence for this run (prompt=0, then each tool call, then the result). Shared by
     // the stdin write below and the stream consumer's closure.
     let stepSeq = 0;
-    const promptText = buildPrompt(task, { mode, comments, wakeContext });
+    // Surface linked bugs in the prompt. The hosted claim payload already stages them on the task; on the
+    // in-process path the staged task has none, so source them from the db here (best-effort — never block
+    // a run on a bug lookup). `=== undefined` so an explicit [] isn't re-queried.
+    let taskForPrompt = task;
+    if (task.linkedBugs === undefined) {
+      let linkedBugs = [];
+      try {
+        linkedBugs = listBugsForTask(db, task.id).map(linkedBugSummary);
+      } catch {
+        linkedBugs = [];
+      }
+      taskForPrompt = { ...task, linkedBugs };
+    }
+    const promptText = buildPrompt(taskForPrompt, { mode, comments, wakeContext });
     // The exact context we handed down — the full prompt, the resolved command + args, and whether this
     // was a resume. Recorded verbatim so the debug view can show "what we passed the agent" in depth.
     try {
