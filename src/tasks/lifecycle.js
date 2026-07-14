@@ -11,6 +11,9 @@ export const STATES = [
   'blocked',
   'not_a_bug',
   'wont_fix',
+  // Soft-archive: a user may shelve a task at ANY stage. The row is kept (bug links + history survive);
+  // only the git worktree/branch on disk are reclaimed. Terminal — nothing transitions back out.
+  'archived',
 ];
 
 const TRANSITIONS = {
@@ -25,9 +28,13 @@ const TRANSITIONS = {
   done: [],
   not_a_bug: [],
   wont_fix: [],
+  archived: [],
 };
 
 export function canTransition(from, to) {
+  // Archiving is legal from every state (soft-archive is reachable at any stage); archived itself is
+  // terminal, so it still has no outward transitions via the map below.
+  if (to === 'archived') return from !== 'archived';
   return (TRANSITIONS[from] || []).includes(to);
 }
 

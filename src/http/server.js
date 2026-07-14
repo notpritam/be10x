@@ -16,7 +16,7 @@ import { getTool } from '../mcp/tools.js';
 import { createTeam, deleteTeam } from '../teams/teams.js';
 import { listMembers, addMember, setRole, removeMember } from '../teams/memberships.js';
 import { assertCan, assertCanAccessTask, canAccessProject } from '../authz/authz.js';
-import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
+import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask, archiveTask, resolveTaskId } from '../tasks/tasks.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
 import { createBug, getBug as getBugById, listBugs, updateBugStatus, setBugAssignee, setBugLlmAnalysis, setBugGithubIssue, addBugComment, listBugEvents, bugStatsForUser } from '../bugs/bugs.js';
 import { handoffBugToTask } from '../bugs/handoff.js';
@@ -350,6 +350,17 @@ const ROUTES = [
     if (body.to === 'researching') enqueueWake(db, params.id, 'plan');
     else if (body.to === 'ready_to_work') enqueueWake(db, params.id, 'execute');
     send(res, 200, { task });
+  }],
+  // Soft-archive a task from any stage. The row is kept (bug links + history survive) — only the status
+  // flips to 'archived'. Disk GC does NOT happen here: a hosted board can't reach the connector's disk, so
+  // the returned `worktrees` (the real run paths+branches) travel back for the CLI/connector to reclaim
+  // (see gcTaskWorktrees). Modeled on the transition route: load, authorize with 'task.update', mutate.
+  ['POST', '/api/tasks/:id/archive', true, async ({ db, res, params, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, existing, 'task.update');
+    const { task, worktrees } = archiveTask(db, params.id, user.id);
+    send(res, 200, { task, worktrees });
   }],
   ['POST', '/api/tasks/:id/plan', true, async ({ db, res, params, body, user }) => {
     const existing = getTask(db, params.id);
@@ -838,6 +849,18 @@ const AGENT_ROUTES = [
     // same key (e.g. the same folder name with no git remote) never collide onto one shared project.
     const project = registerProject(db, { key, name: body.name || key, rootPath: null, ownerId: auth.userId });
     send(res, 200, { project });
+  }],
+
+  // Token (Bearer) twin of the session archive route, so a connector's CLI (`be10x archive <id>`) on a
+  // HOSTED board can soft-archive by uuid OR GFA-123 human id (it has no local db to resolve it). Same
+  // authz gate as the session route. Returns { task, worktrees } so the CLI can GC the worktrees that live
+  // on ITS disk (the board can't reach them).
+  ['POST', '/api/agent/tasks/:id/archive', async ({ db, res, params, auth }) => {
+    const id = resolveTaskId(db, params.id);
+    if (!id) throw new Error('NO_TASK');
+    assertCanAccessTask(db, auth.userId, getTask(db, id), 'task.update');
+    const { task, worktrees } = archiveTask(db, id, auth.userId);
+    send(res, 200, { task, worktrees });
   }],
 
   // Hand the next wake to a member's connector. Scoped to the repos (project keys) the connector serves,

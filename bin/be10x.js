@@ -9,9 +9,11 @@ import { dirname, resolve, join, basename } from 'node:path';
 import { mkdirSync, writeFileSync, readFileSync, cpSync, existsSync, rmSync } from 'node:fs';
 import { getUserByEmail } from '../src/auth/users.js';
 import { createToken } from '../src/auth/tokens.js';
-import { listTasks, importTask, IMPORT_PHASES, handoffReasonForPhase } from '../src/tasks/tasks.js';
+import { listTasks, importTask, IMPORT_PHASES, handoffReasonForPhase, archiveTask, getTask, resolveTaskId } from '../src/tasks/tasks.js';
 import { makeClaudeExecutor } from '../src/executor/executor.js';
-import { detectProjectKey, registerProject, getProjectByKey, listProjects } from '../src/projects/projects.js';
+import { detectProjectKey, registerProject, getProjectByKey, getProject, listProjects } from '../src/projects/projects.js';
+import { getLatestRunForTask } from '../src/executor/runs.js';
+import { gcTaskWorktrees } from '../src/executor/worktree.js';
 import { enqueueWake } from '../src/executor/wake.js';
 import { wakeLoop, wakeLoopAll } from '../src/runner/runner.js';
 import { makeRemoteExecutor } from '../src/connect/remote-executor.js';
@@ -723,6 +725,111 @@ async function cmdList() {
   }
 }
 
+// archive <id> [--force] [--email E] — soft-archive a task (status → 'archived', the row is KEPT so bug
+// links & history survive) AND reclaim its git worktree(s) + branch from disk. Two modes, auto-detected like
+// `link`: hosted (you ran `be10x login`) archives on the board over HTTP; local drives the self-host db
+// directly. Disk GC always runs HERE (where the worktrees live), off the REAL paths recorded on the task's
+// runs — never re-derived from the title. `<id>` accepts a uuid or the GFA-123 human id.
+async function cmdArchive(args) {
+  const ident = args._[0];
+  if (!ident || ident === true) {
+    console.error('Usage: be10x archive <task-id | GFA-123> [--force]');
+    process.exit(1);
+  }
+  const saved = loadConnectConfig() || {};
+  if (saved.board && saved.token) return cmdArchiveRemote(args, saved, ident);
+  return cmdArchiveLocal(args, ident);
+}
+
+// Local (self-host) archive: the local db HAS runs.worktree_path (recorded by the in-process runner), so we
+// can both soft-archive and GC the real paths. Guards against reclaiming a worktree out from under a live run.
+async function cmdArchiveLocal(args, ident) {
+  const db = await openBoardDb();
+  const actor = resolveUserId(db, args.email);
+  if (!actor) {
+    console.error(SIGNUP_HINT);
+    process.exit(1);
+  }
+  const id = resolveTaskId(db, ident);
+  if (!id) {
+    console.error('No such task: ' + ident + '   (pass a task id or its GFA-123 human id)');
+    process.exit(1);
+  }
+  const before = getTask(db, id);
+  const wasArchived = before.status === 'archived';
+
+  // Don't yank a worktree out from under an in-flight run unless the user forces it.
+  const latest = getLatestRunForTask(db, id);
+  const runActive = latest && (latest.status === 'starting' || latest.status === 'running');
+  const force = !!args.force;
+
+  const { task, worktrees } = archiveTask(db, id, actor);
+
+  console.log(
+    wasArchived
+      ? sym.ok + ' ' + task.humanId + ' ' + dim('was already archived.')
+      : sym.ok + ' archived ' + bold(task.humanId) + '  ' + dim('(' + before.status + ' → archived)')
+  );
+
+  if (runActive && !force) {
+    console.log('  ' + fg(BRAND.warn, 'a run is still active') + ' — skipped worktree cleanup.');
+    console.log('  ' + dim('re-run with --force to reclaim its disk once the run is done.'));
+    return;
+  }
+
+  const project = task.projectId ? getProject(db, task.projectId) : null;
+  if (!worktrees.length) {
+    console.log('  ' + dim('no worktrees to reclaim.'));
+    return;
+  }
+  if (!project || !project.rootPath) {
+    console.log('  ' + dim(worktrees.length + ' recorded worktree(s), but this task\'s repo path is not resolvable here — nothing removed.'));
+    return;
+  }
+  const { removed, skipped } = await gcTaskWorktrees(project, worktrees);
+  if (removed.length) {
+    console.log('  reclaimed ' + bold(String(removed.length)) + ' worktree(s) + branch(es):');
+    for (const w of removed) console.log('    ' + dim(w.path + (w.branch ? '  [' + w.branch + ']' : '')));
+  } else {
+    console.log('  ' + dim('no worktrees reclaimed (already gone).'));
+  }
+  const rootSkips = skipped.filter((s) => s.reason === 'repo-root');
+  if (rootSkips.length) console.log('  ' + dim('left the repo root untouched (branch-isolation task).'));
+}
+
+// Hosted archive: soft-archive on the board over HTTP (Bearer). The board rarely holds this machine's local
+// worktree paths, so disk on the machine that ran the task is reclaimed there (the connector settles it);
+// still, if the board DID return any worktrees that live under a repo we serve, reclaim them here.
+async function cmdArchiveRemote(args, saved, ident) {
+  const client = makeBoardClient({ board: saved.board, token: saved.token });
+  let result;
+  try {
+    result = await client.archive(ident);
+  } catch (e) {
+    console.error('Could not archive on ' + saved.board + ': ' + (e?.message ?? e));
+    console.error('Your login may have expired — re-run:  be10x login ' + saved.board);
+    process.exit(1);
+  }
+  const task = result.task || {};
+  const worktrees = Array.isArray(result.worktrees) ? result.worktrees : [];
+  console.log(sym.ok + ' archived ' + bold(task.humanId || String(ident)) + '  ' + dim('on ' + saved.board));
+
+  let removed = 0;
+  for (const repo of Array.isArray(saved.repos) ? saved.repos : []) {
+    try {
+      const { rootPath, defaultBranch } = detectProjectKey(repo.path);
+      // gcTaskWorktrees fences to <rootPath>/.be10x/worktrees, so passing the full list is safe — anything
+      // not under this repo is skipped.
+      const gc = await gcTaskWorktrees({ rootPath, defaultBranch }, worktrees);
+      removed += gc.removed.length;
+    } catch {
+      /* a repo path that no longer resolves is not fatal to archiving */
+    }
+  }
+  if (removed) console.log('  reclaimed ' + removed + ' worktree(s) on this machine.');
+  else console.log('  ' + dim('disk is reclaimed on the machine that ran it (be10x connect settles it).'));
+}
+
 // Read a file that may hold JSON (a plan object, a research payload, an artifacts array) or plain text
 // (an HTML/markdown plan). Returns the parsed value, the raw string, or null when no path was given.
 function readPayload(p) {
@@ -931,6 +1038,7 @@ const COMMANDS = {
   service: cmdService,
   update: cmdUpdate,
   list: cmdList,
+  archive: cmdArchive,
   adopt: cmdAdopt,
   'install-skill': cmdInstallSkill,
   telemetry: cmdTelemetry,
@@ -950,6 +1058,7 @@ function usage() {
   console.log('  status                           service health, board connectivity, and recent connect activity');
   console.log('  service install|uninstall|status|logs   run `be10x connect` as a background service (auto-starts on boot)');
   console.log('  list                             list projects and this repo\'s tasks by status');
+  console.log('  archive <id|GFA-123> [--force]   soft-archive a task + delete its worktree(s)/branch from disk');
   console.log('  adopt --title T [--phase P] ...  move this session\'s work onto the board as a task');
   console.log('  install-skill                    install the /be10x-adopt skill into ~/.claude/skills');
   console.log('  telemetry [status|on|off]        check or change the opt-in telemetry setting');

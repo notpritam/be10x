@@ -6,6 +6,7 @@ import { assertTransition } from './lifecycle.js';
 import { appendEvent } from './events.js';
 import { recordPlanVersion } from '../plans/versions.js';
 import { listProjectsForUser } from '../projects/projects.js';
+import { listRunWorktrees } from '../executor/runs.js';
 
 function hydrate(row) {
   return {
@@ -56,6 +57,24 @@ export function createTask(db, { type, scope, title, ownerId, content = {}, team
 export function getTask(db, id) {
   const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
   return row ? hydrate(row) : null;
+}
+
+// Resolve a user-facing task reference to its internal uuid: accept the uuid itself, or the GFA-123 human id
+// people actually see and type (case-insensitively, and zero-padded so `gfa-1` matches `GFA-001`). Returns
+// the uuid or null. Lets the CLI (`be10x archive GFA-1`) and the connector-facing agent archive route take a
+// friendly id without every caller re-implementing the lookup. Read-only.
+export function resolveTaskId(db, ref) {
+  const s = String(ref ?? '').trim();
+  if (!s) return null;
+  if (db.prepare('SELECT 1 FROM tasks WHERE id = ?').get(s)) return s;
+  const up = s.toUpperCase();
+  const m = /^GFA-(\d+)$/.exec(up);
+  const candidates = m ? [up, 'GFA-' + m[1].padStart(3, '0')] : [up];
+  for (const c of candidates) {
+    const row = db.prepare('SELECT id FROM tasks WHERE human_id = ?').get(c);
+    if (row) return row.id;
+  }
+  return null;
 }
 
 export function listTasks(db, { scope, teamId, status, ownerId } = {}) {
@@ -166,6 +185,24 @@ export function transition(db, id, to, actor, meta = {}) {
   db.prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?').run(to, Date.now(), id);
   appendEvent(db, id, actor, 'status', { from: task.status, to, ...meta });
   return getTask(db, id);
+}
+
+// Soft-archive a task from ANY stage: flip its status to 'archived' and append an 'archived' event. The row
+// is deliberately KEPT (never hard-deleted) so bug links and the full history survive; only the git
+// worktree/branch on disk get reclaimed, and that happens separately (gcTaskWorktrees, driven by the
+// returned `worktrees`) where those checkouts actually live. Returns { task, worktrees } — worktrees being
+// the DISTINCT real paths+branches recorded across the task's runs. Idempotent: re-archiving an
+// already-archived task is a no-op success (no second event) that still reports its worktrees so a retried
+// GC keeps its targets. Throws NO_TASK for an unknown id.
+export function archiveTask(db, id, actor) {
+  const task = getTask(db, id);
+  if (!task) throw new Error('NO_TASK');
+  const worktrees = listRunWorktrees(db, id);
+  if (task.status === 'archived') return { task, worktrees };
+  assertTransition(task.status, 'archived');
+  db.prepare('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?').run('archived', Date.now(), id);
+  appendEvent(db, id, actor, 'archived', { from: task.status });
+  return { task: getTask(db, id), worktrees };
 }
 
 export function retryTask(db, id, actor) {

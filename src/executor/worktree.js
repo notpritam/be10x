@@ -11,7 +11,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, relative, isAbsolute } from 'node:path';
 
 const SLUG_MAX = 40;
 
@@ -139,11 +139,70 @@ export async function ensureWorktree(repoRoot, { branch, baseRef } = {}) {
   });
 }
 
+// Tolerant variant of an INJECTABLE git runner: run `exec(dir, args)` and swallow any failure, so a
+// worktree/branch that is already gone counts as success. Returns true on success, false on failure.
+// `exec` defaults to the real `runGit`; tests pass a fake so no real git ever runs.
+function tryExec(exec, dir, args) {
+  try {
+    exec(dir, args);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// True when `child` is a real descendant of `parent` (strictly inside it — not equal, not outside). GC uses
+// this to fence deletion to the managed <root>/.be10x/worktrees tree so it can never remove anything else.
+function isUnder(parent, child) {
+  if (!parent || !child) return false;
+  const rel = relative(parent, resolve(child));
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
+}
+
 // Remove a worktree and prune its metadata. Tolerates errors (e.g. it is
-// already gone) so it is safe to call repeatedly.
-export function removeWorktree(repoRoot, wtPath) {
-  tryGit(repoRoot, ['worktree', 'remove', '--force', wtPath]);
-  tryGit(repoRoot, ['worktree', 'prune']);
+// already gone) so it is safe to call repeatedly. `exec` is the injectable git runner (defaults to the real
+// one) so callers/tests can drive it without shelling out.
+export function removeWorktree(repoRoot, wtPath, { exec = runGit } = {}) {
+  tryExec(exec, repoRoot, ['worktree', 'remove', '--force', wtPath]);
+  tryExec(exec, repoRoot, ['worktree', 'prune']);
+}
+
+// Reclaim disk for an archived task: delete each recorded worktree AND its branch from the repo they live
+// in. Driven by the REAL paths recorded on the task's runs (see runs.listRunWorktrees) — never re-derived
+// from the (drift-prone) title. Idempotent + tolerant: a worktree/branch that's already gone is success.
+//
+// Hard safety fences (a bad path here would blow away real work):
+//   - NEVER touch a path equal to `project.rootPath` — branch-isolation tasks set worktree.path = rootPath,
+//     so deleting it would destroy the whole checkout.
+//   - NEVER touch a path outside `<rootPath>/.be10x/worktrees` — GC only ever deletes what it manages.
+//   - NEVER `branch -D` the repo's default branch.
+//
+// `worktrees` is [{ path, branch }]. `exec` is the injectable git runner (tests inject a fake so nothing on
+// disk is removed). Returns { removed: [{path,branch}], skipped: [{path,branch,reason}] }.
+export async function gcTaskWorktrees(project, worktrees, { exec = runGit } = {}) {
+  const rootPath = project?.rootPath;
+  const defaultBranch = project?.defaultBranch;
+  const wtDir = rootPath ? resolve(rootPath, '.be10x', 'worktrees') : null;
+  const removed = [];
+  const skipped = [];
+  for (const wt of Array.isArray(worktrees) ? worktrees : []) {
+    const path = wt?.path ?? null;
+    const branch = wt?.branch ?? null;
+    let reason = null;
+    if (!path) reason = 'no-path';
+    else if (!rootPath) reason = 'no-root';
+    else if (path === rootPath) reason = 'repo-root';
+    else if (!isUnder(wtDir, path)) reason = 'outside-worktrees';
+    if (reason) {
+      skipped.push({ path, branch, reason });
+      continue;
+    }
+    removeWorktree(rootPath, path, { exec });
+    // Delete the branch too — tolerant of "not found", and never the repo's default branch.
+    if (branch && branch !== defaultBranch) tryExec(exec, rootPath, ['branch', '-D', branch]);
+    removed.push({ path, branch });
+  }
+  return { removed, skipped };
 }
 
 // What the agent actually changed in `repoDir` on top of `baseRef`: the commits it made and a diff
