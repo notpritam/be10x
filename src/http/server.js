@@ -15,10 +15,10 @@ import { createDeviceCode, getByUserCode, approveDeviceCode, denyDeviceCode, pol
 import { getTool } from '../mcp/tools.js';
 import { createTeam, deleteTeam } from '../teams/teams.js';
 import { listMembers, addMember, setRole, removeMember } from '../teams/memberships.js';
-import { assertCan, assertCanAccessTask, canAccessProject } from '../authz/authz.js';
+import { assertCan, assertCanAccessTask, canAccessProject, assertCanAccessBug } from '../authz/authz.js';
 import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
-import { createBug, getBug as getBugById, listBugs, updateBugStatus, setBugAssignee, setBugLlmAnalysis, setBugGithubIssue, addBugComment, listBugEvents, bugStatsForUser } from '../bugs/bugs.js';
+import { createBug, getBug as getBugById, getBugByHumanId, listBugs, updateBugStatus, setBugAssignee, setBugLlmAnalysis, setBugGithubIssue, addBugComment, listBugEvents, bugStatsForUser, linkBugToTask, listBugsForTask, unlinkBugFromTask } from '../bugs/bugs.js';
 import { handoffBugToTask } from '../bugs/handoff.js';
 import { analyzeBug } from '../bugs/analyze.js';
 import { llmAnalyzeBug } from '../bugs/llm-analyze.js';
@@ -175,6 +175,16 @@ function toBugShare(r) {
   return { id: r.id, token: r.token, createdAt: r.created_at, revokedAt: r.revoked_at, createdBy: r.created_by };
 }
 
+// Resolve a bug reference the way a human pastes it — a raw uuid or a human id (BUG-009) — to the hydrated
+// bug, or null. Used by the task↔bug attach routes so a person can link `BUG-9` without knowing the uuid.
+function resolveBugRef(db, ref) {
+  if (ref == null) return null;
+  const s = String(ref).trim();
+  if (!s) return null;
+  if (/^BUG-\d+$/i.test(s)) return getBugByHumanId(db, s);
+  return getBugById(db, s);
+}
+
 // Route table: [method, pattern, needsAuth, handler(ctx)] where ctx = { db, req, res, params, body, user }
 const ROUTES = [
   ['POST', '/api/auth/signup', false, async ({ db, res, body }) => {
@@ -305,10 +315,19 @@ const ROUTES = [
     if (projectId && !canAccessProject(db, user.id, getProject(db, projectId))) throw new Error('FORBIDDEN');
     const content = { ...(body.content || {}) };
     if (body.isolation) content.isolation = body.isolation;
+    // Optional: attach existing filed bug(s) to the new task (uuid or BUG-009). Resolve + authorize each
+    // BEFORE creating, so a bad/forbidden id never leaves an orphaned task; then link them after create.
+    const bugsToLink = (Array.isArray(body.bugIds) ? body.bugIds : []).map((ref) => {
+      const bug = resolveBugRef(db, ref);
+      if (!bug) throw new Error('NOT_FOUND');
+      assertCanAccessBug(db, user.id, bug);
+      return bug;
+    });
     let task = createTask(db, {
       type: body.type, scope: body.scope, title: body.title, ownerId: user.id,
       content, teamId, projectId, severity: body.severity || 'medium',
     });
+    for (const bug of bugsToLink) linkBugToTask(db, bug.id, task.id, user.id);
     if (body.handOff) {
       transition(db, task.id, 'researching', user.id, { handOff: true });
       enqueueWake(db, task.id, 'plan');
@@ -327,6 +346,35 @@ const ROUTES = [
     if (!t) throw new Error('NO_TASK');
     assertCanAccessTask(db, user.id, t);
     send(res, 200, { events: listEvents(db, params.id) });
+  }],
+  // --- task ↔ bug links (attach an extension-filed bug to a task, from the TASK side) --------------------
+  // List the bugs linked to a task (read access), attach one (task.update + the bug must be visible to the
+  // caller), or detach one. Attach accepts a uuid or a human id (BUG-009). Segment counts keep these apart
+  // under match(): /api/tasks/:id/bugs (5) vs /api/tasks/:id/bugs/:bugId (6), both distinct from the other
+  // task sub-routes by the literal "bugs" segment.
+  ['GET', '/api/tasks/:id/bugs', true, async ({ db, res, params, user }) => {
+    const task = getTask(db, params.id);
+    if (!task) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, task);
+    send(res, 200, { bugs: listBugsForTask(db, params.id) });
+  }],
+  ['POST', '/api/tasks/:id/bugs', true, async ({ db, res, params, body, user }) => {
+    const task = getTask(db, params.id);
+    if (!task) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, task, 'task.update');
+    const bug = resolveBugRef(db, body.bugId);
+    if (!bug) throw new Error('NOT_FOUND');
+    assertCanAccessBug(db, user.id, bug);
+    send(res, 200, { bug: linkBugToTask(db, bug.id, params.id, user.id) });
+  }],
+  ['DELETE', '/api/tasks/:id/bugs/:bugId', true, async ({ db, res, params, user }) => {
+    const task = getTask(db, params.id);
+    if (!task) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, task, 'task.update');
+    const bug = resolveBugRef(db, params.bugId);
+    // Only detach a bug that is actually linked to THIS task — otherwise it's a 404 (not linked here).
+    if (!bug || bug.taskId !== params.id) throw new Error('NOT_FOUND');
+    send(res, 200, { bug: unlinkBugFromTask(db, bug.id, user.id) });
   }],
   ['GET', '/api/tasks/:id/runs', true, async ({ db, res, params, user }) => {
     const t = getTask(db, params.id);
