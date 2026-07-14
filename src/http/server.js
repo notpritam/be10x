@@ -16,7 +16,7 @@ import { getTool } from '../mcp/tools.js';
 import { createTeam, deleteTeam } from '../teams/teams.js';
 import { listMembers, addMember, setRole, removeMember } from '../teams/memberships.js';
 import { assertCan, assertCanAccessTask, canAccessProject } from '../authz/authz.js';
-import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask } from '../tasks/tasks.js';
+import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask, archiveTask } from '../tasks/tasks.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
 import { createBug, getBug as getBugById, listBugs, updateBugStatus, setBugAssignee, setBugLlmAnalysis, setBugGithubIssue, addBugComment, listBugEvents, bugStatsForUser } from '../bugs/bugs.js';
 import { handoffBugToTask } from '../bugs/handoff.js';
@@ -350,6 +350,17 @@ const ROUTES = [
     if (body.to === 'researching') enqueueWake(db, params.id, 'plan');
     else if (body.to === 'ready_to_work') enqueueWake(db, params.id, 'execute');
     send(res, 200, { task });
+  }],
+  // Soft-archive a task from any stage. The row is kept (bug links + history survive) — only the status
+  // flips to 'archived'. Disk GC does NOT happen here: a hosted board can't reach the connector's disk, so
+  // the returned `worktrees` (the real run paths+branches) travel back for the CLI/connector to reclaim
+  // (see gcTaskWorktrees). Modeled on the transition route: load, authorize with 'task.update', mutate.
+  ['POST', '/api/tasks/:id/archive', true, async ({ db, res, params, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, existing, 'task.update');
+    const { task, worktrees } = archiveTask(db, params.id, user.id);
+    send(res, 200, { task, worktrees });
   }],
   ['POST', '/api/tasks/:id/plan', true, async ({ db, res, params, body, user }) => {
     const existing = getTask(db, params.id);
