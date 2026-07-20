@@ -48,6 +48,9 @@ export function buildClaudeCommand({
   const command = bin || 'npx';
   const args = bin ? [] : ['-y', '@anthropic-ai/claude-code@' + CLAUDE_VERSION];
   args.push('-p', '--verbose', '--output-format', 'stream-json');
+  // Stream the hook lifecycle events (SessionStart/PreToolUse/Notification/Stop/…) inline so the executor
+  // can derive live agent state without installing ~/.claude hooks or a loopback server.
+  args.push('--include-hook-events');
 
   if (permissionMode) {
     args.push('--permission-mode', permissionMode);
@@ -164,6 +167,13 @@ export function parseStreamLine(line) {
   const type = typeof obj.type === 'string' ? obj.type : null;
   const isResult = type === 'result';
 
+  // Hook lifecycle events (from --include-hook-events) ride as `system` lines with subtype
+  // hook_started|hook_response and a `hook_event` name (SessionStart, PreToolUse, Notification, Stop, …).
+  // The response line also carries an `outcome` (success|blocked|error), used to detect a blocked state.
+  const isHook = type === 'system' && (obj.subtype === 'hook_started' || obj.subtype === 'hook_response');
+  const hookEvent = isHook && typeof obj.hook_event === 'string' ? obj.hook_event : null;
+  const outcome = isHook && obj.subtype === 'hook_response' && typeof obj.outcome === 'string' ? obj.outcome : null;
+
   return {
     raw: obj,
     type,
@@ -172,6 +182,8 @@ export function parseStreamLine(line) {
     messageId: findMessageId(obj),
     text: extractAssistantText(obj),
     toolUses: extractToolUses(obj),
+    hookEvent,
+    outcome,
     result: isResult ? obj : null,
     isResult,
   };
