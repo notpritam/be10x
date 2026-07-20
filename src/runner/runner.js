@@ -111,7 +111,9 @@ export function workLoop(db, { projectId, workerId = 'runner', intervalMs = 3000
 // them and drives an ephemeral, resumed agent per wake. "Staying on a task" is re-waking from durable
 // state, never a live process.
 
-const REASON_MODE = { plan: 'plan', revise: 'revise', input_answer: 'input_answer', execute: 'execute', follow_up: 'follow_up', verify: 'verify' };
+// 'resume' → follow_up mode: a non-fresh mode, so the executor continues the prior claude session
+// (`claude --resume <sessionId>`) rather than starting clean. Used by the manual/board "Resume" action.
+export const REASON_MODE = { plan: 'plan', revise: 'revise', input_answer: 'input_answer', execute: 'execute', follow_up: 'follow_up', verify: 'verify', resume: 'follow_up' };
 
 // The executor mode a wake maps to. pick_up_now is contextual — it means "do the useful next thing",
 // which depends on where the task currently sits.

@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { canAccessProject } from '../authz/authz.js';
 
 // Known wake reasons → the executor mode each maps to lives in the scheduler; these are the vocabulary.
-export const WAKE_REASONS = ['plan', 'revise', 'input_answer', 'execute', 'pick_up_now', 'follow_up', 'verify'];
+export const WAKE_REASONS = ['plan', 'revise', 'input_answer', 'execute', 'pick_up_now', 'follow_up', 'verify', 'resume'];
 
 function hydrate(row) {
   return row

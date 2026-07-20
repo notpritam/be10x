@@ -386,6 +386,17 @@ const ROUTES = [
   }],
   // Fleet view — "what is every agent doing right now": in-flight tasks the viewer can see + live state.
   ['GET', '/api/ps', true, async ({ db, res, user }) => send(res, 200, { sessions: assembleFleetStatus(db, { viewerId: user.id }) })],
+  // Resume a task's prior claude session: enqueue a 'resume' wake (→ follow_up mode → `claude --resume`).
+  // 409 when there is no captured session id to continue from.
+  ['POST', '/api/tasks/:id/resume', true, async ({ db, res, params, user }) => {
+    const task = getTask(db, params.id);
+    if (!task) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, task, 'task.update');
+    const sessionId = getLatestRunForTask(db, params.id)?.sessionId || null;
+    if (!sessionId) return send(res, 409, { error: 'NO_SESSION_TO_RESUME' });
+    enqueueWake(db, params.id, 'resume');
+    send(res, 200, { ok: true, sessionId });
+  }],
   // One task's live agent-status snapshot + the derived stalled flag + age. 5 path segments, distinct from
   // /api/tasks/:id (4) and /api/tasks/:id/events (also 5, but a different literal last segment).
   ['GET', '/api/tasks/:id/status', true, async ({ db, res, params, user }) => {
