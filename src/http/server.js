@@ -18,6 +18,8 @@ import { createTeam, deleteTeam } from '../teams/teams.js';
 import { listMembers, addMember, setRole, removeMember } from '../teams/memberships.js';
 import { assertCan, assertCanAccessTask, canAccessProject, assertCanAccessBug } from '../authz/authz.js';
 import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask, archiveTask, setTaskAssignee, resolveTaskId } from '../tasks/tasks.js';
+import { assembleFleetStatus } from '../tasks/fleet.js';
+import { isStalled } from '../executor/agent-status.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
 import { createBug, getBug as getBugById, getBugByHumanId, listBugs, updateBugStatus, setBugAssignee, setBugLlmAnalysis, setBugGithubIssue, addBugComment, listBugEvents, bugStatsForUser, linkBugToTask, listBugsForTask, unlinkBugFromTask, linkedBugSummary } from '../bugs/bugs.js';
 import { handoffBugToTask } from '../bugs/handoff.js';
@@ -381,6 +383,23 @@ const ROUTES = [
     if (!t) throw new Error('NO_TASK');
     assertCanAccessTask(db, user.id, t);
     send(res, 200, { task: t });
+  }],
+  // Fleet view — "what is every agent doing right now": in-flight tasks the viewer can see + live state.
+  ['GET', '/api/ps', true, async ({ db, res, user }) => send(res, 200, { sessions: assembleFleetStatus(db, { viewerId: user.id }) })],
+  // One task's live agent-status snapshot + the derived stalled flag + age. 5 path segments, distinct from
+  // /api/tasks/:id (4) and /api/tasks/:id/events (also 5, but a different literal last segment).
+  ['GET', '/api/tasks/:id/status', true, async ({ db, res, params, user }) => {
+    const task = getTask(db, params.id);
+    if (!task) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, task, 'task.read');
+    const agent = task.agent || {};
+    const now = Date.now();
+    send(res, 200, {
+      ...agent,
+      state: agent.state || null,
+      stalled: isStalled(agent, now),
+      ageMs: agent.updatedAt ? now - agent.updatedAt : null,
+    });
   }],
   ['GET', '/api/tasks/:id/events', true, async ({ db, res, params, user }) => {
     const t = getTask(db, params.id);
