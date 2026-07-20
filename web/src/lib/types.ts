@@ -104,9 +104,33 @@ export interface AgentConfig {
   dbPath: string;
 }
 
+/** The live agent state machine (hook-derived). `stalled` is derived at read time, not stored. */
+export type AgentState = "working" | "waiting" | "blocked" | "done" | "stalled";
+export type AgentPhase = "research" | "plan" | "implement" | "verify" | "ship";
+
+/** One in-flight session in the fleet view (GET /api/ps). */
+export interface PsSession {
+  taskId: string;
+  humanId: string;
+  title: string;
+  status: string;
+  phase: AgentPhase | null;
+  state: string;
+  stalled: boolean;
+  ageMs: number | null;
+  updatedAt: number | null;
+  message: string | null;
+  assignee: { id: string; email: string; displayName: string } | null;
+  project: { id: string; key: string; name: string } | null;
+}
+
 export interface AgentStatus {
   name?: string;
   state?: string;
+  /** The work phase this session is in (plan / implement / verify …). */
+  phase?: AgentPhase | null;
+  /** Epoch ms of when the current state began (not reset by heartbeats). */
+  stateStartedAt?: number;
   model?: string;
   note?: string;
   /** The current step label (e.g. "agent", "revise", "woken"). */

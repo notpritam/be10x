@@ -1,6 +1,7 @@
 // ABOUTME: Typed client for the same-origin HTTP API. Relative paths only; the session
 // cookie (gfa_sid) rides along automatically because the app is served same-origin.
 import type {
+  PsSession,
   AgentConfig,
   Artifact,
   Bug,
@@ -288,6 +289,15 @@ export const api = {
     post<{ review: unknown }>(`/api/tasks/${id}/review/submit`, { verdict, comment: comment ?? "" }),
   /** Tasks awaiting the current user's review. */
   pendingReviews: () => request<{ tasks: Task[] }>("/api/reviews/pending"),
+
+  // Session state & control
+  /** The fleet view: every in-flight session and what it's doing right now. */
+  ps: () => request<{ sessions: PsSession[] }>("/api/ps"),
+  /** Assign or unassign a task to a teammate (null clears it). */
+  assignTask: (id: string, assigneeId: string | null) =>
+    post<{ task: Task }>(`/api/tasks/${id}/assign`, { assigneeId }),
+  /** Continue the task's prior claude session (claude --resume). */
+  resumeTask: (id: string) => post<{ ok: true; sessionId: string }>(`/api/tasks/${id}/resume`),
 
   // Agent tokens & MCP config
   listTokens: () => request<{ tokens: TokenInfo[] }>("/api/tokens"),

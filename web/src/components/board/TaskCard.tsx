@@ -5,6 +5,7 @@ import { useApp } from "@/state/app-store";
 import type { Task } from "@/lib/types";
 import { cn, relativeTime } from "@/lib/utils";
 import { NeedsInputBadge, PriorityPill, TypeTag, UserAvatar } from "@/components/common/bits";
+import { SessionStateBadge } from "@/components/common/SessionStateBadge";
 
 export function contentPreview(task: Task): string | null {
   const c = task.content ?? {};
@@ -29,6 +30,9 @@ export function TaskCardVisual({
   const personId = task.assigneeId ?? task.ownerId;
   const personName = personId === user.id ? user.displayName : resolveActor(personId);
   const needsInput = task.status === "needs_input";
+  // Show the live session state while a session is in flight (hide once done, to keep finished cards quiet).
+  const agentState = task.agent?.state;
+  const showSession = !!agentState && agentState !== "done";
 
   return (
     <div
@@ -55,6 +59,16 @@ export function TaskCardVisual({
         <p className="mt-1 line-clamp-1 text-[12.5px] leading-snug text-muted-foreground">
           {preview}
         </p>
+      )}
+
+      {showSession && (
+        <div className="mt-2.5">
+          <SessionStateBadge
+            state={task.agent?.state}
+            phase={task.agent?.phase}
+            updatedAt={task.agent?.updatedAt}
+          />
+        </div>
       )}
 
       <div className="mt-3 flex items-center gap-2">
