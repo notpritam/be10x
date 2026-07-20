@@ -4,7 +4,7 @@
 // ABOUTME: credentials, environment, markers, replay events, DOM-at-time, and a heuristic root-cause analysis.
 import { getBug, getBugByHumanId, listBugs } from '../bugs/bugs.js';
 import { bugShareView } from '../share/bug-share.js';
-import { signAccessUrl } from '../bugs/uploadthing.js';
+import { getStorage } from '../bugs/storage.js';
 import { analyzeBug } from '../bugs/analyze.js';
 import { handoffBugToTask } from '../bugs/handoff.js';
 import { canAccessBug, assertCanAccessBug } from '../authz/authz.js';
@@ -46,22 +46,25 @@ function resolveBug(db, ref) {
 // --- artifact fetch -------------------------------------------------------------
 const ARTIFACT_KEY_FIELD = { dom: 'domKey', network: 'networkKey', session: 'sessionKey', screenshot: 'screenshotKey', source: 'sourceKey' };
 
-// Sign + fetch a captured artifact JSON (dom/network/session) from UploadThing. Needs UPLOADTHING_TOKEN in the
-// MCP process env (to sign the read URL); without it the sync tools still work — only these degrade.
+// Read a captured artifact JSON (dom/network/session) from local blob storage. The bug-tools run on the
+// board host (stdio MCP on the same VM, or server-side dispatch for a remote connector), so the blob dir
+// is on disk here — no network round-trip, no token.
 async function fetchArtifact(bug, kind) {
   const field = ARTIFACT_KEY_FIELD[kind];
   if (!field) throw new Error('BAD_ARTIFACT_KIND:' + kind);
   const key = bug[field];
   if (!key) throw new Error('NO_ARTIFACT:' + kind + ' (this bug has no ' + kind + ' capture)');
-  let url;
+  let bytes;
   try {
-    url = signAccessUrl(key);
+    bytes = getStorage().read(key);
   } catch {
-    throw new Error('ARTIFACT_UNAVAILABLE: set UPLOADTHING_TOKEN in the MCP server env to fetch the ' + kind + ' artifact.');
+    throw new Error('ARTIFACT_FETCH_FAILED:' + kind);
   }
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error('ARTIFACT_FETCH_FAILED:' + kind + ':' + resp.status);
-  return resp.json();
+  try {
+    return JSON.parse(bytes.toString('utf8'));
+  } catch {
+    throw new Error('ARTIFACT_FETCH_FAILED:' + kind + ':parse');
+  }
 }
 
 // session.json may be `{ events, startedAt, endedAt }` or (defensively) a bare events array.
@@ -116,7 +119,7 @@ function netSummary(e, i) {
 }
 
 // The registry. Every entry: { name, description, inputSchema, handler(db, ctx, args) } — handlers may be
-// async (artifact tools fetch from UploadThing); the server awaits them.
+// async (artifact tools read from the local blob store); the server awaits them.
 const BUG_ARG = { bug: { type: 'string', description: 'The bug: a uuid, a human id (BUG-009), a dashboard URL, or a public share URL (/b/<token>).' } };
 
 export const BUG_TOOLS = [
@@ -256,7 +259,7 @@ export const BUG_TOOLS = [
   },
   {
     name: 'bug_network',
-    description: 'The captured network timeline (fetch/XHR/WebSocket) synced to the replay clock. By default returns compact one-line summaries; pass index to get ONE full entry with request/response headers + bodies; pass failuresOnly to keep only status 0 or >=400. Needs UPLOADTHING_TOKEN in the MCP env.',
+    description: 'The captured network timeline (fetch/XHR/WebSocket) synced to the replay clock. By default returns compact one-line summaries; pass index to get ONE full entry with request/response headers + bodies; pass failuresOnly to keep only status 0 or >=400.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -284,7 +287,7 @@ export const BUG_TOOLS = [
   },
   {
     name: 'bug_dom',
-    description: 'The static DOM snapshot captured at report time (rrweb-snapshot JSON tree) — the page markup as it was when the bug was filed. Large; prefer bug_picked_elements for the specific node, or bug_dom_at for the DOM at a replay moment. Needs UPLOADTHING_TOKEN.',
+    description: 'The static DOM snapshot captured at report time (rrweb-snapshot JSON tree) — the page markup as it was when the bug was filed. Large; prefer bug_picked_elements for the specific node, or bug_dom_at for the DOM at a replay moment.',
     inputSchema: { type: 'object', properties: { ...BUG_ARG }, required: ['bug'], additionalProperties: false },
     handler: async (db, _ctx, args) => {
       const bug = resolveBug(db, args.bug);
@@ -293,7 +296,7 @@ export const BUG_TOOLS = [
   },
   {
     name: 'bug_replay_events',
-    description: 'A structured index of the rrweb replay event stream — total count, a histogram by event type, the recording duration, and a per-event list of { index, type, typeName, offsetMs }. Use this to see the shape of the session, then bug_dom_at to reconstruct the DOM at a moment. Needs UPLOADTHING_TOKEN.',
+    description: 'A structured index of the rrweb replay event stream — total count, a histogram by event type, the recording duration, and a per-event list of { index, type, typeName, offsetMs }. Use this to see the shape of the session, then bug_dom_at to reconstruct the DOM at a moment.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -321,7 +324,7 @@ export const BUG_TOOLS = [
   },
   {
     name: 'bug_dom_at',
-    description: 'Reconstruct the DOM at a replay moment WITHOUT a browser: returns the last full rrweb snapshot at or before the target time plus the incremental mutation events between that snapshot and the target, so you can see the page state when something went wrong. Give atMs (offset from recording start) or atEpoch. Needs UPLOADTHING_TOKEN.',
+    description: 'Reconstruct the DOM at a replay moment WITHOUT a browser: returns the last full rrweb snapshot at or before the target time plus the incremental mutation events between that snapshot and the target, so you can see the page state when something went wrong. Give atMs (offset from recording start) or atEpoch.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -365,7 +368,7 @@ export const BUG_TOOLS = [
   },
   {
     name: 'bug_source',
-    description: "The page's captured source bundle: rendered HTML, inline scripts + styles, external script/stylesheet references, and the resource manifest (URL/type/size/timing). Pass part='resources'|'scripts'|'styles'|'html'|'meta' to get just one slice (html can be large). Needs UPLOADTHING_TOKEN.",
+    description: "The page's captured source bundle: rendered HTML, inline scripts + styles, external script/stylesheet references, and the resource manifest (URL/type/size/timing). Pass part='resources'|'scripts'|'styles'|'html'|'meta' to get just one slice (html can be large).",
     inputSchema: {
       type: 'object',
       properties: {
@@ -419,16 +422,12 @@ export const BUG_TOOLS = [
   },
   {
     name: 'bug_screenshot_url',
-    description: 'A short-lived signed URL to the cover screenshot captured when the bug was filed — hand it to a multimodal step to actually look at what the reporter saw. Needs UPLOADTHING_TOKEN.',
+    description: 'A short-lived signed URL to the cover screenshot captured when the bug was filed — hand it to a multimodal step to actually look at what the reporter saw.',
     inputSchema: { type: 'object', properties: { ...BUG_ARG }, required: ['bug'], additionalProperties: false },
     handler: (db, _ctx, args) => {
       const bug = resolveBug(db, args.bug);
       if (!bug.screenshotKey) throw new Error('NO_ARTIFACT:screenshot');
-      try {
-        return { url: signAccessUrl(bug.screenshotKey), expiresInMinutes: 60 };
-      } catch {
-        throw new Error('ARTIFACT_UNAVAILABLE: set UPLOADTHING_TOKEN in the MCP server env to sign the screenshot URL.');
-      }
+      return { url: getStorage().signReadUrl(bug.screenshotKey), expiresInMinutes: 60 };
     },
   },
 ];

@@ -2,6 +2,9 @@
 // ABOUTME: (mint / public view with no cookie / list / public signed artifact / revoke) via a real server.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { openDb } from '../src/db/db.js';
 import { createApp } from '../src/http/server.js';
 import { createUser } from '../src/auth/users.js';
@@ -75,15 +78,11 @@ test('bugShareView exposes the FULL raw bug behind a live token, null once revok
 
 // --- HTTP flow -----------------------------------------------------------------------------------
 
-// A fake, well-formed UPLOADTHING_TOKEN (base64 JSON) so the public artifact route's signAccessUrl can
-// build a signature without a real bucket. Set on process.env for the server, restored after.
-const FAKE_TOKEN = Buffer.from(
-  JSON.stringify({ apiKey: 'sk_test_bugshare', appId: 'appzzz', regions: ['sea1'] })
-).toString('base64');
-
 async function withServer(fn) {
-  const prev = process.env.UPLOADTHING_TOKEN;
-  process.env.UPLOADTHING_TOKEN = FAKE_TOKEN;
+  const dir = mkdtempSync(join(tmpdir(), 'be10x-bugshare-'));
+  const prev = { d: process.env.GFA_BLOB_DIR, s: process.env.GFA_BLOB_SECRET };
+  process.env.GFA_BLOB_DIR = dir;
+  process.env.GFA_BLOB_SECRET = 'test-secret';
   const db = openDb(':memory:');
   const app = createApp(db);
   await new Promise((r) => app.listen(0, '127.0.0.1', r));
@@ -92,8 +91,9 @@ async function withServer(fn) {
     await fn(base);
   } finally {
     await new Promise((r) => app.close(r));
-    if (prev === undefined) delete process.env.UPLOADTHING_TOKEN;
-    else process.env.UPLOADTHING_TOKEN = prev;
+    rmSync(dir, { recursive: true, force: true });
+    if (prev.d === undefined) delete process.env.GFA_BLOB_DIR; else process.env.GFA_BLOB_DIR = prev.d;
+    if (prev.s === undefined) delete process.env.GFA_BLOB_SECRET; else process.env.GFA_BLOB_SECRET = prev.s;
   }
 }
 
@@ -160,9 +160,9 @@ test('bug share HTTP flow: mint, public view with no cookie, list, revoke, then 
     assert.equal(art.status, 200);
     assert.equal(typeof art.body.url, 'string');
     const u = new URL(art.body.url);
-    assert.equal(u.host, 'appzzz.ufs.sh');
-    assert.equal(u.pathname, '/f/shotkey123');
-    assert.ok(u.searchParams.get('signature'));
+    assert.equal(u.pathname, '/api/blob/shotkey123');   // served by the board, not UploadThing
+    assert.ok(u.searchParams.get('sig'));
+    assert.ok(u.searchParams.get('exp'));
 
     // A kind whose key is absent on this bug → 404 NO_ARTIFACT (distinct from a signed URL).
     const noDom = await json(await fetch(base + '/api/bug-share/' + share.token + '/artifact/dom'));
