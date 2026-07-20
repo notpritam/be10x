@@ -24,11 +24,11 @@ echo "  node:   $NODE_BIN"
 echo "  data:   $DATA_ROOT"
 echo
 
-render() { # render <tmpl> <env> <data> <port> <secure> <worker>
+render() { # render <tmpl> <env> <data> <port> <secure> <worker> <workeruser>
   sed -e "s#__ENV__#$2#g" -e "s#__NODE__#$NODE_BIN#g" -e "s#__NODEDIR__#$NODE_DIR#g" \
       -e "s#__REPO__#$REPO#g" -e "s#__USER__#$USER_NAME#g" -e "s#__HOME__#$USER_HOME#g" \
       -e "s#__DATA__#$3#g" -e "s#__PORT__#$4#g" -e "s#__SECURE__#$5#g" -e "s#__WORKER__#${6:-runner}#g" \
-      -e "s#__ENVFILE__#$DATA_ROOT/$2/env#g" "$1"
+      -e "s#__WORKERUSER__#${7:-}#g" -e "s#__ENVFILE__#$DATA_ROOT/$2/env#g" "$1"
 }
 
 # ---- 1. data dirs + tool-access folder ------------------------------------
@@ -41,8 +41,8 @@ echo "  ok"
 
 # ---- 2. env files ---------------------------------------------------------
 echo "[2/6] env files"
-render "$REPO/deploy/be10x.env.tmpl" prod "$DATA_ROOT/prod" 4610 1 pritam > "$DATA_ROOT/prod/env"
-render "$REPO/deploy/be10x.env.tmpl" dev  "$DATA_ROOT/dev"  4620 0 pritam-dev > "$DATA_ROOT/dev/env"
+render "$REPO/deploy/be10x.env.tmpl" prod "$DATA_ROOT/prod" 4610 1 pritam notpritam@notpritam.in > "$DATA_ROOT/prod/env"
+render "$REPO/deploy/be10x.env.tmpl" dev  "$DATA_ROOT/dev"  4620 0 pritam-dev "" > "$DATA_ROOT/dev/env"
 chmod 600 "$DATA_ROOT/prod/env" "$DATA_ROOT/dev/env"
 echo "  ok"
 

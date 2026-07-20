@@ -17,7 +17,7 @@ import { dispatchBugTool } from '../mcp/bug-tools.js';
 import { createTeam, deleteTeam } from '../teams/teams.js';
 import { listMembers, addMember, setRole, removeMember } from '../teams/memberships.js';
 import { assertCan, assertCanAccessTask, canAccessProject, assertCanAccessBug } from '../authz/authz.js';
-import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask, archiveTask, resolveTaskId } from '../tasks/tasks.js';
+import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask, archiveTask, setTaskAssignee, resolveTaskId } from '../tasks/tasks.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
 import { createBug, getBug as getBugById, getBugByHumanId, listBugs, updateBugStatus, setBugAssignee, setBugLlmAnalysis, setBugGithubIssue, addBugComment, listBugEvents, bugStatsForUser, linkBugToTask, listBugsForTask, unlinkBugFromTask, linkedBugSummary } from '../bugs/bugs.js';
 import { handoffBugToTask } from '../bugs/handoff.js';
@@ -444,6 +444,16 @@ const ROUTES = [
   // flips to 'archived'. Disk GC does NOT happen here: a hosted board can't reach the connector's disk, so
   // the returned `worktrees` (the real run paths+branches) travel back for the CLI/connector to reclaim
   // (see gcTaskWorktrees). Modeled on the transition route: load, authorize with 'task.update', mutate.
+  // Assign / unassign a task to a teammate (assigneeId null clears it). This is what routes the work: once
+  // assigned, only the assignee's machine claims the task (strict assignee-routing, see executor/wake.js).
+  ['POST', '/api/tasks/:id/assign', true, async ({ db, res, params, body, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, existing, 'task.update');
+    const assigneeId = body?.assigneeId ?? null;
+    if (assigneeId && !getUserById(db, assigneeId)) throw new Error('USER_NOT_FOUND');
+    send(res, 200, { task: setTaskAssignee(db, params.id, assigneeId, user.id) });
+  }],
   ['POST', '/api/tasks/:id/archive', true, async ({ db, res, params, user }) => {
     const existing = getTask(db, params.id);
     if (!existing) throw new Error('NO_TASK');

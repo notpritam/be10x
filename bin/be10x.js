@@ -178,8 +178,16 @@ async function cmdServe(args) {
   // GFA_WORKER_ID labels this host's runner in run records (default 'runner'); we set it to the machine
   // identity (e.g. 'pritam') so work done on this VM is attributable to it across the board.
   const workerId = process.env.GFA_WORKER_ID || 'runner';
+  // GFA_WORKER_USER (an email) is the user THIS host's baked runner acts for — strict assignee-routing then
+  // only lets it claim tasks assigned to that user (plus unassigned). Unset ⇒ unassigned tasks only.
+  let claimantUserId = null;
+  if (process.env.GFA_WORKER_USER) {
+    const u = getUserByEmail(db, process.env.GFA_WORKER_USER);
+    if (u) claimantUserId = u.id;
+    else console.error(`be10x: GFA_WORKER_USER "${process.env.GFA_WORKER_USER}" is not a board account — runner will claim only UNASSIGNED tasks.`);
+  }
   const makeExecutor = (project) => makeClaudeExecutor(db, project, { model: process.env.GFA_MODEL, workerId });
-  wakeLoopAll(db, { workerId, makeExecutor });
+  wakeLoopAll(db, { workerId, makeExecutor, claimantUserId });
   console.log('be10x runner working all linked repos on board wakes.');
 }
 
