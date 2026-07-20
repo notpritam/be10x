@@ -1,0 +1,24 @@
+# be10x board — systemd unit template. Rendered per-env by scripts/vm-setup.sh
+# (placeholders __ENV__ __NODE__ __REPO__ __USER__ __ENVFILE__ __PORT__ substituted).
+# Native (non-Docker) service: one process per environment (prod on 4610, dev on 4620),
+# both from the same source tree, isolated only by their EnvironmentFile.
+[Unit]
+Description=be10x board (__ENV__)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__REPO__
+EnvironmentFile=__ENVFILE__
+# Bind to loopback only — Caddy (prod) terminates TLS and proxies in; dev is reached via SSH tunnel.
+ExecStart=__NODE__ bin/be10x.js serve --port __PORT__ --host 127.0.0.1
+Restart=always
+RestartSec=3
+# Give the board a moment to flush SQLite on stop.
+TimeoutStopSec=15
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

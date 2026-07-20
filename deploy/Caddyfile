@@ -1,0 +1,8 @@
+# be10x — native Caddy config (installed to /etc/caddy/Caddyfile by scripts/vm-setup.sh).
+# Automatic HTTPS (Let's Encrypt) for the prod board, reverse-proxied to the loopback Node process.
+# Requires: public TCP 80 + 443 open (GCP firewall) and a DNS A record for the domain -> this VM's IP,
+# with Cloudflare proxy OFF (DNS-only) so the HTTP-01 challenge reaches Caddy.
+be10x.notpritam.in {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:4610
+}

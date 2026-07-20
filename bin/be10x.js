@@ -175,8 +175,11 @@ async function cmdServe(args) {
   startServer({ db, port: args.port ? Number(args.port) : 4610, host: args.host && args.host !== true ? args.host : undefined });
   // Board-wide runner baked into serve: works tasks across every linked repo, spawning the agent in each
   // task's own repo — so the user never needs a separate `be10x work` terminal.
-  const makeExecutor = (project) => makeClaudeExecutor(db, project, { model: process.env.GFA_MODEL, workerId: 'runner' });
-  wakeLoopAll(db, { workerId: 'runner', makeExecutor });
+  // GFA_WORKER_ID labels this host's runner in run records (default 'runner'); we set it to the machine
+  // identity (e.g. 'pritam') so work done on this VM is attributable to it across the board.
+  const workerId = process.env.GFA_WORKER_ID || 'runner';
+  const makeExecutor = (project) => makeClaudeExecutor(db, project, { model: process.env.GFA_MODEL, workerId });
+  wakeLoopAll(db, { workerId, makeExecutor });
   console.log('be10x runner working all linked repos on board wakes.');
 }
 
