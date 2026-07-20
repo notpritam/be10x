@@ -246,7 +246,10 @@ export function AgentActions({ task, onDone }: { task: Task; onDone: () => void 
   // Only where the agent has meaningful next work — not verifying/done/terminal, where a ping would
   // wrongly re-plan (there's no "verify" mode yet). needs_input should be answered, not pinged.
   const canPing = ["researching", "plan_review", "ready_to_work", "in_progress"].includes(task.status);
-  if (!canHandOff && !canPing) return null;
+  // Resume continues the SAME claude session (claude --resume) — offered where a prior session likely
+  // exists. The API returns 409 if there's actually nothing to resume; we surface that.
+  const canResume = ["in_progress", "verifying", "plan_review", "needs_input", "blocked"].includes(task.status);
+  if (!canHandOff && !canPing && !canResume) return null;
 
   async function run(action: () => Promise<unknown>, ok: string) {
     setBusy(true);
@@ -276,6 +279,16 @@ export function AgentActions({ task, onDone }: { task: Task; onDone: () => void 
           onClick={() => run(() => api.pickUpNow(task.id), "Pinged the agent to pick this up now.")}
         >
           Pick up now
+        </Button>
+      )}
+      {canResume && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => run(() => api.resumeTask(task.id), "Resuming the session where it left off.")}
+        >
+          Resume
         </Button>
       )}
     </div>
