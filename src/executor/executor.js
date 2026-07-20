@@ -18,6 +18,7 @@ import { ensureWorktree as realEnsureWorktree, worktreeBranch, collectGitMeta } 
 import { createRun, setRunSession, setRunModel, setRunPid, markRunning, finishRun, getLatestRunForTask } from './runs.js';
 import { recordRunStep } from './run-steps.js';
 import { recordProgress } from '../worker/worker.js';
+import { hookEventToActivity, phaseFromMode } from './agent-status.js';
 import { listBugsForTask, linkedBugSummary } from '../bugs/bugs.js';
 
 const BOARD_MSG_MAX = 280;
@@ -181,6 +182,7 @@ export function makeClaudeExecutor(db, project, opts = {}) {
 
   return async function execute(task, runOpts = {}) {
     const mode = runOpts.mode || 'plan';
+    const phase = phaseFromMode(mode); // user-facing phase for the live status snapshot
     const comments = runOpts.comments || [];
     const wakeContext = runOpts.wakeContext || null;
     // Context policy: fresh session for plan/execute/verify (clean start / clean handoff from the plan /
@@ -322,8 +324,14 @@ export function makeClaudeExecutor(db, project, opts = {}) {
             modelPersisted = true;
             setRunModel(db, run.id, acc.model);
           }
+          // Hook lifecycle events (SessionStart/PreToolUse/Notification/Stop/…) drive the live state
+          // machine: working (heartbeat), waiting (needs a human), blocked (denied/errored tool).
+          if (ev.hookEvent) {
+            const activity = hookEventToActivity(ev.hookEvent, ev.outcome);
+            if (activity) recordProgress(db, task.id, { state: activity, phase, step: 'agent' }, workerId);
+          }
           if (ev.text) {
-            recordProgress(db, task.id, { state: 'working', step: 'agent', message: truncate(ev.text) }, workerId);
+            recordProgress(db, task.id, { state: 'working', phase, step: 'agent', message: truncate(ev.text) }, workerId);
           }
           // The commands the agent ran, in order: each tool_use (Bash, Edit, gfa_*, …) with its input.
           if (ev.toolUses && ev.toolUses.length) {

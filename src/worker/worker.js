@@ -33,18 +33,26 @@ export function claimNextReadyTask(db, workerId = 'worker') {
 // todos/changes are PRESERVED when an update doesn't carry them: a plain progress note (from the executor
 // stream or the runner's "woken" note) must not wipe the agent's implementation checklist. Only an update
 // that actually provides todos/changes replaces them — that's why the task list used to vanish mid-run.
-export function recordProgress(db, taskId, { state = 'working', step = '', message = '', todos, changes } = {}, actor = 'agent') {
+// `state`/`phase`/`stateStartedAt` carry the hook-derived agent state machine (see executor/agent-status.js).
+// When an update omits `state`, the PRIOR state is preserved (a bare progress note must not flip a
+// `waiting` session back to `working`); `stateStartedAt` moves only when the state actually changes.
+export function recordProgress(db, taskId, { state, step = '', message = '', todos, changes, phase, stateStartedAt } = {}, actor = 'agent') {
   const prevRow = db.prepare('SELECT agent_json FROM tasks WHERE id = ?').get(taskId);
   const prev = prevRow && prevRow.agent_json ? JSON.parse(prevRow.agent_json) : {};
+  const now = Date.now();
+  const nextState = state !== undefined ? state : prev.state ?? 'working';
+  const stateChanged = nextState !== prev.state;
   const agent = {
-    state,
+    state: nextState,
     step,
     message,
+    phase: phase !== undefined ? phase : prev.phase ?? null,
+    stateStartedAt: stateStartedAt !== undefined ? stateStartedAt : (stateChanged ? now : prev.stateStartedAt ?? now),
     todos: todos !== undefined ? todos : prev.todos ?? [],
     changes: changes !== undefined ? changes : prev.changes ?? null,
-    updatedAt: Date.now(),
+    updatedAt: now,
   };
-  db.prepare('UPDATE tasks SET agent_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(agent), Date.now(), taskId);
+  db.prepare('UPDATE tasks SET agent_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(agent), now, taskId);
   appendEvent(db, taskId, actor, 'progress', { step, message, changes });
   return getTask(db, taskId);
 }
