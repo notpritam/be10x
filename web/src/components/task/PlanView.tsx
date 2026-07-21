@@ -56,14 +56,14 @@ function renderBlock(block: Block, key: number): ReactNode {
   const body = firstStr(block, ["html", "markdown", "md", "text", "content", "code", "diagram"]);
   if (t === "html" || (!block.type && str(block.html))) {
     const html = str(block.html) ?? body;
-    return html ? <HtmlBlock key={key} html={html} /> : null;
+    return html ? <HtmlBlock flush key={key} html={html} /> : null;
   }
   if (t === "steps") { const s = toSteps(block.steps); return s ? <Steps key={key} steps={s} /> : null; }
   if (t === "diagram") return body ? <MermaidDiagram key={key} code={body} /> : null;
   if (t === "code") return body ? <Mono key={key} label="Code" icon={<ListChecks className="size-3.5" />} content={body} /> : null;
   if (t === "markdown" || t === "md") return body ? <Markdown key={key} text={body} /> : null;
   // default: markdown-ish text (or HTML if it clearly is)
-  if (body) return looksLikeHtml(body) ? <HtmlBlock key={key} html={body} /> : <Markdown key={key} text={body} />;
+  if (body) return looksLikeHtml(body) ? <HtmlBlock flush key={key} html={body} /> : <Markdown key={key} text={body} />;
   return null;
 }
 
@@ -76,7 +76,7 @@ export function PlanView({ plan }: { plan: unknown }) {
     // shows as a wall of raw HTML + \n\n (rendered as markdown) or half-as-HTML. Only then html vs markdown.
     const structured = parseStructured(plan);
     if (structured) return <PlanView plan={structured} />;
-    return looksLikeHtml(plan) ? <HtmlBlock html={plan} /> : <Markdown text={plan} />;
+    return looksLikeHtml(plan) ? <HtmlBlock flush html={plan} /> : <Markdown text={plan} />;
   }
 
   const obj = typeof plan === "object" && !Array.isArray(plan) ? (plan as Record<string, unknown>) : null;
@@ -93,7 +93,7 @@ export function PlanView({ plan }: { plan: unknown }) {
   // restating the same content for other consumers (e.g. an execute-phase checklist) — stacking
   // those underneath the html duplicates whatever it already says, which reads as broken/garbled
   // output rather than extra content. Only fall through to the other fields when there's no html.
-  if (html) return <HtmlBlock html={html} />;
+  if (html) return <HtmlBlock flush html={html} />;
 
   const markdown = obj && firstStr(obj, ["markdown", "md"]);
   const steps = toSteps(obj?.steps) ?? toSteps(plan);

@@ -36,7 +36,9 @@ export function parseStructured(text: string): unknown | null {
 // agent HTML — sandboxed iframe (scripts run, but can't reach parent DOM/cookies)
 // ---------------------------------------------------------------------------
 
-export function HtmlBlock({ html }: { html: string }) {
+// `flush`: the HTML is a complete, self-styled artifact (a plan), so it brings its own padding/background —
+// render it edge-to-edge with no injected body padding, instead of stacking our 14px on top of the agent's.
+export function HtmlBlock({ html, flush = false }: { html: string; flush?: boolean }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(220);
 
@@ -44,7 +46,7 @@ export function HtmlBlock({ html }: { html: string }) {
     function onMsg(e: MessageEvent) {
       const d = e.data;
       if (d && typeof d === "object" && "__be10xHeight" in d && ref.current && e.source === ref.current.contentWindow) {
-        setHeight(Math.min(2400, Math.max(60, Number((d as { __be10xHeight: number }).__be10xHeight) + 8)));
+        setHeight(Math.min(2400, Math.max(60, Number((d as { __be10xHeight: number }).__be10xHeight) + (flush ? 0 : 8))));
       }
     }
     window.addEventListener("message", onMsg);
@@ -57,7 +59,7 @@ export function HtmlBlock({ html }: { html: string }) {
     "try{new ResizeObserver(r).observe(document.body)}catch(e){}";
   const doc =
     '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-    "<style>:root{color-scheme:light}body{margin:0;padding:14px;font:13px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;color:#1c1917;background:transparent}" +
+    "<style>:root{color-scheme:light}body{margin:0;padding:" + (flush ? "0" : "14px") + ";font:13px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;color:#1c1917;background:transparent}" +
     "*{box-sizing:border-box}img,svg,canvas,table{max-width:100%}pre{overflow:auto}</style></head><body>" +
     html +
     "<" + "script>" + reporter + "<" + "/script></body></html>";
