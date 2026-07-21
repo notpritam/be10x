@@ -330,3 +330,19 @@ CREATE TABLE IF NOT EXISTS bug_shares (
   created_at INTEGER NOT NULL,
   revoked_at INTEGER
 );
+
+-- Notifications: a per-user feed of "something needs you / relates to your task" events. The rowid is the
+-- monotonic sequence a client (the connector, or the web bell) reads with `?since=<seq>` for exactly-once,
+-- catch-up-while-offline delivery. seen_at is the web bell's read marker; the connector tracks its own
+-- local watermark instead. kind ∈ assigned | review_requested | input_needed | changes_requested (extensible).
+CREATE TABLE IF NOT EXISTS notifications (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL,
+  task_id    TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  body       TEXT,
+  created_at INTEGER NOT NULL,
+  seen_at    INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id, seen_at);
