@@ -245,6 +245,11 @@ export function Sidebar({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {!collapsed && (
+          <p className="px-1.5 pt-1.5 text-[10.5px] font-medium tracking-wide text-muted-foreground/60">
+            be10x v{__APP_VERSION__}
+          </p>
+        )}
       </div>
     </aside>
   );

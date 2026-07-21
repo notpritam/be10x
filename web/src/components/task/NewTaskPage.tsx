@@ -68,10 +68,9 @@ export function NewTaskPage({
       : type === "query"
         ? "Ask the agent anything — e.g. what's the riskiest part of this repo?"
         : "The gist. e.g. outline the key questions for the Q3 brief";
-  // Starting the agent needs a project — that's WHERE the session runs. Creating without starting doesn't
-  // (a team task can be project-agnostic until someone picks it up). So a project is required only to start.
-  const needsProject = startNow && !projectId;
-  const canSubmit = title.trim().length > 0 && detail.trim().length > 0 && !busy && !needsProject;
+  // The repo is optional — a task can be project-agnostic and you set/change the project on the task later
+  // (or the assignee picks it). Never blocks creation.
+  const canSubmit = title.trim().length > 0 && detail.trim().length > 0 && !busy;
 
   async function submit() {
     if (!canSubmit) return;
@@ -211,7 +210,7 @@ export function NewTaskPage({
               <span className="min-w-0">
                 <span className="block text-[13px] font-semibold text-foreground">Start the agent now</span>
                 <span className="block text-[11.5px] text-muted-foreground">
-                  Hand straight to the agent to start planning — pick a project first (that's where it runs).
+                  Hand straight to the agent. Optional — set a project (the repo it runs in) here or later on the task.
                 </span>
               </span>
               <span
@@ -227,9 +226,6 @@ export function NewTaskPage({
 
           {/* Footer spans both columns */}
           <div className="flex items-center justify-end gap-3 border-t border-border/60 pt-5 lg:col-span-2">
-            {needsProject && (
-              <span className="text-[12px] font-medium text-amber-600">Choose a project to start the agent.</span>
-            )}
             <Button variant="ghost" onClick={onCancel}>Cancel</Button>
             <Button onClick={() => void submit()} disabled={!canSubmit}>
               {busy ? <Loader2 className="size-4 animate-spin" /> : startNow ? "Create & start" : "Create task"}

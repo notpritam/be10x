@@ -296,6 +296,9 @@ export const api = {
   /** Assign or unassign a task to a teammate (null clears it). */
   assignTask: (id: string, assigneeId: string | null) =>
     post<{ task: Task }>(`/api/tasks/${id}/assign`, { assigneeId }),
+  /** Set / change / clear the project (repo) the agent runs the task in (null = none). */
+  setTaskProject: (id: string, projectId: string | null) =>
+    post<{ task: Task }>(`/api/tasks/${id}/project`, { projectId }),
   /** Continue the task's prior claude session (claude --resume). */
   resumeTask: (id: string) => post<{ ok: true; sessionId: string }>(`/api/tasks/${id}/resume`),
 

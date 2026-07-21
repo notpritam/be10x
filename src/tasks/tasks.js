@@ -204,6 +204,16 @@ export function setTaskAssignee(db, id, assigneeId, actor) {
   return getTask(db, id);
 }
 
+// Set / change / clear the project (the repo the agent runs in) for a task — changeable anytime, so a
+// task can be created project-agnostic and the folder chosen later, or moved to a different repo.
+export function setTaskProject(db, id, projectId, actor) {
+  const task = getTask(db, id);
+  if (!task) throw new Error('NO_TASK');
+  db.prepare('UPDATE tasks SET project_id = ?, updated_at = ? WHERE id = ?').run(projectId ?? null, Date.now(), id);
+  appendEvent(db, id, actor, 'project', { from: task.projectId ?? null, to: projectId ?? null });
+  return getTask(db, id);
+}
+
 export function archiveTask(db, id, actor) {
   const task = getTask(db, id);
   if (!task) throw new Error('NO_TASK');

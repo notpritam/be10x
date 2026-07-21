@@ -30,6 +30,7 @@ import { TaskChecklist } from "./TaskChecklist";
 import { CurrentStep } from "./CurrentStep";
 import { AgentConfigControl } from "./AgentConfigControl";
 import { TaskAssignee } from "./TaskAssignee";
+import { TaskProject } from "./TaskProject";
 import { WorkSection } from "./WorkSection";
 import { InfoPanel } from "./InfoPanel";
 import { LinkedBugs } from "./LinkedBugs";
@@ -240,6 +241,9 @@ export function DeepDivePanel({
 
                 {/* Who owns this task — assigning it routes the work to that person's machine. */}
                 <TaskAssignee task={task} onDone={refresh} />
+
+                {/* Where the agent spawns — the repo. Changeable anytime (a task can start project-agnostic). */}
+                <TaskProject task={task} onDone={refresh} />
 
                 {/* Plan review sits here, in place — not pinned to the foot. */}
                 {task.status === "plan_review" && <ReviewActions taskId={task.id} onDone={refresh} />}
