@@ -1,7 +1,7 @@
 // ABOUTME: Workspace tab bar atop the main content. A leading "context" button = the current view
 // (Personal / a team / …) that returns to the board and reads as selected when no task is open, then
 // the open task tabs (title + a status dot, closable). Browser-style; the active tab is a raised card.
-import { LayoutGrid, Plus, Rows3, Users, X, type LucideIcon } from "lucide-react";
+import { Activity, LayoutGrid, Plus, Rows3, Users, X, type LucideIcon } from "lucide-react";
 import { useApp, type View } from "@/state/app-store";
 import { STATUS_META } from "@/lib/lifecycle";
 import { cn } from "@/lib/utils";
@@ -134,6 +134,7 @@ export function TabBar({
           <div className="inline-flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
             <SegBtn active={tab === "board"} onClick={() => onTab("board")} icon={LayoutGrid} label="Board" />
             <SegBtn active={tab === "list"} onClick={() => onTab("list")} icon={Rows3} label="List" />
+            <SegBtn active={tab === "fleet"} onClick={() => onTab("fleet")} icon={Activity} label="Fleet" />
           </div>
           <Button size="sm" onClick={onNewTask} className="h-8 gap-1.5">
             <Plus className="size-4" /> New task
