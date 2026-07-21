@@ -4,7 +4,7 @@
 // every DataValue string). Extensible: add a block type = one case.
 import type { ReactNode } from "react";
 import { ListChecks } from "lucide-react";
-import { HtmlBlock, Markdown, looksLikeHtml } from "./rich-content";
+import { HtmlBlock, Markdown, looksLikeHtml, parseStructured } from "./rich-content";
 import { MermaidDiagram } from "./MermaidDiagram";
 
 type Block = Record<string, unknown> & { type?: string };
@@ -70,8 +70,12 @@ function renderBlock(block: Block, key: number): ReactNode {
 export function PlanView({ plan }: { plan: unknown }) {
   if (plan == null) return null;
 
-  // A bare string: HTML if it looks like it, else markdown.
   if (typeof plan === "string") {
+    // The agent sometimes sends the plan as a JSON STRING ('{"html":...}' / '[...]') instead of an object,
+    // which then double-encodes on the server. Unwrap it FIRST and render the real structure — otherwise it
+    // shows as a wall of raw HTML + \n\n (rendered as markdown) or half-as-HTML. Only then html vs markdown.
+    const structured = parseStructured(plan);
+    if (structured) return <PlanView plan={structured} />;
     return looksLikeHtml(plan) ? <HtmlBlock html={plan} /> : <Markdown text={plan} />;
   }
 

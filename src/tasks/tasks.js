@@ -150,7 +150,19 @@ export function setResearch(db, id, research, actor) {
   return getTask(db, id);
 }
 
-export function setPlan(db, id, plan, actor) {
+// The agent sometimes hands us the plan as a JSON STRING ('{"html":...}' / '[...]') rather than the object.
+// Unwrap it so we store the real value once — not a double-encoded string the board renders as raw braces.
+function normalizePlan(plan) {
+  if (typeof plan !== 'string') return plan;
+  const t = plan.trim();
+  if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+    try { const v = JSON.parse(t); if (v && typeof v === 'object') return v; } catch { /* real prose that happens to start with a brace */ }
+  }
+  return plan;
+}
+
+export function setPlan(db, id, planInput, actor) {
+  const plan = normalizePlan(planInput);
   db.prepare('UPDATE tasks SET plan_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(plan), Date.now(), id);
   appendEvent(db, id, actor, 'plan', { plan });
   // Snapshot this plan as an immutable version so the board can show history and restore an earlier one.

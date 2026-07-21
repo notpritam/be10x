@@ -179,3 +179,8 @@ itself." `9/10/11` harden durability. `12/13` clean up prompts and close the PR 
 **Architectural throughline to hold onto:** one RPC surface on the connector; board and CLI are thin,
 scoped clients of it; status is hook-driven; state is durable on the board; every long op has a
 cursor/watermark for exactly-once catch-up.
+
+### Later — "directory" not "repo" (noted 2026-07-21)
+The agent needs a **working directory** to spawn in, not necessarily a git repo/project. Generalize the
+"project" concept to "a directory to run in" (a repo is one kind). Lets people point the agent at any folder;
+git features layer on when it IS a repo. Rename "project/repo" → "location/folder" in the UI. Deferred.
