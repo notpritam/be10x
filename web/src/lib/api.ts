@@ -2,6 +2,7 @@
 // cookie (gfa_sid) rides along automatically because the app is served same-origin.
 import type {
   PsSession,
+  Notification,
   AgentConfig,
   Artifact,
   Bug,
@@ -293,6 +294,9 @@ export const api = {
   // Session state & control
   /** The fleet view: every in-flight session and what it's doing right now. */
   ps: () => request<{ sessions: PsSession[] }>("/api/ps"),
+  /** This user's notification feed + unseen count (the bell). */
+  notifications: () => request<{ notifications: Notification[]; unseen: number }>("/api/notifications"),
+  markNotificationsSeen: () => post<{ ok: true; unseen: number }>("/api/notifications/seen"),
   /** Assign or unassign a task to a teammate (null clears it). */
   assignTask: (id: string, assigneeId: string | null) =>
     post<{ task: Task }>(`/api/tasks/${id}/assign`, { assigneeId }),

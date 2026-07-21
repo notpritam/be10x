@@ -75,7 +75,7 @@ export function DeepDivePanel({
   /** Render as the active tab's page (fills the main area) rather than a fixed overlay. */
   inline?: boolean;
 }) {
-  const { resolveActor } = useApp();
+  const { resolveActor, user } = useApp();
   const { detail, loading, notFound, refresh, onMove } = ctrl;
   const task = detail?.task;
   const isStale = task && taskId !== task.id;
@@ -246,7 +246,14 @@ export function DeepDivePanel({
                 <TaskProject task={task} onDone={refresh} />
 
                 {/* Plan review sits here, in place — not pinned to the foot. */}
-                {task.status === "plan_review" && <ReviewActions taskId={task.id} onDone={refresh} />}
+                {task.status === "plan_review" &&
+                  (task.reviewerId === user.id ? (
+                    <ReviewActions taskId={task.id} onDone={refresh} />
+                  ) : (
+                    <div className="rounded-lg border border-border/70 bg-muted/30 px-3.5 py-2.5 text-[12.5px] text-muted-foreground">
+                      Awaiting review by <span className="font-medium text-foreground">{task.reviewerId ? resolveActor(task.reviewerId) : "someone"}</span>.
+                    </div>
+                  ))}
 
                 <AgentActions task={task} onDone={refresh} />
 

@@ -34,6 +34,13 @@ export function awaitsReview(task: Task, userId: string): boolean {
   return task.status === "plan_review" && task.reviewerId === userId;
 }
 
+/** A task waiting on THIS user to act — the agent asked them for input, or they're the plan reviewer.
+ *  (Was a flat "any needs_input task", which showed everyone the whole team's queue.) */
+export function awaitsMe(task: Task, userId: string): boolean {
+  const mineToAnswer = task.status === "needs_input" && (task.assigneeId === userId || task.ownerId === userId);
+  return mineToAnswer || awaitsReview(task, userId);
+}
+
 function viewFilter(view: View, userId: string): (task: Task) => boolean {
   switch (view.kind) {
     case "all":
@@ -41,7 +48,7 @@ function viewFilter(view: View, userId: string): (task: Task) => boolean {
     case "personal":
       return (t) => t.scope === "personal";
     case "needs_input":
-      return (t) => t.status === "needs_input";
+      return (t) => awaitsMe(t, userId);
     case "review_queue":
       return (t) => awaitsReview(t, userId);
     case "team":
@@ -425,7 +432,7 @@ export function AppProvider({
     return {
       all: allTasks.length,
       personal: allTasks.filter((t) => t.scope === "personal").length,
-      needsInput: allTasks.filter((t) => t.status === "needs_input").length,
+      needsInput: allTasks.filter((t) => awaitsMe(t, user.id)).length,
       reviewQueue: allTasks.filter((t) => awaitsReview(t, user.id)).length,
       team,
       project,

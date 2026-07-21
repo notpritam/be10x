@@ -108,6 +108,18 @@ export interface AgentConfig {
 export type AgentState = "working" | "waiting" | "blocked" | "done" | "stalled";
 export type AgentPhase = "research" | "plan" | "implement" | "verify" | "ship";
 
+/** A feed entry telling this user something needs them / relates to their task (GET /api/notifications). */
+export interface Notification {
+  id: string;
+  seq: number;
+  kind: "assigned" | "review_requested" | "input_needed" | "changes_requested" | string;
+  taskId: string | null;
+  title: string;
+  body: string | null;
+  createdAt: number;
+  seenAt: number | null;
+}
+
 /** One in-flight session in the fleet view (GET /api/ps). */
 export interface PsSession {
   taskId: string;

@@ -6,6 +6,7 @@ import { useApp, type View } from "@/state/app-store";
 import { STATUS_META } from "@/lib/lifecycle";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { NotificationsBell } from "./NotificationsBell";
 import { type BoardTab } from "./Topbar";
 
 function viewLabel(view: View): string {
@@ -122,6 +123,9 @@ export function TabBar({
           </div>
         )}
       </div>
+
+      {/* The bell is always visible (any view), on the right. */}
+      <NotificationsBell />
 
       {/* Board controls live on the tab line (no separate header). Only on the board. */}
       {onBoard && (
