@@ -5,10 +5,7 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Run, Task } from "@/lib/types";
-
-// Working but silent for this long → surface it (amber) so a real stall is visible, not mistaken for
-// activity. Real agents go quiet for a minute or two while reading code or waiting on the model.
-const QUIET_MS = 90_000;
+import { liveAgentState, type LiveState } from "@/lib/agent-state";
 
 function ago(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -35,6 +32,20 @@ const TEXT: Record<Tone, string> = {
   idle: "text-muted-foreground",
 };
 
+// Map the hook-derived live state → how the pill reads. Keeping this next to the tones makes it obvious
+// that "Agent starting" only survives until the first hook heartbeat flips us to "working".
+const PRESENTATION: Record<LiveState, { tone: Tone; label: string }> = {
+  starting: { tone: "live", label: "Agent starting" },
+  working: { tone: "live", label: "Agent working" },
+  quiet: { tone: "quiet", label: "Agent working · quiet" },
+  waiting: { tone: "quiet", label: "Waiting for your input" },
+  blocked: { tone: "quiet", label: "Agent blocked" },
+  stalled: { tone: "quiet", label: "Agent stalled" },
+  failed: { tone: "failed", label: "Agent stopped" },
+  done: { tone: "idle", label: "Agent finished" },
+  idle: { tone: "idle", label: "Agent idle" },
+};
+
 export function AgentLiveStatus({
   task,
   runs,
@@ -47,7 +58,9 @@ export function AgentLiveStatus({
 }) {
   const [now, setNow] = useState(() => Date.now());
   const run = runs.length ? runs[runs.length - 1] : null;
-  const active = run?.status === "running" || run?.status === "starting";
+  const agent = task.agent;
+  const live = liveAgentState(task, runs, now);
+  const active = live.active;
 
   // Only tick while something is live — no reason to re-render once idle/done.
   useEffect(() => {
@@ -56,30 +69,13 @@ export function AgentLiveStatus({
     return () => clearInterval(t);
   }, [active]);
 
-  const agent = task.agent;
   if (!run && !agent) return null;
 
-  const updatedAt = agent?.updatedAt ?? run?.startedAt ?? run?.createdAt ?? null;
+  const updatedAt = live.updatedAt;
   const staleMs = updatedAt ? now - updatedAt : 0;
+  const { tone, label } = PRESENTATION[live.state];
 
-  let tone: Tone;
-  let label: string;
-  if (active) {
-    const quiet = staleMs > QUIET_MS;
-    tone = quiet ? "quiet" : "live";
-    label = run?.status === "starting" ? "Agent starting" : quiet ? "Agent working · quiet" : "Agent working";
-  } else if (task.status === "needs_input") {
-    tone = "quiet";
-    label = "Waiting for your input";
-  } else if (run?.status === "failed") {
-    tone = "failed";
-    label = "Agent stopped";
-  } else {
-    tone = "idle";
-    label = "Agent idle";
-  }
-
-  const message = typeof agent?.message === "string" ? agent.message : "";
+  const message = live.message;
 
   const pill = (
     <span

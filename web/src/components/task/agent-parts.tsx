@@ -5,6 +5,7 @@ import { Activity, Bot, CheckCheck, ChevronDown, ChevronRight, Clock3, Copy, Sen
 import { toast } from "sonner";
 import type { Comment, Run, Task, TaskEvent } from "@/lib/types";
 import { api } from "@/lib/api";
+import { liveAgentState } from "@/lib/agent-state";
 import { useApp } from "@/state/app-store";
 import { cn, relativeTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -240,15 +241,25 @@ function CommentBody({ text }: { text: string }) {
 
 // Hand a backlog task to the agent (starts planning) or ping an already-engaged task to pick up now.
 // Both just enqueue a wake the runner drains — the board is the only interface the human needs.
-export function AgentActions({ task, onDone }: { task: Task; onDone: () => void }) {
+export function AgentActions({ task, runs = [], onDone }: { task: Task; runs?: Run[]; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
+  const live = liveAgentState(task, runs);
+
+  // While a session is genuinely live, "Pick up now" / "Resume" would fight the running agent — don't
+  // offer them. The live-status pill already says what it's doing.
+  if (live.active) return null;
+  // Waiting on the human is answered through the input panel above, not these buttons.
+  if (live.state === "waiting") return null;
+
+  // A stalled / blocked / failed session is the case where Resume is the *primary* thing to do.
+  const stuck = live.state === "stalled" || live.state === "blocked" || live.state === "failed";
   const canHandOff = task.status === "backlog";
   // Only where the agent has meaningful next work — not verifying/done/terminal, where a ping would
   // wrongly re-plan (there's no "verify" mode yet). needs_input should be answered, not pinged.
   const canPing = ["researching", "plan_review", "ready_to_work", "in_progress"].includes(task.status);
   // Resume continues the SAME claude session (claude --resume) — offered where a prior session likely
-  // exists. The API returns 409 if there's actually nothing to resume; we surface that.
-  const canResume = ["in_progress", "verifying", "plan_review", "needs_input", "blocked"].includes(task.status);
+  // exists, or whenever the session is stuck. The API returns 409 if there's nothing to resume.
+  const canResume = stuck || ["in_progress", "verifying", "plan_review", "needs_input", "blocked"].includes(task.status);
   if (!canHandOff && !canPing && !canResume) return null;
 
   async function run(action: () => Promise<unknown>, ok: string) {
@@ -284,11 +295,11 @@ export function AgentActions({ task, onDone }: { task: Task; onDone: () => void 
       {canResume && (
         <Button
           size="sm"
-          variant="outline"
+          variant={stuck ? "default" : "outline"}
           disabled={busy}
           onClick={() => run(() => api.resumeTask(task.id), "Resuming the session where it left off.")}
         >
-          Resume
+          {stuck ? "Resume session" : "Resume"}
         </Button>
       )}
     </div>

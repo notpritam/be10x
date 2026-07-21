@@ -35,6 +35,7 @@ import { WorkSection } from "./WorkSection";
 import { InfoPanel } from "./InfoPanel";
 import { LinkedBugs } from "./LinkedBugs";
 import { AgentLiveStatus } from "./AgentLiveStatus";
+import { liveAgentState } from "@/lib/agent-state";
 import { DebugPanelContent } from "./DebugControl";
 import { ShareDialog } from "@/components/share/ShareDialog";
 import { AgentActions, CommentThread } from "./agent-parts";
@@ -79,8 +80,9 @@ export function DeepDivePanel({
   const { detail, loading, notFound, refresh, onMove } = ctrl;
   const task = detail?.task;
   const isStale = task && taskId !== task.id;
-  const lastRun = detail?.runs?.length ? detail.runs[detail.runs.length - 1] : null;
-  const agentActive = lastRun?.status === "running" || lastRun?.status === "starting";
+  // Hook-aware liveness — true only while the agent is genuinely running (working/quiet/starting),
+  // not merely because a run row is still marked "running". Drives the checklist's live/paused spinner.
+  const agentActive = task ? liveAgentState(task, detail?.runs ?? []).active : false;
   // Which right-rail panel is open (null = collapsed to just the icon strip).
   // "discussion" is the merged Interaction panel (comments + activity in one timeline).
   const [rightPanel, setRightPanel] = useState<"discussion" | "info" | "debug" | null>("discussion");
@@ -255,7 +257,7 @@ export function DeepDivePanel({
                     </div>
                   ))}
 
-                <AgentActions task={task} onDone={refresh} />
+                <AgentActions task={task} runs={detail.runs} onDone={refresh} />
 
                 {/* The agent's live implementation task list — what it's working on, what's done/left.
                     When the agent isn't active, an in-progress step shows as paused (not a live spinner). */}
