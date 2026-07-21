@@ -29,6 +29,7 @@ import { TaskArtifacts } from "./TaskArtifacts";
 import { TaskChecklist } from "./TaskChecklist";
 import { CurrentStep } from "./CurrentStep";
 import { AgentConfigControl } from "./AgentConfigControl";
+import { TaskAssignee } from "./TaskAssignee";
 import { WorkSection } from "./WorkSection";
 import { InfoPanel } from "./InfoPanel";
 import { LinkedBugs } from "./LinkedBugs";
@@ -204,6 +205,9 @@ export function DeepDivePanel({
 
                 {/* The model + reasoning effort this task runs at — visible and togglable. */}
                 <AgentConfigControl task={task} onChanged={refresh} />
+
+                {/* Who owns this task — assigning it routes the work to that person's machine. */}
+                <TaskAssignee task={task} onDone={refresh} />
 
                 {/* Plan review sits here, in place — not pinned to the foot. */}
                 {task.status === "plan_review" && <ReviewActions taskId={task.id} onDone={refresh} />}
