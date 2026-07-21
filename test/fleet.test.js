@@ -36,6 +36,15 @@ test('lists in-flight tasks the viewer can see, with state + stalled', () => {
   assert.equal(row.stalled, false);
 });
 
+test('an in-flight task with no run yet shows queued, not a false "working"', () => {
+  const { db, a } = seed();
+  const now = 10_000_000;
+  const t = mkTask(db, a.id, 'researching'); // no recordProgress → no agent snapshot, nothing claimed it
+  const row = assembleFleetStatus(db, { viewerId: a.id, now }).find((r) => r.taskId === t.id);
+  assert.equal(row.state, 'queued', 'nothing is running it → queued, not working');
+  assert.equal(row.stalled, false);
+});
+
 test('a working task past the stale threshold is flagged stalled', () => {
   const { db, a } = seed();
   const now = 10_000_000;

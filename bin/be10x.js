@@ -20,7 +20,7 @@ import { enqueueWake } from '../src/executor/wake.js';
 import { wakeLoop, wakeLoopAll } from '../src/runner/runner.js';
 import { makeRemoteExecutor } from '../src/connect/remote-executor.js';
 import { makeBoardClient, connectLoop, writeMcpConfig, loadConnectConfig, saveConnectConfig, connectConfigPath, runDeviceLogin, upsertRepo } from '../src/connect/connect.js';
-import { makeAutoUpdater, fetchBoardVersion, shouldUpdate } from '../src/connect/auto-update.js';
+import { makeAutoUpdater, fetchBoardVersion } from '../src/connect/auto-update.js';
 import { buildLaunchdPlist, buildSystemdUnit, serviceEnvPath, servicePaths, isRemovablePath } from '../src/connect/service.js';
 import { assembleStatus, pickLastTask } from '../src/connect/status.js';
 import { renderWelcome } from '../src/cli/welcome.js';
@@ -727,7 +727,15 @@ async function maybeNotifyUpdate(cmd) {
       try { writeFileSync(cachePath, JSON.stringify({ checkedAt: now, board: saved.board, boardVersion })); } catch { /* best-effort cache */ }
     }
     const local = readPkgVersion();
-    if (shouldUpdate(local, boardVersion)) {
+    // Only nudge when the board is STRICTLY newer than this CLI — never when we're already ahead (that
+    // produced the confusing "v0.2.2 available — you have v0.2.4"). Semver-ish major.minor.patch compare.
+    const newer = (a, b) => {
+      const pa = String(a).split('.').map((n) => parseInt(n, 10) || 0);
+      const pb = String(b).split('.').map((n) => parseInt(n, 10) || 0);
+      for (let i = 0; i < 3; i++) { if ((pa[i] || 0) > (pb[i] || 0)) return true; if ((pa[i] || 0) < (pb[i] || 0)) return false; }
+      return false;
+    };
+    if (boardVersion && newer(boardVersion, local)) {
       console.error(
         fg(BRAND.teal, '▲ ') + 'be10x v' + boardVersion + ' available' +
         dim(' — you have v' + local + '. Run ') + bold('be10x update'),

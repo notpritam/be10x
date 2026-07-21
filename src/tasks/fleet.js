@@ -9,11 +9,12 @@ import { getUserById } from '../auth/users.js';
 // excluded — the fleet view is about what's live, not the whole board.
 const ACTIVE = new Set(['researching', 'ready_to_work', 'in_progress', 'verifying', 'plan_review']);
 
-// When there's no agent snapshot yet, infer a coarse state from the task status.
+// When there's no agent snapshot yet, NOTHING is actually running — so never infer "working" (that was a
+// false green: a task with pending, unclaimed wakes and no project looked like it was working). It's
+// waiting: 'waiting' for a human at plan_review, else 'queued' (waiting for a runner to claim it).
 function statusToState(status) {
   if (status === 'plan_review') return 'waiting';
-  if (status === 'ready_to_work') return 'queued';
-  return 'working';
+  return 'queued';
 }
 
 export function assembleFleetStatus(db, { viewerId, staleMs = STALE_MS_DEFAULT, now = Date.now() } = {}) {
