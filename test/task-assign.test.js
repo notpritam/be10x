@@ -46,6 +46,42 @@ async function signup(base, email) {
   return { cookie, userId: me?.user?.id };
 }
 
+test('starting a task auto-assigns it to the starter when unassigned; keeps an existing assignee', async () => {
+  await withServer(async (base) => {
+    const a = await signup(base, 'a@b.co');
+    const b = await signup(base, 'b@b.co');
+
+    // create WITHOUT starting → stays unassigned (create ≠ start)
+    const created = await (await fetch(base + '/api/tasks', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie: a.cookie },
+      body: JSON.stringify({ type: 'general', scope: 'personal', title: 'T', content: { summary: 'x' } }),
+    })).json();
+    assert.equal(created.task.assigneeId, null, 'create alone does not assign');
+
+    // starting it (transition → researching) assigns it to the starter
+    const started = await (await fetch(base + '/api/tasks/' + created.task.id + '/transition', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie: a.cookie },
+      body: JSON.stringify({ to: 'researching' }),
+    })).json();
+    assert.equal(started.task.assigneeId, a.userId, 'starting assigns to the starter');
+
+    // a task pre-assigned to b, then started, keeps b (start does not steal an assignee)
+    const forB = await (await fetch(base + '/api/tasks', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie: a.cookie },
+      body: JSON.stringify({ type: 'general', scope: 'personal', title: 'T2', content: { summary: 'x' } }),
+    })).json();
+    await fetch(base + '/api/tasks/' + forB.task.id + '/assign', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie: a.cookie },
+      body: JSON.stringify({ assigneeId: b.userId }),
+    });
+    const started2 = await (await fetch(base + '/api/tasks/' + forB.task.id + '/transition', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie: a.cookie },
+      body: JSON.stringify({ to: 'researching' }),
+    })).json();
+    assert.equal(started2.task.assigneeId, b.userId, 'existing assignee is preserved');
+  });
+});
+
 test('POST /api/tasks/:id/assign assigns to a teammate; unknown assignee 4xx', async () => {
   await withServer(async (base, db) => {
     const a = await signup(base, 'a@b.co');

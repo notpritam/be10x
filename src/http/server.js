@@ -148,6 +148,15 @@ function originOf(req) {
   return proto + '://' + host;
 }
 
+// A task runs only once it's assigned (see executor/wake.js: strict assignee-routing). So the human
+// "start" actions (hand-off, move to researching/ready_to_work, pick-up-now) assign it to whoever starts
+// it, IF it isn't already assigned — so starting a task runs it on the starter's machine, never on a
+// random worker and never nowhere. An existing assignee (a task started for a teammate) is left intact.
+function assignOnStart(db, taskId, actorId) {
+  const t = getTask(db, taskId);
+  if (t && !t.assigneeId) setTaskAssignee(db, taskId, actorId, actorId);
+}
+
 // Bearer-token auth for the agent/runner API (/api/agent/*). An agent running on a MEMBER's own machine
 // authenticates with a personal access token (minted by `be10x token` / the dashboard) instead of the
 // human session cookie. Returns the auth ctx { userId, tokenId } — the same shape the stdio MCP server
@@ -373,6 +382,7 @@ const ROUTES = [
     for (const bug of bugsToLink) linkBugToTask(db, bug.id, task.id, user.id);
     if (body.handOff) {
       transition(db, task.id, 'researching', user.id, { handOff: true });
+      assignOnStart(db, task.id, user.id); // starting it assigns it to the starter → runs on their machine
       enqueueWake(db, task.id, 'plan');
       task = getTask(db, task.id);
     }
@@ -465,10 +475,12 @@ const ROUTES = [
     if (!existing) throw new Error('NO_TASK');
     assertCanAccessTask(db, user.id, existing, 'task.update');
     const task = transition(db, params.id, body.to, user.id);
-    // A drag that hands the task to the agent (→researching) or approves it (→ready_to_work) wakes it.
+    // A drag that hands the task to the agent (→researching) or approves it (→ready_to_work) wakes it —
+    // and assigns it to the person doing so if it's unassigned, so it runs on their machine (not nowhere).
+    if (body.to === 'researching' || body.to === 'ready_to_work') assignOnStart(db, params.id, user.id);
     if (body.to === 'researching') enqueueWake(db, params.id, 'plan');
     else if (body.to === 'ready_to_work') enqueueWake(db, params.id, 'execute');
-    send(res, 200, { task });
+    send(res, 200, { task: getTask(db, params.id) });
   }],
   // Soft-archive a task from any stage. The row is kept (bug links + history survive) — only the status
   // flips to 'archived'. Disk GC does NOT happen here: a hosted board can't reach the connector's disk, so
@@ -568,6 +580,7 @@ const ROUTES = [
     const t = getTask(db, params.id);
     if (!t) throw new Error('NO_TASK');
     assertCanAccessTask(db, user.id, t, 'task.update');
+    assignOnStart(db, params.id, user.id); // pick-up-now on an unassigned task assigns it to the actor
     send(res, 200, { ok: true, wake: enqueueWake(db, params.id, 'pick_up_now') });
   }],
   ['GET', '/api/tasks/:id/comments', true, async ({ db, res, params, user }) => {

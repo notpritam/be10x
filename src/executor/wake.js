@@ -80,8 +80,9 @@ export function claimNextWake(db, { projectId, workerId = 'runner', claimantUser
 export function claimNextWakeForKeys(db, { projectKeys = [], workerId = 'runner', userId = null } = {}) {
   if (!Array.isArray(projectKeys) || projectKeys.length === 0) return null;
   const placeholders = projectKeys.map(() => '?').join(',');
-  // Strict assignee-routing: the connector's authenticated userId IS the claimant, so an assigned task is
-  // only handed to that user's connector (unassigned tasks stay open to anyone serving the repo).
+  // Assignee-routing: an ASSIGNED task is only handed to its assignee's connector (userId is the
+  // connector's authed user); unassigned tasks stay open to any connector serving the repo. Note that the
+  // board auto-assigns a task to whoever STARTS it (see server assignOnStart), so started work is routed.
   const rows = db
     .prepare(
       `SELECT w.id, p.owner_id AS projectOwnerId, p.team_id AS projectTeamId FROM wake_queue w
@@ -111,8 +112,9 @@ export function claimNextWakeForKeys(db, { projectKeys = [], workerId = 'runner'
 // (their repo lives on a member's machine), so the baked runner never grabs — and then fails to worktree —
 // a task that a `be10x connect` runner is meant to claim. It just idles when there are no local repos.
 export function claimNextWakeAny(db, workerId = 'runner', { claimantUserId = null } = {}) {
-  // Strict assignee-routing: claimantUserId is the user this host's runner acts for (GFA_WORKER_USER). An
-  // assigned task is claimed only when it's assigned to that user; with no identity, only unassigned tasks.
+  // Assignee-routing: claimantUserId is the user this host's runner acts for (GFA_WORKER_USER). An assigned
+  // task is claimed only when assigned to that user; unassigned tasks are open. With no identity (a
+  // board-only host) only unassigned tasks match — set GFA_WORKER_USER='' to keep the host from running work.
   const rows = db
     .prepare(
       `SELECT w.id FROM wake_queue w

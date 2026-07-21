@@ -152,6 +152,24 @@ E2EE relay opened only when a watcher is attached. Orca refs: `runtime-rpc.ts`, 
 
 ---
 
+### P1 — Team presence & activity timeline (requested 2026-07-21)
+
+**18. Who's online in a team + a per-member activity graph.**
+We already receive a steady event stream from each member's machine — the `be10x connect` runner polls
+`/api/agent/claim` on an interval (and reports runs). That poll IS a heartbeat: a member whose connector is
+polling is "online"; one that's gone quiet past a threshold is "offline". Turn that into presence + history.
+- **Presence:** stamp `last_seen_at` (+ machine label) per user on every authenticated agent request
+  (claim/report/ps). Derive `online` = `now - last_seen_at < N` (e.g. 90s, ~2× the poll interval). Show a
+  green/grey dot next to each member in the team view.
+- **Timeline:** append a `presence_events` row on each transition (came online / went offline), so we keep
+  the durable up/down history — not just the current state. `{userId, machine, event: up|down, at}`.
+- **Activity graph:** render those events as a per-member timeline/heatmap (uptime, when they were working,
+  gaps) — like a GitHub contribution graph but for "machine online + agent activity". Combine with the
+  hook-driven session state (idea 1) to show not just "online" but "online and an agent is working".
+- Impl notes: a lightweight `touchPresence(db, userId, machine)` called from the agent-auth middleware;
+  a sweep (or read-time derivation) flips stale `online` users to offline and writes the `down` event; the
+  team view polls `GET /api/teams/:id/presence`. Cheap, and it reuses the poll traffic we already pay for.
+
 ## Sequencing recommendation
 
 `1 → 2 → 3` first (status backbone + resume + pick-project). They deliver the visible product jump and are

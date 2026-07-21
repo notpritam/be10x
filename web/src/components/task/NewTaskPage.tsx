@@ -34,7 +34,9 @@ export function NewTaskPage({
   const [projectId, setProjectId] = useState<string>("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [isolation, setIsolation] = useState<Isolation>("worktree");
-  const [startNow, setStartNow] = useState(true);
+  // Default OFF: creating a task should not auto-start the agent. You create it, then start it (which
+  // assigns it to you and runs it on your machine) or assign it to a teammate to run on theirs.
+  const [startNow, setStartNow] = useState(false);
   const [busy, setBusy] = useState(false);
 
   function onRepoAdded(project: Project) {
@@ -52,7 +54,9 @@ export function NewTaskPage({
       .listProjects()
       .then((r) => {
         setProjects(r.projects);
-        setProjectId(r.projects[0]?.id ?? "");
+        // Don't auto-bind a project: a team is agnostic of any one repo — the project (where the session
+        // runs) is chosen when the task is started/picked up, not forced at creation.
+        setProjectId("");
       })
       .catch(() => setProjects([]));
   }, []);
