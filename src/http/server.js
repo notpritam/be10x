@@ -972,6 +972,21 @@ const AGENT_ROUTES = [
     send(res, 200, { uploads: storage.presignUpload(files, { baseUrl: originOf(req) }) });
   }],
 
+  // Bearer-authed fleet + resume, so a CONNECTOR (a teammate's machine, no session cookie) can run
+  // `be10x ps` / `be10x resume <task>` against the hosted board. Scoped to the token's user.
+  ['GET', '/api/agent/ps', async ({ db, res, auth }) =>
+    send(res, 200, { sessions: assembleFleetStatus(db, { viewerId: auth.userId }) })],
+  ['POST', '/api/agent/tasks/:id/resume', async ({ db, res, params, auth }) => {
+    const taskId = resolveTaskId(db, params.id) || params.id;
+    const task = getTask(db, taskId);
+    if (!task) throw new Error('NO_TASK');
+    assertCanAccessTask(db, auth.userId, task, 'task.update');
+    const sessionId = getLatestRunForTask(db, taskId)?.sessionId || null;
+    if (!sessionId) return send(res, 409, { error: 'NO_SESSION_TO_RESUME' });
+    enqueueWake(db, taskId, 'resume');
+    send(res, 200, { ok: true, sessionId });
+  }],
+
   // The extension's team/project pickers. The human dashboard reads these from the session routes
   // GET /api/teams and /api/projects, but the extension authenticates with a Bearer token, so it needs
   // these agent-side twins — same response shapes, resolved for the token's user (auth.userId).

@@ -1073,8 +1073,30 @@ async function cmdTelemetry(args) {
 
 // --- dispatch -----------------------------------------------------------------
 
+// A hosted board this machine is logged into (via `be10x login`), or null when this IS the board host.
+function remoteBoard() {
+  const cfg = loadConnectConfig(connectConfigPath());
+  return cfg && cfg.board && cfg.token ? cfg : null;
+}
+async function boardFetch(saved, path, init = {}) {
+  const url = saved.board.replace(/\/$/, '') + path;
+  const res = await fetch(url, { ...init, headers: { Authorization: 'Bearer ' + saved.token, ...(init.headers || {}) } });
+  if (res.status === 401) { console.error('Your login expired — re-run:  be10x login ' + saved.board); process.exit(1); }
+  return res;
+}
+
 // ps — the fleet view: what every agent session is doing right now (working/waiting/blocked/done/stalled).
+// On a CONNECTOR (logged into a hosted board) it queries that board; on the board host it reads the local db.
 async function cmdPs(args) {
+  const saved = remoteBoard();
+  if (saved) {
+    const res = await boardFetch(saved, '/api/agent/ps');
+    if (!res.ok) { console.error('Could not reach ' + saved.board + ' (HTTP ' + res.status + ').'); process.exit(1); }
+    const { sessions } = await res.json();
+    if (args.json) { console.log(JSON.stringify(sessions, null, 2)); return; }
+    console.log(formatFleetTable(sessions));
+    return;
+  }
   const db = await openBoardDb();
   const viewerId = resolveUserId(db, args.email);
   if (!viewerId) { console.error(SIGNUP_HINT); process.exit(1); }
@@ -1085,9 +1107,17 @@ async function cmdPs(args) {
 
 // resume <task> — continue the task's prior claude session (claude --resume) via a resume wake.
 async function cmdResume(args) {
-  const db = await openBoardDb();
   const ident = args._[0];
   if (!ident) { console.error('Usage: be10x resume <task>'); process.exit(1); }
+  const saved = remoteBoard();
+  if (saved) {
+    const res = await boardFetch(saved, '/api/agent/tasks/' + encodeURIComponent(ident) + '/resume', { method: 'POST' });
+    if (res.status === 409) { console.error('No prior session to resume for ' + ident); process.exit(1); }
+    if (!res.ok) { console.error('Could not resume on ' + saved.board + ' (HTTP ' + res.status + ').'); process.exit(1); }
+    console.log(fg(BRAND.ok, sym.ok + ' ') + 'resume queued for ' + bold(ident) + dim(' on ' + saved.board));
+    return;
+  }
+  const db = await openBoardDb();
   const taskId = resolveTaskId(db, ident);
   if (!taskId) { console.error('No such task: ' + ident); process.exit(1); }
   const sessionId = getLatestRunForTask(db, taskId)?.sessionId;
@@ -1098,6 +1128,8 @@ async function cmdResume(args) {
 
 // start <task> — move a task to ready_to_work and wake the runner to begin a fresh session.
 async function cmdStart(args) {
+  const saved = remoteBoard();
+  if (saved) { console.error('Connected to hosted board ' + saved.board + ' — start tasks from its web UI (drag to Ready to work), or run `be10x start` on the board host.'); process.exit(1); }
   const db = await openBoardDb();
   const actor = resolveUserId(db, args.email);
   const ident = args._[0];
@@ -1111,6 +1143,8 @@ async function cmdStart(args) {
 
 // new [title] [--project <key>] [--type general|code-issue] [--start] — create a task, resolving a project.
 async function cmdNew(args) {
+  const saved = remoteBoard();
+  if (saved) { console.error('Connected to hosted board ' + saved.board + ' — create tasks from its web UI, or run `be10x new` on the board host.'); process.exit(1); }
   const db = await openBoardDb();
   const ownerId = resolveUserId(db, args.email);
   if (!ownerId) { console.error(SIGNUP_HINT); process.exit(1); }

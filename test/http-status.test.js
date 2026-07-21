@@ -45,5 +45,14 @@ test('GET /api/ps lists in-flight sessions; GET /api/tasks/:id/status returns sn
     // auth required
     assert.equal((await fetch(base + '/api/ps')).status, 401);
     assert.equal((await fetch(base + '/api/tasks/' + t.id + '/status')).status, 401);
+
+    // a CONNECTOR (Bearer token, no cookie) can read the fleet via the agent route
+    const tok = (await (await fetch(base + '/api/tokens', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify({ name: 'mac' }),
+    })).json()).token.token;
+    const agentPs = await (await fetch(base + '/api/agent/ps', { headers: { Authorization: 'Bearer ' + tok } })).json();
+    assert.ok(agentPs.sessions.find((s) => s.taskId === t.id), 'connector sees the fleet');
+    assert.equal((await fetch(base + '/api/agent/ps')).status, 401); // no token → rejected
   });
 });
