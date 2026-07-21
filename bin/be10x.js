@@ -21,6 +21,8 @@ import { wakeLoop, wakeLoopAll } from '../src/runner/runner.js';
 import { makeRemoteExecutor } from '../src/connect/remote-executor.js';
 import { makeBoardClient, connectLoop, writeMcpConfig, loadConnectConfig, saveConnectConfig, connectConfigPath, runDeviceLogin, upsertRepo } from '../src/connect/connect.js';
 import { makeAutoUpdater, fetchBoardVersion } from '../src/connect/auto-update.js';
+import { runNotifyOnce, loadNotifyState, saveNotifyState } from '../src/connect/notify-loop.js';
+import { showDeviceNotification } from '../src/connect/device-notify.js';
 import { buildLaunchdPlist, buildSystemdUnit, serviceEnvPath, servicePaths, isRemovablePath } from '../src/connect/service.js';
 import { assembleStatus, pickLastTask } from '../src/connect/status.js';
 import { renderWelcome } from '../src/cli/welcome.js';
@@ -489,6 +491,23 @@ async function cmdConnect(args) {
     autoUpdater,
   });
 
+  // Device notifications: on the same connection, poll this user's notification feed and pop a native OS
+  // notification for anything they're tagged in (assigned / review / input / changes). On by default;
+  // `be10x notify off` disables it. Decoupled from the claim loop — a slower cadence, best-effort.
+  const notifyState = loadNotifyState();
+  let notifyTimer;
+  if (!once && notifyState.enabled) {
+    const notifyEvery = Math.max(intervalMs, 10000);
+    const tick = async () => {
+      try {
+        const { shown } = await runNotifyOnce({ board, token, state: notifyState });
+        if (shown) saveNotifyState(notifyState);
+      } catch { /* never let the notifier break the connector */ }
+      notifyTimer = setTimeout(tick, notifyEvery);
+    };
+    notifyTimer = setTimeout(tick, notifyEvery);
+  }
+
   if (once) {
     const result = await loop.done;
     if (!result || !result.claim) console.log('nothing ready to work.');
@@ -496,9 +515,29 @@ async function cmdConnect(args) {
   }
   process.on('SIGINT', () => {
     loop.stop();
+    if (notifyTimer) clearTimeout(notifyTimer);
     console.log('\nstopped.');
     process.exit(0);
   });
+}
+
+// notify [on|off|test|status] — control the connector's native device notifications.
+async function cmdNotify(args) {
+  const sub = (args._[0] || 'status').toLowerCase();
+  const state = loadNotifyState();
+  if (sub === 'on' || sub === 'off') {
+    state.enabled = sub === 'on';
+    saveNotifyState(state);
+    console.log('device notifications: ' + fg(state.enabled ? BRAND.ok : BRAND.dim || BRAND.bad, sub));
+    return;
+  }
+  if (sub === 'test') {
+    const ok = showDeviceNotification({ title: 'be10x', body: 'Notifications are working ✓' });
+    console.log(ok ? sym.ok + ' sent a test notification (approve the OS prompt if asked).' : 'could not show a notification on this platform.');
+    return;
+  }
+  console.log('device notifications: ' + (state.enabled ? fg(BRAND.ok, 'on') : 'off'));
+  console.log(dim('usage: be10x notify [on|off|test|status]'));
 }
 
 // service <install|uninstall|status|logs> — run `be10x connect` as an always-on background service that
@@ -1207,6 +1246,7 @@ const LONG_RUNNING = new Set(['serve', 'connect', 'work']);
 const COMMANDS = {
   serve: cmdServe,
   ps: cmdPs,
+  notify: cmdNotify,
   resume: cmdResume,
   start: cmdStart,
   new: cmdNew,
