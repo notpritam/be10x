@@ -19,6 +19,7 @@ import { listMembers, addMember, setRole, removeMember } from '../teams/membersh
 import { assertCan, assertCanAccessTask, canAccessProject, assertCanAccessBug } from '../authz/authz.js';
 import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask, archiveTask, setTaskAssignee, setTaskProject, resolveTaskId } from '../tasks/tasks.js';
 import { assembleFleetStatus } from '../tasks/fleet.js';
+import { listNotificationsSince, listNotificationsForUser, unseenCount, markAllSeen } from '../notify/notify.js';
 import { isStalled } from '../executor/agent-status.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
 import { createBug, getBug as getBugById, getBugByHumanId, listBugs, updateBugStatus, setBugAssignee, setBugLlmAnalysis, setBugGithubIssue, addBugComment, listBugEvents, bugStatsForUser, linkBugToTask, listBugsForTask, unlinkBugFromTask, linkedBugSummary } from '../bugs/bugs.js';
@@ -396,6 +397,13 @@ const ROUTES = [
   }],
   // Fleet view — "what is every agent doing right now": in-flight tasks the viewer can see + live state.
   ['GET', '/api/ps', true, async ({ db, res, user }) => send(res, 200, { sessions: assembleFleetStatus(db, { viewerId: user.id }) })],
+  // Web bell: this user's recent notifications + unseen count; POST .../seen clears the count.
+  ['GET', '/api/notifications', true, async ({ db, res, user }) =>
+    send(res, 200, { notifications: listNotificationsForUser(db, user.id), unseen: unseenCount(db, user.id) })],
+  ['POST', '/api/notifications/seen', true, async ({ db, res, user }) => {
+    markAllSeen(db, user.id);
+    send(res, 200, { ok: true, unseen: 0 });
+  }],
   // Resume a task's prior claude session: enqueue a 'resume' wake (→ follow_up mode → `claude --resume`).
   // 409 when there is no captured session id to continue from.
   ['POST', '/api/tasks/:id/resume', true, async ({ db, res, params, user }) => {
@@ -998,6 +1006,11 @@ const AGENT_ROUTES = [
   // `be10x ps` / `be10x resume <task>` against the hosted board. Scoped to the token's user.
   ['GET', '/api/agent/ps', async ({ db, res, auth }) =>
     send(res, 200, { sessions: assembleFleetStatus(db, { viewerId: auth.userId }) })],
+  // The connector's device-notification feed: everything for this token's user newer than `since` (a seq).
+  ['GET', '/api/agent/notifications', async ({ db, req, res, auth }) => {
+    const since = Number(new URL(req.url, 'http://x').searchParams.get('since')) || 0;
+    send(res, 200, { notifications: listNotificationsSince(db, auth.userId, since) });
+  }],
   ['POST', '/api/agent/tasks/:id/resume', async ({ db, res, params, auth }) => {
     const taskId = resolveTaskId(db, params.id) || params.id;
     const task = getTask(db, taskId);
