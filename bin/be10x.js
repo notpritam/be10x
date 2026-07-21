@@ -9,7 +9,9 @@ import { dirname, resolve, join, basename } from 'node:path';
 import { mkdirSync, writeFileSync, readFileSync, cpSync, existsSync, rmSync } from 'node:fs';
 import { getUserByEmail } from '../src/auth/users.js';
 import { createToken } from '../src/auth/tokens.js';
-import { listTasks, importTask, IMPORT_PHASES, handoffReasonForPhase, archiveTask, getTask, resolveTaskId } from '../src/tasks/tasks.js';
+import { listTasks, importTask, IMPORT_PHASES, handoffReasonForPhase, archiveTask, getTask, resolveTaskId, transition, createTask } from '../src/tasks/tasks.js';
+import { assembleFleetStatus } from '../src/tasks/fleet.js';
+import { formatFleetTable } from '../src/cli/fleet-format.js';
 import { makeClaudeExecutor } from '../src/executor/executor.js';
 import { detectProjectKey, registerProject, getProjectByKey, getProject, listProjects } from '../src/projects/projects.js';
 import { getLatestRunForTask } from '../src/executor/runs.js';
@@ -175,8 +177,19 @@ async function cmdServe(args) {
   startServer({ db, port: args.port ? Number(args.port) : 4610, host: args.host && args.host !== true ? args.host : undefined });
   // Board-wide runner baked into serve: works tasks across every linked repo, spawning the agent in each
   // task's own repo — so the user never needs a separate `be10x work` terminal.
-  const makeExecutor = (project) => makeClaudeExecutor(db, project, { model: process.env.GFA_MODEL, workerId: 'runner' });
-  wakeLoopAll(db, { workerId: 'runner', makeExecutor });
+  // GFA_WORKER_ID labels this host's runner in run records (default 'runner'); we set it to the machine
+  // identity (e.g. 'pritam') so work done on this VM is attributable to it across the board.
+  const workerId = process.env.GFA_WORKER_ID || 'runner';
+  // GFA_WORKER_USER (an email) is the user THIS host's baked runner acts for — strict assignee-routing then
+  // only lets it claim tasks assigned to that user (plus unassigned). Unset ⇒ unassigned tasks only.
+  let claimantUserId = null;
+  if (process.env.GFA_WORKER_USER) {
+    const u = getUserByEmail(db, process.env.GFA_WORKER_USER);
+    if (u) claimantUserId = u.id;
+    else console.error(`be10x: GFA_WORKER_USER "${process.env.GFA_WORKER_USER}" is not a board account — runner will claim only UNASSIGNED tasks.`);
+  }
+  const makeExecutor = (project) => makeClaudeExecutor(db, project, { model: process.env.GFA_MODEL, workerId });
+  wakeLoopAll(db, { workerId, makeExecutor, claimantUserId });
   console.log('be10x runner working all linked repos on board wakes.');
 }
 
@@ -1060,8 +1073,69 @@ async function cmdTelemetry(args) {
 
 // --- dispatch -----------------------------------------------------------------
 
+// ps — the fleet view: what every agent session is doing right now (working/waiting/blocked/done/stalled).
+async function cmdPs(args) {
+  const db = await openBoardDb();
+  const viewerId = resolveUserId(db, args.email);
+  if (!viewerId) { console.error(SIGNUP_HINT); process.exit(1); }
+  const rows = assembleFleetStatus(db, { viewerId });
+  if (args.json) { console.log(JSON.stringify(rows, null, 2)); return; }
+  console.log(formatFleetTable(rows));
+}
+
+// resume <task> — continue the task's prior claude session (claude --resume) via a resume wake.
+async function cmdResume(args) {
+  const db = await openBoardDb();
+  const ident = args._[0];
+  if (!ident) { console.error('Usage: be10x resume <task>'); process.exit(1); }
+  const taskId = resolveTaskId(db, ident);
+  if (!taskId) { console.error('No such task: ' + ident); process.exit(1); }
+  const sessionId = getLatestRunForTask(db, taskId)?.sessionId;
+  if (!sessionId) { console.error('No prior session to resume for ' + ident); process.exit(1); }
+  enqueueWake(db, taskId, 'resume');
+  console.log(fg(BRAND.ok, sym.ok + ' ') + 'resume queued for ' + bold(ident) + dim(' (session ' + sessionId.slice(0, 8) + '…)'));
+}
+
+// start <task> — move a task to ready_to_work and wake the runner to begin a fresh session.
+async function cmdStart(args) {
+  const db = await openBoardDb();
+  const actor = resolveUserId(db, args.email);
+  const ident = args._[0];
+  if (!ident) { console.error('Usage: be10x start <task>'); process.exit(1); }
+  const taskId = resolveTaskId(db, ident);
+  if (!taskId) { console.error('No such task: ' + ident); process.exit(1); }
+  transition(db, taskId, 'ready_to_work', actor);
+  enqueueWake(db, taskId, 'execute');
+  console.log(fg(BRAND.ok, sym.ok + ' ') + 'started ' + bold(ident));
+}
+
+// new [title] [--project <key>] [--type general|code-issue] [--start] — create a task, resolving a project.
+async function cmdNew(args) {
+  const db = await openBoardDb();
+  const ownerId = resolveUserId(db, args.email);
+  if (!ownerId) { console.error(SIGNUP_HINT); process.exit(1); }
+  const title = (args.title && args.title !== true ? args.title : args._.join(' ')) || 'Untitled';
+  const projectIdByKey = (key) => (key ? db.prepare('SELECT id FROM projects WHERE key = ?').get(key)?.id || null : null);
+  let projectId = null;
+  if (args.project && args.project !== true) {
+    projectId = projectIdByKey(args.project);
+    if (!projectId) { console.error('No such project: ' + args.project); process.exit(1); }
+  } else {
+    try { projectId = projectIdByKey(detectProjectKey(process.cwd()).key); } catch { /* not in a repo */ }
+  }
+  const type = args.type && args.type !== true ? args.type : 'general';
+  const content = type === 'code-issue' ? { symptom: title } : { summary: title };
+  const task = createTask(db, { type, scope: projectId ? 'project' : 'personal', title, ownerId, projectId, content });
+  console.log(fg(BRAND.ok, sym.ok + ' ') + 'created ' + bold(task.humanId) + (projectId ? '' : dim(' (no project — link one to run it)')));
+  if (args.start && projectId) { transition(db, task.id, 'ready_to_work', ownerId); enqueueWake(db, task.id, 'execute'); console.log(dim('  started.')); }
+}
+
 const COMMANDS = {
   serve: cmdServe,
+  ps: cmdPs,
+  resume: cmdResume,
+  start: cmdStart,
+  new: cmdNew,
   login: cmdLogin,
   link: cmdLink,
   token: cmdToken,

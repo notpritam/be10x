@@ -194,6 +194,16 @@ export function transition(db, id, to, actor, meta = {}) {
 // the DISTINCT real paths+branches recorded across the task's runs. Idempotent: re-archiving an
 // already-archived task is a no-op success (no second event) that still reports its worktrees so a retried
 // GC keeps its targets. Throws NO_TASK for an unknown id.
+// Assign / unassign a task to a teammate (assigneeId null clears it). Drives strict assignee-routing: once
+// assigned, only the assignee's worker claims the task's wakes (see executor/wake.js). Throws NO_TASK.
+export function setTaskAssignee(db, id, assigneeId, actor) {
+  const task = getTask(db, id);
+  if (!task) throw new Error('NO_TASK');
+  db.prepare('UPDATE tasks SET assignee_id = ?, updated_at = ? WHERE id = ?').run(assigneeId ?? null, Date.now(), id);
+  appendEvent(db, id, actor, 'assign', { from: task.assigneeId ?? null, to: assigneeId ?? null });
+  return getTask(db, id);
+}
+
 export function archiveTask(db, id, actor) {
   const task = getTask(db, id);
   if (!task) throw new Error('NO_TASK');

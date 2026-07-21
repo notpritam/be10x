@@ -8,6 +8,7 @@ import { Sidebar } from "./Sidebar";
 import { TabBar } from "./TabBar";
 import { type BoardTab } from "./Topbar";
 import { BoardView } from "@/components/board/BoardView";
+import { FleetView } from "@/components/fleet/FleetView";
 import { ListView } from "@/components/board/ListView";
 import { NewTaskPage } from "@/components/task/NewTaskPage";
 import { ProfilePage } from "@/components/user/ProfilePage";
@@ -126,6 +127,8 @@ export function AppShell() {
           <div className="min-h-0 flex-1">
             {tab === "board" ? (
               <BoardView onNewTask={startCompose} onConnectAgent={() => setConnectAgentOpen(true)} />
+            ) : tab === "fleet" ? (
+              <FleetView />
             ) : (
               <ListView />
             )}

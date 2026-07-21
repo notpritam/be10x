@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { canAccessProject } from '../authz/authz.js';
 
 // Known wake reasons → the executor mode each maps to lives in the scheduler; these are the vocabulary.
-export const WAKE_REASONS = ['plan', 'revise', 'input_answer', 'execute', 'pick_up_now', 'follow_up', 'verify'];
+export const WAKE_REASONS = ['plan', 'revise', 'input_answer', 'execute', 'pick_up_now', 'follow_up', 'verify', 'resume'];
 
 function hydrate(row) {
   return row
@@ -49,14 +49,15 @@ export function listPendingWakes(db, taskId) {
 // project-less (personal) task — so a task created on the board with no project is still worked by
 // whatever runner is up. The conditional UPDATE (WHERE claimed_at IS NULL) makes the claim safe against
 // concurrent schedulers — a loser gets the next row or null. Returns the claimed wake, or null if empty.
-export function claimNextWake(db, { projectId, workerId = 'runner' } = {}) {
+export function claimNextWake(db, { projectId, workerId = 'runner', claimantUserId = null } = {}) {
   const rows = db
     .prepare(
       `SELECT w.id FROM wake_queue w JOIN tasks t ON t.id = w.task_id
        WHERE w.claimed_at IS NULL AND w.enqueued_at <= ? AND (t.project_id = ? OR t.project_id IS NULL)
+       AND (t.assignee_id IS NULL OR t.assignee_id = ?)
        ORDER BY w.enqueued_at, w.rowid`
     )
-    .all(Date.now(), projectId);
+    .all(Date.now(), projectId, claimantUserId);
   for (const { id } of rows) {
     const res = db
       .prepare('UPDATE wake_queue SET claimed_at = ?, claimed_by = ? WHERE id = ? AND claimed_at IS NULL')
@@ -79,15 +80,18 @@ export function claimNextWake(db, { projectId, workerId = 'runner' } = {}) {
 export function claimNextWakeForKeys(db, { projectKeys = [], workerId = 'runner', userId = null } = {}) {
   if (!Array.isArray(projectKeys) || projectKeys.length === 0) return null;
   const placeholders = projectKeys.map(() => '?').join(',');
+  // Strict assignee-routing: the connector's authenticated userId IS the claimant, so an assigned task is
+  // only handed to that user's connector (unassigned tasks stay open to anyone serving the repo).
   const rows = db
     .prepare(
       `SELECT w.id, p.owner_id AS projectOwnerId, p.team_id AS projectTeamId FROM wake_queue w
          JOIN tasks t ON t.id = w.task_id
          JOIN projects p ON p.id = t.project_id
         WHERE w.claimed_at IS NULL AND w.enqueued_at <= ? AND p.key IN (${placeholders})
+        AND (t.assignee_id IS NULL OR t.assignee_id = ?)
         ORDER BY w.enqueued_at, w.rowid`
     )
-    .all(Date.now(), ...projectKeys);
+    .all(Date.now(), ...projectKeys, userId);
   for (const row of rows) {
     if (userId && !canAccessProject(db, userId, { ownerId: row.projectOwnerId, teamId: row.projectTeamId }, 'task.update')) {
       continue;
@@ -106,16 +110,19 @@ export function claimNextWakeForKeys(db, { projectKeys = [], workerId = 'runner'
 // what makes a HOSTED board coexist with remote connectors: distributed projects are registered path-less
 // (their repo lives on a member's machine), so the baked runner never grabs — and then fails to worktree —
 // a task that a `be10x connect` runner is meant to claim. It just idles when there are no local repos.
-export function claimNextWakeAny(db, workerId = 'runner') {
+export function claimNextWakeAny(db, workerId = 'runner', { claimantUserId = null } = {}) {
+  // Strict assignee-routing: claimantUserId is the user this host's runner acts for (GFA_WORKER_USER). An
+  // assigned task is claimed only when it's assigned to that user; with no identity, only unassigned tasks.
   const rows = db
     .prepare(
       `SELECT w.id FROM wake_queue w
          JOIN tasks t ON t.id = w.task_id
          JOIN projects p ON p.id = t.project_id
         WHERE w.claimed_at IS NULL AND w.enqueued_at <= ? AND p.root_path IS NOT NULL
+        AND (t.assignee_id IS NULL OR t.assignee_id = ?)
         ORDER BY w.enqueued_at, w.rowid`
     )
-    .all(Date.now());
+    .all(Date.now(), claimantUserId);
   for (const { id } of rows) {
     const res = db
       .prepare('UPDATE wake_queue SET claimed_at = ?, claimed_by = ? WHERE id = ? AND claimed_at IS NULL')

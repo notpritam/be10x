@@ -17,7 +17,9 @@ import { dispatchBugTool } from '../mcp/bug-tools.js';
 import { createTeam, deleteTeam } from '../teams/teams.js';
 import { listMembers, addMember, setRole, removeMember } from '../teams/memberships.js';
 import { assertCan, assertCanAccessTask, canAccessProject, assertCanAccessBug } from '../authz/authz.js';
-import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask, archiveTask, resolveTaskId } from '../tasks/tasks.js';
+import { createTask, getTask, listTasksForUser, setResearch, setPlan, updateContent, transition, retryTask, rateTask, archiveTask, setTaskAssignee, resolveTaskId } from '../tasks/tasks.js';
+import { assembleFleetStatus } from '../tasks/fleet.js';
+import { isStalled } from '../executor/agent-status.js';
 import { listEvents, appendEvent } from '../tasks/events.js';
 import { createBug, getBug as getBugById, getBugByHumanId, listBugs, updateBugStatus, setBugAssignee, setBugLlmAnalysis, setBugGithubIssue, addBugComment, listBugEvents, bugStatsForUser, linkBugToTask, listBugsForTask, unlinkBugFromTask, linkedBugSummary } from '../bugs/bugs.js';
 import { handoffBugToTask } from '../bugs/handoff.js';
@@ -25,7 +27,7 @@ import { analyzeBug } from '../bugs/analyze.js';
 import { llmAnalyzeBug } from '../bugs/llm-analyze.js';
 import { createGithubIssue } from '../bugs/github-export.js';
 import { notifyBugFiled } from '../bugs/notify.js';
-import { mintUploadUrls, signAccessUrl } from '../bugs/uploadthing.js';
+import { getStorage, extractFilePart } from '../bugs/storage.js';
 import { requestReview, submitReview } from '../reviews/reviews.js';
 import { requestInput, answerInput, getOpenInputRequest, getRequestTaskId } from '../tasks/input_requests.js';
 import { addComment, listComments } from '../tasks/comments.js';
@@ -79,6 +81,46 @@ function readJson(req) {
     req.on('data', (c) => { b += c; if (b.length > 2e6) req.destroy(); });
     req.on('end', () => { try { resolve(b ? JSON.parse(b) : {}); } catch { resolve({}); } });
   });
+}
+
+// Read a raw (possibly binary, possibly large) request body into one Buffer, capped. Used for blob PUTs —
+// the JSON path (readJson) can't carry multipart image/JSON capture bytes.
+function readRaw(req, cap) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let len = 0;
+    req.on('data', (c) => {
+      len += c.length;
+      if (len > cap) { req.destroy(); reject(new Error('TOO_LARGE')); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+// The local-blob endpoint: PUT stores capture bytes (multipart, as the extension sends them), GET streams
+// them back. Both are authorized by the ?exp/&sig grant minted in presignUpload / signReadUrl (not a
+// session/bearer) — the extension PUTs with no credentials, and the dashboard reads via a signed <img> src.
+async function handleBlob(storage, req, res) {
+  const url = new URL(req.url, 'http://x');
+  const key = decodeURIComponent(url.pathname.slice('/api/blob/'.length));
+  const exp = Number(url.searchParams.get('exp'));
+  const sig = url.searchParams.get('sig');
+  const method = req.method === 'PUT' ? 'PUT' : 'GET';
+  if (!storage.verify(method, key, exp, sig)) { res.writeHead(403); return res.end(); }
+  if (req.method === 'PUT') {
+    let buf;
+    try { buf = await readRaw(req, 30e6); } catch { res.writeHead(413); return res.end(); }
+    let part;
+    try { part = extractFilePart(buf, req.headers['content-type']); } catch { res.writeHead(400); return res.end(); }
+    try { storage.write(key, part.bytes, part.contentType); } catch { res.writeHead(400); return res.end(); }
+    return send(res, 200, { ok: true, key });
+  }
+  let bytes;
+  try { bytes = storage.read(key); } catch { res.writeHead(404); return res.end(); }
+  res.writeHead(200, { 'Content-Type': storage.contentType(key), 'Cache-Control': 'private, no-store' });
+  return res.end(req.method === 'HEAD' ? undefined : bytes);
 }
 
 function cookies(req) {
@@ -342,6 +384,34 @@ const ROUTES = [
     assertCanAccessTask(db, user.id, t);
     send(res, 200, { task: t });
   }],
+  // Fleet view — "what is every agent doing right now": in-flight tasks the viewer can see + live state.
+  ['GET', '/api/ps', true, async ({ db, res, user }) => send(res, 200, { sessions: assembleFleetStatus(db, { viewerId: user.id }) })],
+  // Resume a task's prior claude session: enqueue a 'resume' wake (→ follow_up mode → `claude --resume`).
+  // 409 when there is no captured session id to continue from.
+  ['POST', '/api/tasks/:id/resume', true, async ({ db, res, params, user }) => {
+    const task = getTask(db, params.id);
+    if (!task) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, task, 'task.update');
+    const sessionId = getLatestRunForTask(db, params.id)?.sessionId || null;
+    if (!sessionId) return send(res, 409, { error: 'NO_SESSION_TO_RESUME' });
+    enqueueWake(db, params.id, 'resume');
+    send(res, 200, { ok: true, sessionId });
+  }],
+  // One task's live agent-status snapshot + the derived stalled flag + age. 5 path segments, distinct from
+  // /api/tasks/:id (4) and /api/tasks/:id/events (also 5, but a different literal last segment).
+  ['GET', '/api/tasks/:id/status', true, async ({ db, res, params, user }) => {
+    const task = getTask(db, params.id);
+    if (!task) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, task, 'task.read');
+    const agent = task.agent || {};
+    const now = Date.now();
+    send(res, 200, {
+      ...agent,
+      state: agent.state || null,
+      stalled: isStalled(agent, now),
+      ageMs: agent.updatedAt ? now - agent.updatedAt : null,
+    });
+  }],
   ['GET', '/api/tasks/:id/events', true, async ({ db, res, params, user }) => {
     const t = getTask(db, params.id);
     if (!t) throw new Error('NO_TASK');
@@ -404,6 +474,16 @@ const ROUTES = [
   // flips to 'archived'. Disk GC does NOT happen here: a hosted board can't reach the connector's disk, so
   // the returned `worktrees` (the real run paths+branches) travel back for the CLI/connector to reclaim
   // (see gcTaskWorktrees). Modeled on the transition route: load, authorize with 'task.update', mutate.
+  // Assign / unassign a task to a teammate (assigneeId null clears it). This is what routes the work: once
+  // assigned, only the assignee's machine claims the task (strict assignee-routing, see executor/wake.js).
+  ['POST', '/api/tasks/:id/assign', true, async ({ db, res, params, body, user }) => {
+    const existing = getTask(db, params.id);
+    if (!existing) throw new Error('NO_TASK');
+    assertCanAccessTask(db, user.id, existing, 'task.update');
+    const assigneeId = body?.assigneeId ?? null;
+    if (assigneeId && !getUserById(db, assigneeId)) throw new Error('USER_NOT_FOUND');
+    send(res, 200, { task: setTaskAssignee(db, params.id, assigneeId, user.id) });
+  }],
   ['POST', '/api/tasks/:id/archive', true, async ({ db, res, params, user }) => {
     const existing = getTask(db, params.id);
     if (!existing) throw new Error('NO_TASK');
@@ -744,7 +824,7 @@ const ROUTES = [
   // Optional LLM-backed root-cause analysis — 409 (with a clear message) when no GFA_LLM_KEY is set; else run
   // it (best-effort enriched with network failures), cache it on the bug, and return it. Credentials/auth are
   // never sent to the model (see buildRcaPrompt). Inert by default: without a key this route always 409s.
-  ['POST', '/api/bugs/:id/analyze', true, async ({ db, res, params }) => {
+  ['POST', '/api/bugs/:id/analyze', true, async ({ db, res, params, storage }) => {
     const bug = getBugById(db, params.id);
     if (!bug) throw new Error('NOT_FOUND');
     if (!process.env.GFA_LLM_KEY) {
@@ -753,8 +833,7 @@ const ROUTES = [
     let networkFailures = [];
     try {
       if (bug.networkKey) {
-        const r = await fetch(signAccessUrl(bug.networkKey));
-        const raw = await r.json();
+        const raw = JSON.parse(storage.read(bug.networkKey).toString('utf8'));
         const entries = Array.isArray(raw) ? raw : raw.entries || [];
         networkFailures = entries
           .filter((e) => e.status === 0 || e.status >= 400)
@@ -781,13 +860,13 @@ const ROUTES = [
   // Hand the dashboard a short-lived signed UploadThing read URL for one captured artifact. kind picks the
   // key column (screenshot|dom|network|session); 404 when the bug or that particular key is absent. Six path
   // segments, so match() never confuses this with `/api/bugs/:id` (four) or `/api/bugs/:id/status` (five).
-  ['GET', '/api/bugs/:id/artifact/:kind', true, async ({ db, res, params }) => {
+  ['GET', '/api/bugs/:id/artifact/:kind', true, async ({ db, req, res, params, storage }) => {
     const bug = getBugById(db, params.id);
     if (!bug) throw new Error('NOT_FOUND');
     const key = { screenshot: 'screenshotKey', dom: 'domKey', network: 'networkKey', session: 'sessionKey', source: 'sourceKey' }[params.kind];
     const fileKey = key ? bug[key] : null;
     if (!fileKey) throw new Error('NOT_FOUND');
-    send(res, 200, { url: signAccessUrl(fileKey) });
+    send(res, 200, { url: storage.signReadUrl(fileKey, { baseUrl: originOf(req) }) });
   }],
 
   // --- Public, view-only bug share links ------------------------------------------------------------
@@ -821,7 +900,7 @@ const ROUTES = [
     if (!v) return send(res, 404, { error: 'NOT_FOUND' });
     send(res, 200, { bug: v, analysis: analyzeBug(v) });
   }],
-  ['GET', '/api/bug-share/:token/artifact/:kind', false, async ({ db, res, params }) => {
+  ['GET', '/api/bug-share/:token/artifact/:kind', false, async ({ db, req, res, params, storage }) => {
     const share = getActiveBugShareByToken(db, params.token);
     if (!share) return send(res, 404, { error: 'NOT_FOUND' });
     const bug = getBugById(db, share.bug_id);
@@ -829,7 +908,7 @@ const ROUTES = [
     const key = { screenshot: 'screenshotKey', dom: 'domKey', network: 'networkKey', session: 'sessionKey', source: 'sourceKey' }[params.kind];
     const fileKey = key ? bug[key] : null;
     if (!fileKey) return send(res, 404, { error: 'NO_ARTIFACT' });
-    send(res, 200, { url: signAccessUrl(fileKey) });
+    send(res, 200, { url: storage.signReadUrl(fileKey, { baseUrl: originOf(req) }) });
   }],
 ];
 
@@ -886,11 +965,11 @@ const AGENT_ROUTES = [
     send(res, 200, { bug });
   }],
 
-  // The extension asks for signed URLs, then PUTs each artifact (screenshot/DOM/network) directly to
-  // UploadThing — so the multi-MB bytes never traverse this server. Body is just [{ name, size, type }].
-  ['POST', '/api/agent/bugs/upload-urls', async ({ res, body }) => {
+  // The extension asks for signed upload URLs, then PUTs each artifact (screenshot/DOM/network) to the
+  // board's own /api/blob endpoint, which stores it on local disk. Body is just [{ name, size, type }].
+  ['POST', '/api/agent/bugs/upload-urls', async ({ req, res, body, storage }) => {
     const files = Array.isArray(body.files) ? body.files : [];
-    send(res, 200, { uploads: mintUploadUrls(files) });
+    send(res, 200, { uploads: storage.presignUpload(files, { baseUrl: originOf(req) }) });
   }],
 
   // The extension's team/project pickers. The human dashboard reads these from the session routes
@@ -989,6 +1068,8 @@ const AGENT_ROUTES = [
 ];
 
 export function createApp(db) {
+  // One storage driver per app (reads BUG_STORAGE / GFA_BLOB_DIR at boot). Passed into every handler ctx.
+  const storage = getStorage();
   return http.createServer(async (req, res) => {
     try {
       // CORS + Private Network Access. Chrome (Local Network Access, 130+) sends a preflight carrying
@@ -1010,6 +1091,9 @@ export function createApp(db) {
       }
       const pathname = new URL(req.url, 'http://x').pathname;
       if (!pathname.startsWith('/api/')) { if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(req, res); res.writeHead(404); return res.end(); }
+      // Local-blob store: signed-grant auth + raw/multipart body, so it sidesteps both the Bearer gate and
+      // the JSON body-parse below. Must run before the /api/agent and session loops.
+      if (pathname.startsWith('/api/blob/')) return await handleBlob(storage, req, res);
       // Agent/runner API: token (Bearer) auth, dispatched before the human/session routes.
       if (pathname.startsWith('/api/agent/')) {
         for (const [method, pattern, handler] of AGENT_ROUTES) {
@@ -1019,7 +1103,7 @@ export function createApp(db) {
           const auth = agentAuth(db, req);
           if (!auth) return send(res, 401, { error: 'BAD_TOKEN' });
           const body = method === 'GET' ? {} : await readJson(req);
-          return await handler({ db, req, res, params, body, auth });
+          return await handler({ db, req, res, params, body, auth, storage });
         }
         return send(res, 404, { error: 'NOT_FOUND' });
       }
@@ -1030,7 +1114,7 @@ export function createApp(db) {
         const user = currentUser(db, req);
         if (needsAuth && !user) return send(res, 401, { error: 'NO_SESSION' });
         const body = method === 'GET' ? {} : await readJson(req);
-        return await handler({ db, req, res, params, body, user });
+        return await handler({ db, req, res, params, body, user, storage });
       }
       send(res, 404, { error: 'NOT_FOUND' });
     } catch (e) {

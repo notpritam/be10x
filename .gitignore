@@ -15,3 +15,9 @@ reference/
 
 # TS build cache
 *.tsbuildinfo
+
+# Local blob store (bug-capture artifacts) — never commit
+/blobs/
+
+# be10x per-repo MCP config (contains a token)
+.be10x/

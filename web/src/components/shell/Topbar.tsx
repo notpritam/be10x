@@ -1,11 +1,11 @@
 // ABOUTME: Top bar for the active view — title + task count, the Board/List segmented control,
 // and the primary "New task" action.
-import { LayoutGrid, Plus, Rows3, Users, type LucideIcon } from "lucide-react";
+import { Activity, LayoutGrid, Plus, Rows3, Users, type LucideIcon } from "lucide-react";
 import { useApp, type View } from "@/state/app-store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
-export type BoardTab = "board" | "list";
+export type BoardTab = "board" | "list" | "fleet";
 
 function viewTitle(view: View): string {
   switch (view.kind) {
@@ -75,6 +75,7 @@ export function Topbar({
         <div className="inline-flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
           <SegButton active={tab === "board"} onClick={() => onTab("board")} icon={LayoutGrid} label="Board" />
           <SegButton active={tab === "list"} onClick={() => onTab("list")} icon={Rows3} label="List" />
+          <SegButton active={tab === "fleet"} onClick={() => onTab("fleet")} icon={Activity} label="Fleet" />
         </div>
         <Button onClick={onNewTask} className="h-9 text-[13px]">
           <Plus className="size-4" />

@@ -111,7 +111,9 @@ export function workLoop(db, { projectId, workerId = 'runner', intervalMs = 3000
 // them and drives an ephemeral, resumed agent per wake. "Staying on a task" is re-waking from durable
 // state, never a live process.
 
-const REASON_MODE = { plan: 'plan', revise: 'revise', input_answer: 'input_answer', execute: 'execute', follow_up: 'follow_up', verify: 'verify' };
+// 'resume' → follow_up mode: a non-fresh mode, so the executor continues the prior claude session
+// (`claude --resume <sessionId>`) rather than starting clean. Used by the manual/board "Resume" action.
+export const REASON_MODE = { plan: 'plan', revise: 'revise', input_answer: 'input_answer', execute: 'execute', follow_up: 'follow_up', verify: 'verify', resume: 'follow_up' };
 
 // The executor mode a wake maps to. pick_up_now is contextual — it means "do the useful next thing",
 // which depends on where the task currently sits.
@@ -238,8 +240,8 @@ async function driveWake(db, { wake, task, workerId, execute }) {
 }
 
 // Claim one wake for a single project and drive it (used by `be10x work` inside one repo).
-export async function runWakeOnce(db, { projectId, workerId = 'runner', execute } = {}) {
-  const wake = claimNextWake(db, { projectId, workerId });
+export async function runWakeOnce(db, { projectId, workerId = 'runner', execute, claimantUserId = null } = {}) {
+  const wake = claimNextWake(db, { projectId, workerId, claimantUserId });
   if (!wake) return null;
   const task = getTask(db, wake.taskId);
   if (!task) return { wake, skipped: 'no-task' };
@@ -250,8 +252,8 @@ export async function runWakeOnce(db, { projectId, workerId = 'runner', execute 
 // Board-wide: claim the oldest wake for ANY project and drive it in that project's own repo. Used by the
 // runner baked into `be10x serve`, so the user never runs a per-repo terminal. `makeExecutor(project)`
 // builds the executor for the resolved project.
-export async function runAnyWakeOnce(db, { workerId = 'runner', makeExecutor } = {}) {
-  const wake = claimNextWakeAny(db, workerId);
+export async function runAnyWakeOnce(db, { workerId = 'runner', makeExecutor, claimantUserId = null } = {}) {
+  const wake = claimNextWakeAny(db, workerId, { claimantUserId });
   if (!wake) return null;
   const task = getTask(db, wake.taskId);
   if (!task) return { wake, skipped: 'no-task' };
@@ -344,7 +346,7 @@ function tryRewakeOrphan(db, taskId) {
 // Poll runWakeOnce on an interval (recovering orphans once at start, then sweeping dead-pid runs on a
 // separate timer so an agent that dies AFTER a restart doesn't linger as a false "running"). Same
 // stoppable handle as workLoop.
-export function wakeLoop(db, { projectId, workerId = 'runner', intervalMs = 3000, sweepMs = 15000, execute, once = false } = {}) {
+export function wakeLoop(db, { projectId, workerId = 'runner', intervalMs = 3000, sweepMs = 15000, execute, once = false, claimantUserId = null } = {}) {
   recoverOrphans(db, { rewake: true });
   let stopped = false;
   let timer = null;
@@ -355,7 +357,7 @@ export function wakeLoop(db, { projectId, workerId = 'runner', intervalMs = 3000
   async function loop() {
     do {
       if (stopped) break;
-      lastResult = await runWakeOnce(db, { projectId, workerId, execute });
+      lastResult = await runWakeOnce(db, { projectId, workerId, execute, claimantUserId });
       if (once || stopped) break;
       await new Promise((res) => {
         timer = setTimeout(res, intervalMs);
@@ -380,7 +382,7 @@ export function wakeLoop(db, { projectId, workerId = 'runner', intervalMs = 3000
 
 // Board-wide poll: drain wakes across ALL linked repos, spawning the agent in each task's own repo. This
 // is the runner baked into `be10x serve` so a user never runs a per-repo terminal.
-export function wakeLoopAll(db, { workerId = 'runner', intervalMs = 3000, sweepMs = 15000, makeExecutor, once = false } = {}) {
+export function wakeLoopAll(db, { workerId = 'runner', intervalMs = 3000, sweepMs = 15000, makeExecutor, once = false, claimantUserId = null } = {}) {
   recoverOrphans(db, { rewake: true });
   let stopped = false;
   let timer = null;
@@ -393,7 +395,7 @@ export function wakeLoopAll(db, { workerId = 'runner', intervalMs = 3000, sweepM
   async function loop() {
     do {
       if (stopped) break;
-      lastResult = await runAnyWakeOnce(db, { workerId, makeExecutor });
+      lastResult = await runAnyWakeOnce(db, { workerId, makeExecutor, claimantUserId });
       if (once || stopped) break;
       await new Promise((res) => {
         timer = setTimeout(res, intervalMs);
