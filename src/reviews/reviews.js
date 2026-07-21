@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { getTask, transition } from '../tasks/tasks.js';
 import { appendEvent } from '../tasks/events.js';
+import { notify } from '../notify/notify.js';
 
 export function requestReview(db, taskId, reviewerId, actor) {
   const task = getTask(db, taskId);
@@ -13,6 +14,8 @@ export function requestReview(db, taskId, reviewerId, actor) {
   } else {
     appendEvent(db, taskId, actor, 'review_requested', { reviewerId });
   }
+  // Tell the reviewer they've been tagged (unless they tagged themselves).
+  notify(db, reviewerId, 'review_requested', { taskId, title: `${task.humanId} — review requested`, body: task.title, actorId: actor });
   return getTask(db, taskId);
 }
 
@@ -32,6 +35,12 @@ export function submitReview(db, taskId, reviewerId, verdict, comment = '') {
   appendEvent(db, taskId, reviewerId, 'review', { verdict, comment });
   if (verdict === 'approved') transition(db, taskId, 'ready_to_work', reviewerId, { review: 'approved' });
   else transition(db, taskId, 'researching', reviewerId, { review: 'changes_requested' });
+  // Changes requested → tell the task's owner/assignee (whoever the agent works for) — not the reviewer.
+  if (verdict === 'changes_requested') {
+    notify(db, task.assigneeId ?? task.ownerId, 'changes_requested', {
+      taskId, title: `${task.humanId} — changes requested`, body: comment || task.title, actorId: reviewerId,
+    });
+  }
   return { id, taskId, reviewerId, verdict, comment };
 }
 

@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { getTask, transition } from './tasks.js';
 import { appendEvent } from './events.js';
+import { notify } from '../notify/notify.js';
 
 export function requestInput(db, taskId, question, { choices = null, allowCustom = true } = {}, actor = 'agent') {
   const task = getTask(db, taskId);
@@ -13,6 +14,8 @@ export function requestInput(db, taskId, question, { choices = null, allowCustom
   ).run(id, taskId, question, choices ? JSON.stringify(choices) : null, allowCustom ? 1 : 0, 'open', Date.now());
   appendEvent(db, taskId, actor, 'input_request', { requestId: id, question, choices, allowCustom });
   if (task.status === 'in_progress') transition(db, taskId, 'needs_input', actor, { requestId: id });
+  // Tell the human who owns the decision (the assignee, else the owner) that the agent is waiting on them.
+  notify(db, task.assigneeId ?? task.ownerId, 'input_needed', { taskId, title: `${task.humanId} needs your input`, body: question, actorId: actor });
   return getOpenInputRequest(db, taskId);
 }
 

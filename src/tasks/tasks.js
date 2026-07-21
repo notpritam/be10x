@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { getType, validateContent } from './types.js';
 import { assertTransition } from './lifecycle.js';
 import { appendEvent } from './events.js';
+import { notify } from '../notify/notify.js';
 import { recordPlanVersion } from '../plans/versions.js';
 import { listProjectsForUser } from '../projects/projects.js';
 import { listRunWorktrees } from '../executor/runs.js';
@@ -213,6 +214,8 @@ export function setTaskAssignee(db, id, assigneeId, actor) {
   if (!task) throw new Error('NO_TASK');
   db.prepare('UPDATE tasks SET assignee_id = ?, updated_at = ? WHERE id = ?').run(assigneeId ?? null, Date.now(), id);
   appendEvent(db, id, actor, 'assign', { from: task.assigneeId ?? null, to: assigneeId ?? null });
+  // Tell the assignee (unless they assigned it to themselves) — their machine will run it.
+  notify(db, assigneeId, 'assigned', { taskId: id, title: `${task.humanId} assigned to you`, body: task.title, actorId: actor });
   return getTask(db, id);
 }
 
