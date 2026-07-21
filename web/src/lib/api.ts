@@ -476,11 +476,21 @@ export function errorMessage(err: unknown): string {
         return "You don't have permission to do that.";
       case "NO_SUCH_SHARE":
         return "This link is no longer active — it may have been revoked.";
+      case "NO_TASK":
+      case "NOT_FOUND":
+      case "NO_BUG":
+      case "NO_SUCH_TASK":
+        return "This no longer exists — it may have been deleted.";
+      case "NO_SESSION_TO_RESUME":
+        return "There's no saved session to resume yet.";
       case "NETWORK":
-        return "Network error. Check your connection.";
+        return "Can't reach the board — check your connection.";
       case "NO_SESSION":
         return "Your session expired. Please sign in again.";
       default:
+        if (err.status === 404) return "This no longer exists — it may have been deleted.";
+        if (err.status === 403) return "You don't have access to this.";
+        if (err.status >= 500) return "The board hit an error. Please try again.";
         return err.code.startsWith("MISSING_FIELD")
           ? "Please fill in the required fields."
           : "Something went wrong. Please try again.";

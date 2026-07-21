@@ -3,7 +3,7 @@
 // full-screen deep-dive (DeepDivePanel) so they render the same live data without a double fetch.
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/lib/api";
+import { api, errorMessage, ApiError } from "@/lib/api";
 import { STATUS_META } from "@/lib/lifecycle";
 import type { InputRequest, Run, Status, Task, TaskEvent } from "@/lib/types";
 import { useApp } from "@/state/app-store";
@@ -22,14 +22,17 @@ const INPUT_STATES = new Set<Status>(["researching", "plan_review", "needs_input
 export interface TaskDetailController {
   detail: Detail | null;
   loading: boolean;
+  /** The task couldn't be found (deleted / no access) — the tab is auto-closed. */
+  notFound: boolean;
   refresh: () => void;
   onMove: (to: Status) => Promise<void>;
 }
 
 export function useTaskDetail(taskId: string | null): TaskDetailController {
-  const { applyTask, moveTask } = useApp();
+  const { applyTask, moveTask, closeTab } = useApp();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [notFound, setNotFound] = useState(false);
 
   const load = useCallback(
     async (id: string, opts?: { silent?: boolean }) => {
@@ -44,9 +47,19 @@ export function useTaskDetail(taskId: string | null): TaskDetailController {
           api.listRuns(id),
         ]);
         setDetail({ task, events, input: INPUT_STATES.has(task.status) ? inputRequest : null, runs });
+        setNotFound(false);
         applyTask(task);
       } catch (err) {
-        if (!opts?.silent) toast.error(errorMessage(err));
+        // A gone task (deleted/no access) shouldn't spin forever or nag "something went wrong": close the
+        // tab and say so plainly. Other errors (network/500) surface a specific message and keep the tab.
+        const gone = err instanceof ApiError && (err.status === 404 || err.code === "NO_TASK" || err.code === "NOT_FOUND");
+        if (gone) {
+          setNotFound(true);
+          if (!opts?.silent) toast.error("This task no longer exists — closing it.");
+          closeTab(id);
+        } else if (!opts?.silent) {
+          toast.error(errorMessage(err));
+        }
       } finally {
         if (!opts?.silent) setLoading(false);
       }
@@ -82,5 +95,5 @@ export function useTaskDetail(taskId: string | null): TaskDetailController {
     [detail, moveTask, refresh],
   );
 
-  return { detail, loading, refresh, onMove };
+  return { detail, loading, notFound, refresh, onMove };
 }

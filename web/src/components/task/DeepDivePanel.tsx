@@ -61,6 +61,7 @@ const NAV_W = 48;
 export function DeepDivePanel({
   taskId,
   open,
+  onClose,
   onCollapse,
   ctrl,
   inline = false,
@@ -74,7 +75,7 @@ export function DeepDivePanel({
   inline?: boolean;
 }) {
   const { resolveActor } = useApp();
-  const { detail, refresh, onMove } = ctrl;
+  const { detail, loading, notFound, refresh, onMove } = ctrl;
   const task = detail?.task;
   const isStale = task && taskId !== task.id;
   const lastRun = detail?.runs?.length ? detail.runs[detail.runs.length - 1] : null;
@@ -189,7 +190,38 @@ export function DeepDivePanel({
       }
     >
       {!task || isStale ? (
-        <PanelLoading />
+        loading || isStale ? (
+          <PanelLoading />
+        ) : (
+          // Load finished but there's no task — don't spin forever. A gone task auto-closes its tab (see
+          // useTaskDetail); this covers a genuine load failure (network/500) or the brief pre-close moment.
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+            <p className="text-[15px] font-semibold text-foreground">
+              {notFound ? "This task no longer exists" : "Couldn't load this task"}
+            </p>
+            <p className="max-w-sm text-[13px] text-muted-foreground">
+              {notFound ? "It may have been deleted." : "The board didn't respond. Check your connection and try again."}
+            </p>
+            <div className="flex gap-2">
+              {!notFound && (
+                <button
+                  type="button"
+                  onClick={refresh}
+                  className="rounded-lg border border-border px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-accent"
+                >
+                  Try again
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg bg-primary px-3 py-1.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )
       ) : (
         <div className="flex h-full min-h-0 flex-col">
             {/* No page header — the task's identity + status live in the Info panel (right rail). The

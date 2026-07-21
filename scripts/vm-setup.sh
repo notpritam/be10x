@@ -41,7 +41,7 @@ echo "  ok"
 
 # ---- 2. env files ---------------------------------------------------------
 echo "[2/6] env files"
-render "$REPO/deploy/be10x.env.tmpl" prod "$DATA_ROOT/prod" 4610 1 pritam "" > "$DATA_ROOT/prod/env"
+render "$REPO/deploy/be10x.env.tmpl" prod "$DATA_ROOT/prod" 4610 1 pritam notpritam@notpritam.in > "$DATA_ROOT/prod/env"
 render "$REPO/deploy/be10x.env.tmpl" dev  "$DATA_ROOT/dev"  4620 0 pritam-dev "" > "$DATA_ROOT/dev/env"
 chmod 600 "$DATA_ROOT/prod/env" "$DATA_ROOT/dev/env"
 echo "  ok"
