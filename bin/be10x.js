@@ -20,7 +20,7 @@ import { enqueueWake } from '../src/executor/wake.js';
 import { wakeLoop, wakeLoopAll } from '../src/runner/runner.js';
 import { makeRemoteExecutor } from '../src/connect/remote-executor.js';
 import { makeBoardClient, connectLoop, writeMcpConfig, loadConnectConfig, saveConnectConfig, connectConfigPath, runDeviceLogin, upsertRepo } from '../src/connect/connect.js';
-import { makeAutoUpdater } from '../src/connect/auto-update.js';
+import { makeAutoUpdater, fetchBoardVersion, shouldUpdate } from '../src/connect/auto-update.js';
 import { buildLaunchdPlist, buildSystemdUnit, serviceEnvPath, servicePaths, isRemovablePath } from '../src/connect/service.js';
 import { assembleStatus, pickLastTask } from '../src/connect/status.js';
 import { renderWelcome } from '../src/cli/welcome.js';
@@ -708,6 +708,34 @@ async function cmdStatus() {
 
 // update — self-update the globally-installed CLI to the latest, then restart the background service (if any)
 // so it runs the new binary. Running from source? Update with git in that repo instead.
+// A one-line "a newer be10x is available" nudge, shown on any command when this machine is behind the
+// board it's logged into. The board is the source of truth (GET /api/version). Cached for an hour so it
+// costs a network call at most once per hour, and prints to STDERR so it never corrupts --json output.
+// (The always-on `be10x service` also auto-updates itself; this is the notice for interactive use.)
+async function maybeNotifyUpdate(cmd) {
+  if (cmd === 'update' || cmd === 'serve') return;
+  try {
+    const saved = loadConnectConfig(connectConfigPath());
+    if (!saved || !saved.board) return; // board host updates via `git pull`, not this notice
+    const cachePath = join(dirname(connectConfigPath()), 'cli-update-check.json');
+    let cache = {};
+    try { cache = JSON.parse(readFileSync(cachePath, 'utf8')); } catch { /* first run */ }
+    const now = Date.now();
+    let boardVersion = cache.boardVersion;
+    if (!cache.checkedAt || now - cache.checkedAt > 3600_000 || cache.board !== saved.board) {
+      boardVersion = await fetchBoardVersion(saved.board, { timeoutMs: 800 });
+      try { writeFileSync(cachePath, JSON.stringify({ checkedAt: now, board: saved.board, boardVersion })); } catch { /* best-effort cache */ }
+    }
+    const local = readPkgVersion();
+    if (shouldUpdate(local, boardVersion)) {
+      console.error(
+        fg(BRAND.teal, '▲ ') + 'be10x v' + boardVersion + ' available' +
+        dim(' — you have v' + local + '. Run ') + bold('be10x update'),
+      );
+    }
+  } catch { /* update check is best-effort — never block a command */ }
+}
+
 async function cmdUpdate() {
   const { execFileSync } = await import('node:child_process');
   const cli = fileURLToPath(import.meta.url);
@@ -1164,6 +1192,10 @@ async function cmdNew(args) {
   if (args.start && projectId) { transition(db, task.id, 'ready_to_work', ownerId); enqueueWake(db, task.id, 'execute'); console.log(dim('  started.')); }
 }
 
+// Commands that run forever (their own server/poll loop). Every OTHER command is one-shot and the process
+// exits as soon as it finishes — so nothing (a keep-alive socket, a stray timer) holds the terminal open.
+const LONG_RUNNING = new Set(['serve', 'connect', 'work']);
+
 const COMMANDS = {
   serve: cmdServe,
   ps: cmdPs,
@@ -1233,6 +1265,9 @@ async function main() {
     process.exit(1);
   }
 
+  // Show the "update available" nudge before running the command (best-effort, ~hourly-cached).
+  await maybeNotifyUpdate(cmd);
+
   const telemetryCfg = loadTelemetryConfig();
   const telemetryOn = effectiveEnabled(process.env, telemetryCfg) === true;
   const startedAt = Date.now();
@@ -1251,6 +1286,11 @@ async function main() {
       void flushQueue({ installId: telemetryCfg.installId, cliVersion: readPkgVersion() });
     }
   }
+
+  // A one-shot command is done — exit cleanly so a lingering keep-alive socket (from a board fetch) or a
+  // best-effort telemetry request can't hold the terminal open (you had to Ctrl-C). The long-running
+  // commands (serve/connect/work) intentionally keep the process alive and are excluded.
+  if (!LONG_RUNNING.has(cmd)) process.exit(0);
 }
 
 main().catch((e) => {
