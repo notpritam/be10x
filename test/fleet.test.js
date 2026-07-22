@@ -7,6 +7,7 @@ import { createUser } from '../src/auth/users.js';
 import { createTask } from '../src/tasks/tasks.js';
 import { recordProgress } from '../src/worker/worker.js';
 import { assembleFleetStatus } from '../src/tasks/fleet.js';
+import { createRun, setRunSession } from '../src/executor/runs.js';
 
 function seed() {
   const db = openDb(':memory:');
@@ -34,6 +35,21 @@ test('lists in-flight tasks the viewer can see, with state + stalled', () => {
   assert.equal(row.state, 'working');
   assert.equal(row.phase, 'implement');
   assert.equal(row.stalled, false);
+});
+
+test('a fleet row carries the latest run\'s session id + host ("where it\'s running")', () => {
+  const { db, a } = seed();
+  const now = 10_000_000;
+  const t = mkTask(db, a.id, 'in_progress');
+  recordProgress(db, t.id, { state: 'working', phase: 'implement' });
+  setAge(db, t.id, now - 1000);
+  const run = createRun(db, { taskId: t.id, host: 'mac-pritam' });
+  setRunSession(db, run.id, 'sess-abc-123');
+
+  const row = assembleFleetStatus(db, { viewerId: a.id, now }).find((r) => r.taskId === t.id);
+  assert.equal(row.sessionId, 'sess-abc-123');
+  assert.equal(row.host, 'mac-pritam');
+  assert.equal(row.runId, run.id);
 });
 
 test('an in-flight task with no run yet shows queued, not a false "working"', () => {

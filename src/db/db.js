@@ -21,6 +21,9 @@ const COLUMN_MIGRATIONS = [
   { table: 'runs', column: 'cache_creation_tokens', ddl: 'ALTER TABLE runs ADD COLUMN cache_creation_tokens INTEGER' },
   { table: 'runs', column: 'cache_read_tokens', ddl: 'ALTER TABLE runs ADD COLUMN cache_read_tokens INTEGER' },
   { table: 'runs', column: 'cost_usd', ddl: 'ALTER TABLE runs ADD COLUMN cost_usd REAL' },
+  // Where the agent actually runs — the executor's os.hostname() (a member's laptop in the hosted model,
+  // the VM for board-run tasks). Powers "where is this running" in `be10x ps` and the board.
+  { table: 'runs', column: 'host', ddl: 'ALTER TABLE runs ADD COLUMN host TEXT' },
   { table: 'bugs', column: 'session_key', ddl: 'ALTER TABLE bugs ADD COLUMN session_key TEXT' },
   { table: 'bugs', column: 'tags', ddl: 'ALTER TABLE bugs ADD COLUMN tags TEXT' },
   { table: 'bugs', column: 'task_id', ddl: 'ALTER TABLE bugs ADD COLUMN task_id TEXT' },

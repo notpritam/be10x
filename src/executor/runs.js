@@ -27,6 +27,7 @@ function hydrate(row) {
     worktreePath: row.worktree_path,
     branch: row.branch,
     baseRef: row.base_ref,
+    host: row.host,
     status: row.status,
     pid: row.pid,
     result: row.result_json == null ? null : JSON.parse(row.result_json),
@@ -48,11 +49,11 @@ export function getRun(db, id) {
 
 // Open a new run for a task in status 'starting'. worktree/branch/baseRef are recorded up front so the
 // row is a complete resume record even before the process has produced a session id.
-export function createRun(db, { taskId, projectId = null, worktreePath = null, branch = null, baseRef = null }) {
+export function createRun(db, { taskId, projectId = null, worktreePath = null, branch = null, baseRef = null, host = null }) {
   const id = randomUUID();
   db.prepare(
-    'INSERT INTO runs (id, task_id, project_id, worktree_path, branch, base_ref, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, taskId, projectId, worktreePath, branch, baseRef, 'starting', Date.now());
+    'INSERT INTO runs (id, task_id, project_id, worktree_path, branch, base_ref, host, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, taskId, projectId, worktreePath, branch, baseRef, host, 'starting', Date.now());
   return getRun(db, id);
 }
 

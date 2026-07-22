@@ -9,7 +9,7 @@
 // logic is unit-testable without a real git repo or the CLI on PATH.
 import { spawn as realSpawn } from 'node:child_process';
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, hostname } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { buildClaudeCommand, BE10X_SYSTEM_PROMPT, StreamAccumulator, extractUsage } from './claude-adapter.js';
@@ -224,6 +224,7 @@ export function makeClaudeExecutor(db, project, opts = {}) {
       worktreePath: wt.path,
       branch,
       baseRef: wt.baseRef,
+      host: hostname(), // the machine this agent actually runs on — surfaced in ps / the board
     });
 
     // Per-task overrides win over the executor default: the human can set a model/effort on the task

@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS runs (
   worktree_path TEXT,
   branch        TEXT,
   base_ref      TEXT,
+  host          TEXT,   -- os.hostname() of the machine the agent runs on ("where it's running")
   status        TEXT NOT NULL DEFAULT 'starting' CHECK (status IN ('starting','running','done','failed')),
   pid           INTEGER,
   result_json   TEXT,

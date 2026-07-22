@@ -4,6 +4,7 @@ import { listTasksForUser } from './tasks.js';
 import { isStalled, STALE_MS_DEFAULT } from '../executor/agent-status.js';
 import { getProject } from '../projects/projects.js';
 import { getUserById } from '../auth/users.js';
+import { getLatestRunForTask } from '../executor/runs.js';
 
 // Statuses that represent work in flight (a running or human-gated session). Terminal/backlog states are
 // excluded — the fleet view is about what's live, not the whole board.
@@ -27,6 +28,9 @@ export function assembleFleetStatus(db, { viewerId, staleMs = STALE_MS_DEFAULT, 
     const hasSnap = agent.updatedAt != null;
     const project = t.projectId ? getProject(db, t.projectId) : null;
     const assignee = t.assigneeId ? getUserById(db, t.assigneeId) : null;
+    // The latest run is the authoritative "which claude session, on which machine" record — the agent
+    // snapshot rebuilds itself and can lose the session id, so read both straight off the run.
+    const run = getLatestRunForTask(db, t.id);
     out.push({
       taskId: t.id,
       humanId: t.humanId,
@@ -34,6 +38,9 @@ export function assembleFleetStatus(db, { viewerId, staleMs = STALE_MS_DEFAULT, 
       status: t.status,
       phase: agent.phase || null,
       state,
+      runId: run?.id || null,
+      sessionId: run?.sessionId || agent.sessionId || null,
+      host: run?.host || null,
       // A task with no snapshot yet (just queued/starting) is "unknown", not stalled.
       stalled: hasSnap ? isStalled({ state, updatedAt: agent.updatedAt }, now, staleMs) : false,
       ageMs: hasSnap ? now - agent.updatedAt : null,

@@ -93,6 +93,12 @@ export function FleetView() {
                 {s.message && (
                   <div className="mt-0.5 truncate text-[12px] text-muted-foreground">{s.message}</div>
                 )}
+                {(s.sessionId || s.host) && (
+                  <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10.5px] text-muted-foreground/70">
+                    {s.sessionId && <span title={`claude session ${s.sessionId}`}>◆ {s.sessionId.slice(0, 8)}</span>}
+                    {s.host && <span title="where it's running">· {s.host}</span>}
+                  </div>
+                )}
               </div>
               <SessionStateBadge state={s.state} phase={s.phase} updatedAt={s.updatedAt} stalled={s.stalled} />
               {s.project && (

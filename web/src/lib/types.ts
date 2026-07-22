@@ -132,6 +132,10 @@ export interface PsSession {
   ageMs: number | null;
   updatedAt: number | null;
   message: string | null;
+  /** The latest run's id, claude session id, and the machine it's running on ("where"). */
+  runId: string | null;
+  sessionId: string | null;
+  host: string | null;
   assignee: { id: string; email: string; displayName: string } | null;
   project: { id: string; key: string; name: string } | null;
 }
@@ -259,6 +263,8 @@ export interface Run {
   worktreePath: string | null;
   branch: string | null;
   baseRef: string | null;
+  /** The machine this run's agent executed on — os.hostname() where claude ran. */
+  host: string | null;
   status: "starting" | "running" | "done" | "failed";
   pid: number | null;
   result: unknown | null;

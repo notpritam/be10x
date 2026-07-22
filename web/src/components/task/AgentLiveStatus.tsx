@@ -140,6 +140,26 @@ export function AgentLiveStatus({
           {message}
         </p>
       )}
+      {/* Where + which session — the "how do I find/attach to this run" line. */}
+      {(run?.sessionId || run?.host) && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-border/50 pt-1.5 font-mono text-[10.5px] text-muted-foreground/75">
+          {run?.host && (
+            <span title="where it's running">
+              <span className="opacity-60">host</span> {run.host}
+            </span>
+          )}
+          {run?.sessionId && (
+            <button
+              type="button"
+              title={`Copy claude session id\n${run.sessionId}`}
+              onClick={() => void navigator.clipboard?.writeText(run.sessionId ?? "").catch(() => {})}
+              className="inline-flex items-center gap-1 rounded px-1 -mx-1 transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <span className="opacity-60">session</span> {run.sessionId.slice(0, 12)}…
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

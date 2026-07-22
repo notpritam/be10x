@@ -17,15 +17,23 @@ function pad(s, n) {
   return s.length >= n ? s.slice(0, n) : s + ' '.repeat(n - s.length);
 }
 
+// A claude session id is a full uuid; show the leading 8 chars so the column stays scannable but is still
+// enough to grep the full id from the board or `claude --resume`. '-' until the stream yields one.
+export function shortSession(sessionId) {
+  return sessionId ? String(sessionId).slice(0, 8) : '-';
+}
+
 // Render fleet rows (from assembleFleetStatus) as an aligned table. A stalled row shows state 'stalled'.
 export function formatFleetTable(rows) {
   if (!rows || rows.length === 0) return 'no active sessions.';
-  const header = ['TASK', 'PHASE', 'STATE', 'AGE', 'ASSIGNEE', 'PROJECT'];
+  const header = ['TASK', 'PHASE', 'STATE', 'AGE', 'SESSION', 'HOST', 'ASSIGNEE', 'PROJECT'];
   const body = rows.map((r) => [
     r.humanId || '-',
     r.phase || '-',
     r.stalled ? 'stalled' : (r.state || '-'),
     relAge(r.ageMs),
+    shortSession(r.sessionId),
+    r.host || '-',
     r.assignee ? (r.assignee.displayName || r.assignee.email || '-') : '-',
     r.project ? (r.project.key || r.project.name || '-') : '-',
   ]);
